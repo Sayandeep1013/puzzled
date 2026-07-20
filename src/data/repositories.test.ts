@@ -1,6 +1,6 @@
 import type { GridSize } from '@/game-engine';
 
-import { parseSessionStorageKey, sessionStorageKey } from './repositories';
+import { parseSessionStorageKey, sessionStorageKey, sessionStorageKeyPrefix } from './repositories';
 
 describe('session storage keys', () => {
   it('round-trips puzzle id and size', () => {
@@ -27,5 +27,15 @@ describe('session storage keys', () => {
 
   it('separates sizes of the same puzzle', () => {
     expect(sessionStorageKey('first-light', 4)).not.toBe(sessionStorageKey('first-light', 8));
+  });
+
+  it('prefixes every size of one puzzle for bulk delete', () => {
+    const prefix = sessionStorageKeyPrefix('user-abc');
+    const sizes: GridSize[] = [3, 4, 5, 6, 7, 8, 9, 10];
+    for (const size of sizes) {
+      expect(sessionStorageKey('user-abc', size).startsWith(prefix)).toBe(true);
+    }
+    // Must not match a different puzzle whose id merely shares the prefix text.
+    expect(sessionStorageKey('user-abcd', 4).startsWith(prefix)).toBe(false);
   });
 });

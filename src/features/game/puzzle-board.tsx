@@ -40,7 +40,8 @@ import { colors } from '@/shared/theme';
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
   session: GameSession;
-  imageModule: number;
+  /** Bundled `require` module id, or a `file://` uri for an imported photo. */
+  imageSource: number | string;
   onSessionChange: (session: GameSession) => void;
 }
 
@@ -186,10 +187,10 @@ function FloatingPiece({
 export function PuzzleBoard({
   generated,
   session,
-  imageModule,
+  imageSource,
   onSessionChange,
 }: PuzzleBoardProps) {
-  const image = useImage(imageModule);
+  const image = useImage(imageSource);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [startedAtMs] = useState(() => Date.now());
   // Resuming a saved session must keep the time already banked.

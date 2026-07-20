@@ -30,6 +30,12 @@
       "expo-router",
       "expo-dev-client",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Puzzled to use photos you pick as puzzles."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#F6F2EA",

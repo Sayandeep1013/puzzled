@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getProgressRepository, getPuzzleImageModule, LocalPuzzleRepository } from '@/data';
+import { getProgressRepository, getPuzzleById, resolvePuzzleImageSource } from '@/data';
 import {
   cellSizeForGrid,
   countLockedPieces,
@@ -37,14 +37,14 @@ interface GameScreenProps {
   initialGridSize?: GridSize;
 }
 
-type Catalog =
+type CatalogState =
   | { status: 'loading' }
   | { status: 'missing' }
   | { status: 'missing-art' }
-  | { status: 'ready'; puzzle: PuzzleDefinition; imageModule: number };
+  | { status: 'ready'; puzzle: PuzzleDefinition; imageSource: number | string };
 
 export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
-  const [catalog, setCatalog] = useState<Catalog>({ status: 'loading' });
+  const [catalog, setCatalog] = useState<CatalogState>({ status: 'loading' });
   const [gridSize, setGridSize] = useState<GridSize | null>(initialGridSize ?? null);
   const [playable, setPlayable] = useState<PlayablePuzzle | null>(null);
   const [session, setSession] = useState<GameSession | null>(null);
@@ -56,7 +56,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     let active = true;
 
     (async () => {
-      const puzzle = await new LocalPuzzleRepository().getById(puzzleId);
+      const puzzle = await getPuzzleById(puzzleId);
       if (!active) return;
 
       if (!puzzle) {
@@ -64,13 +64,13 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         return;
       }
 
-      const imageModule = getPuzzleImageModule(puzzle.id);
-      if (imageModule === null) {
+      const imageSource = resolvePuzzleImageSource(puzzle);
+      if (imageSource == null) {
         setCatalog({ status: 'missing-art' });
         return;
       }
 
-      setCatalog({ status: 'ready', puzzle, imageModule });
+      setCatalog({ status: 'ready', puzzle, imageSource });
       // Default to the requested size, else the catalog's own size.
       setGridSize((current) => current ?? puzzle.gridSize);
     })();
@@ -281,7 +281,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
             key={`${generated.puzzle.id}:${generated.puzzle.revision}:${gridSize}:${generation}`}
             generated={generated}
             session={session}
-            imageModule={catalog.imageModule}
+            imageSource={catalog.imageSource}
             onSessionChange={onSessionChange}
           />
         </View>

@@ -11,6 +11,7 @@ import {
 import {
   parseSessionStorageKey,
   sessionStorageKey,
+  sessionStorageKeyPrefix,
   type ProgressRepository,
   type PuzzleProgressSummary,
 } from '../repositories';
@@ -121,6 +122,16 @@ export class SQLiteProgressRepository implements ProgressRepository {
     await this.database.runAsync(
       'DELETE FROM puzzle_sessions WHERE puzzle_id = ?',
       sessionStorageKey(puzzleId, gridSize),
+    );
+  }
+
+  async deleteSessionsForPuzzle(puzzleId: string): Promise<void> {
+    // `::` is a literal in the key format, not a LIKE wildcard, so escaping `%`
+    // and `_` in the puzzle id is enough to match exactly this puzzle's rows.
+    const prefix = sessionStorageKeyPrefix(puzzleId).replace(/[\\%_]/g, '\\$&');
+    await this.database.runAsync(
+      "DELETE FROM puzzle_sessions WHERE puzzle_id LIKE ? ESCAPE '\\'",
+      `${prefix}%`,
     );
   }
 }

@@ -9,9 +9,11 @@ Right now the app ships:
 
 - Home screen with real progress + playable Game screen
 - Pure TypeScript **game engine** (piece generation, jigsaw paths, layout, snap/lock, completion)
+- **Any grid size 3×3 to 10×10**, chosen per puzzle on the board
+- **Import your own photos** from the gallery as playable puzzles (copied into app storage)
 - **Skia drag board** — pieces clipped from one image, dragged from a shuffled tray, snapped when
   close
-- **Local persistence** — sessions saved to SQLite and resumed on reopen, plus a Reset control
+- **Local persistence** — sessions saved to SQLite per (puzzle, size), resumed on reopen, plus Reset
 - Development-build support for native feel-testing on device
 
 **New to the project?** Start with [CONTRIBUTING.md](./CONTRIBUTING.md) — onboarding path, team

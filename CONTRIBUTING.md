@@ -129,7 +129,7 @@ restoring pieces onto geometry that no longer matches.
 
 ## Cookbook
 
-### Add a puzzle
+### Add a bundled (built-in) puzzle
 
 Two edits, no other code changes:
 
@@ -137,7 +137,21 @@ Two edits, no other code changes:
 2. Register it in `src/data/local/puzzle-assets.ts` (Metro needs a literal `require`)
 3. Add the catalog entry in `src/data/local/local-puzzle-repository.ts`
 
-`gridSize` accepts `4 | 6 | 8 | 9 | 10`. Use 4 for feel-testing; production boards are 8–10.
+`gridSize` there is only a default; the player picks any size `3`–`10` on the board.
+
+### How imported (user) puzzles work
+
+Players import photos from the gallery on the Home screen. The flow:
+
+1. `expo-image-picker` returns a temporary `file://` uri plus pixel size.
+2. `SQLiteUserPuzzleRepository.add` **copies** the file into the app document directory
+   (`Paths.document/user-puzzles/…`) — picker uris are cache-scoped and can vanish, so we own a copy.
+3. A row in `user_puzzles` stores the permanent uri, pixel size, and a stable seed.
+4. `resolvePuzzleImageSource` (in `puzzle-assets.ts`) returns a `require` module id for bundled art or
+   the `file://` uri for imports; the board's `useImage` accepts either.
+
+Everything downstream — generation, all grid sizes, drag/snap, per-size progress — is identical for
+bundled and imported puzzles, because it is all driven by pixel size and the image.
 
 ### Change how pieces look
 
@@ -197,6 +211,15 @@ React render code returns a GPU surface whose snapshots are invalid on the threa
 them — every piece rendered blank on device while type checks, lint, and tests stayed green. If you
 cache piece rendering, do it in a worklet, `<Atlas>`, or a recorded `Picture`, and confirm on real
 hardware.
+
+**`expo-file-system` uses the new object API on SDK 57.** Use `File`, `Directory`, and `Paths` (e.g.
+`new File(Paths.document, name)`), not the legacy `documentDirectory` + `copyAsync` functions. The
+methods are synchronous. Read the versioned docs (`docs.expo.dev/versions/v57.0.0/`) before using any
+Expo SDK API — several changed shape across versions.
+
+**Adding a native module means a new build.** `expo-image-picker` and `expo-file-system` are native;
+JS-only reloads will not pick them up. Rebuild the dev/preview APK after installing any native
+dependency.
 
 **`Link asChild` overwrites the child's `style` prop.** A `Pressable` inside a `Link` loses its own
 styling, which silently erased the Start button's fill. Put visuals on an inner `View`. A bare
