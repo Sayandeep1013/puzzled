@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getProgressRepository, getPuzzleImageModule, LocalPuzzleRepository } from '@/data';
@@ -9,7 +9,10 @@ import {
   createPlayablePuzzle,
   expectedPieceCount,
   isSessionCompatible,
+  isSupportedGridSize,
+  SUPPORTED_GRID_SIZES,
   type GameSession,
+  type GridSize,
   type PlayablePuzzle,
   type PuzzleDefinition,
 } from '@/game-engine';
@@ -17,32 +20,38 @@ import { colors, radii, spacing } from '@/shared/theme';
 
 import { PuzzleBoard } from './puzzle-board';
 
-function buildPlayable(puzzle: PuzzleDefinition): PlayablePuzzle {
+function buildPlayable(puzzle: PuzzleDefinition, gridSize: GridSize): PlayablePuzzle {
+  const sized: PuzzleDefinition = { ...puzzle, gridSize };
   return createPlayablePuzzle({
-    puzzle,
-    sessionId: `local-${puzzle.id}`,
+    puzzle: sized,
+    sessionId: `local-${puzzle.id}-${gridSize}`,
     now: new Date().toISOString(),
-    cellSize: cellSizeForGrid(puzzle.gridSize),
+    cellSize: cellSizeForGrid(gridSize),
     layoutMode: 'tray',
   });
 }
 
 interface GameScreenProps {
   puzzleId: string;
+  /** Optional starting size, e.g. from a "Continue" deep link. */
+  initialGridSize?: GridSize;
 }
 
-type LoadState =
+type Catalog =
   | { status: 'loading' }
   | { status: 'missing' }
   | { status: 'missing-art' }
-  | { status: 'ready'; playable: PlayablePuzzle; puzzle: PuzzleDefinition; imageModule: number };
+  | { status: 'ready'; puzzle: PuzzleDefinition; imageModule: number };
 
-export function GameScreen({ puzzleId }: GameScreenProps) {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
+export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
+  const [catalog, setCatalog] = useState<Catalog>({ status: 'loading' });
+  const [gridSize, setGridSize] = useState<GridSize | null>(initialGridSize ?? null);
+  const [playable, setPlayable] = useState<PlayablePuzzle | null>(null);
   const [session, setSession] = useState<GameSession | null>(null);
-  /** Bumped on reset to force a fresh board with a fresh measured world. */
+  /** Bumped on reset to force a fresh board with a freshly measured world. */
   const [generation, setGeneration] = useState(0);
 
+  // Load the catalog entry + artwork once per puzzle.
   useEffect(() => {
     let active = true;
 
@@ -51,23 +60,41 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
       if (!active) return;
 
       if (!puzzle) {
-        setState({ status: 'missing' });
+        setCatalog({ status: 'missing' });
         return;
       }
 
       const imageModule = getPuzzleImageModule(puzzle.id);
       if (imageModule === null) {
-        setState({ status: 'missing-art' });
+        setCatalog({ status: 'missing-art' });
         return;
       }
 
-      const playable = buildPlayable(puzzle);
+      setCatalog({ status: 'ready', puzzle, imageModule });
+      // Default to the requested size, else the catalog's own size.
+      setGridSize((current) => current ?? puzzle.gridSize);
+    })();
 
-      // Resume only when the stored board still matches the generated one.
+    return () => {
+      active = false;
+    };
+  }, [puzzleId]);
+
+  // Build the board and load saved progress whenever the puzzle or size changes.
+  useEffect(() => {
+    if (catalog.status !== 'ready' || gridSize == null) {
+      return;
+    }
+
+    let active = true;
+    const { puzzle } = catalog;
+    const built = buildPlayable(puzzle, gridSize);
+
+    (async () => {
       let restored: GameSession | null = null;
       try {
-        const saved = await (await getProgressRepository()).getSession(puzzle.id);
-        if (saved && isSessionCompatible(saved, puzzle, playable.generated.pieces)) {
+        const saved = await (await getProgressRepository()).getSession(puzzle.id, gridSize);
+        if (saved && isSessionCompatible(saved, built.generated.puzzle, built.generated.pieces)) {
           restored = saved;
         }
       } catch {
@@ -75,15 +102,14 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
       }
 
       if (!active) return;
-
-      setState({ status: 'ready', playable, puzzle, imageModule });
-      setSession(restored ?? playable.session);
+      setPlayable(built);
+      setSession(restored ?? built.session);
     })();
 
     return () => {
       active = false;
     };
-  }, [puzzleId]);
+  }, [catalog, gridSize]);
 
   // Debounced write-behind: dragging produces a session object per drop.
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,8 +143,22 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
     setSession(next);
   }, []);
 
+  const onSelectSize = useCallback(
+    (next: GridSize) => {
+      if (next === gridSize) {
+        return;
+      }
+      if (pendingSave.current) {
+        clearTimeout(pendingSave.current);
+        pendingSave.current = null;
+      }
+      setGridSize(next);
+    },
+    [gridSize],
+  );
+
   const onReset = useCallback(() => {
-    if (state.status !== 'ready') {
+    if (catalog.status !== 'ready' || gridSize == null) {
       return;
     }
 
@@ -127,21 +167,46 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
       pendingSave.current = null;
     }
 
-    const playable = buildPlayable(state.puzzle);
-    setState({ ...state, playable });
-    setSession(playable.session);
+    const fresh = buildPlayable(catalog.puzzle, gridSize);
+    setPlayable(fresh);
+    setSession(fresh.session);
     setGeneration((value) => value + 1);
 
     void (async () => {
       try {
-        await (await getProgressRepository()).deleteSession(state.puzzle.id);
+        await (await getProgressRepository()).deleteSession(catalog.puzzle.id, gridSize);
       } catch {
-        // Local board is already reset; a stale row will be overwritten on next save.
+        // Local board is already reset; a stale row is overwritten on the next save.
       }
     })();
-  }, [state]);
+  }, [catalog, gridSize]);
 
-  if (state.status === 'loading' || (state.status === 'ready' && !session)) {
+  if (catalog.status === 'missing' || catalog.status === 'missing-art') {
+    return (
+      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
+        <View style={styles.content}>
+          <Text style={styles.title}>
+            {catalog.status === 'missing' ? 'Puzzle not found' : 'Artwork missing'}
+          </Text>
+          <Text style={styles.meta}>
+            {catalog.status === 'missing'
+              ? `No catalog entry for “${puzzleId}”.`
+              : `“${puzzleId}” has no bundled image registered.`}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Until the rebuilt board and the selected size agree, keep showing the loader —
+  // otherwise a size switch briefly renders the new count over the old geometry.
+  if (
+    catalog.status !== 'ready' ||
+    !playable ||
+    !session ||
+    gridSize == null ||
+    playable.generated.puzzle.gridSize !== gridSize
+  ) {
     return (
       <SafeAreaView edges={['bottom']} style={styles.safeArea}>
         <View style={styles.content}>
@@ -151,30 +216,9 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
     );
   }
 
-  if (state.status === 'missing' || state.status === 'missing-art') {
-    return (
-      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-        <View style={styles.content}>
-          <Text style={styles.title}>
-            {state.status === 'missing' ? 'Puzzle not found' : 'Artwork missing'}
-          </Text>
-          <Text style={styles.meta}>
-            {state.status === 'missing'
-              ? `No catalog entry for “${puzzleId}”.`
-              : `“${puzzleId}” has no bundled image registered.`}
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const { generated } = state.playable;
-  if (!session) {
-    return null;
-  }
-
+  const { generated } = playable;
   const locked = countLockedPieces(session);
-  const total = expectedPieceCount(session.gridSize);
+  const total = expectedPieceCount(gridSize);
   const complete = session.status === 'completed';
 
   return (
@@ -185,7 +229,7 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
             <Text style={styles.eyebrow}>
               {complete ? 'COMPLETED' : 'DRAG PIECES TO THE BOARD'}
             </Text>
-            <Text style={styles.title}>{generated.puzzle.title}</Text>
+            <Text style={styles.title}>{catalog.puzzle.title}</Text>
           </View>
           <View style={styles.actions}>
             <View style={styles.counter}>
@@ -205,24 +249,56 @@ export function GameScreen({ puzzleId }: GameScreenProps) {
           </View>
         </View>
 
+        <View style={styles.sizeRow}>
+          <Text style={styles.sizeLabel}>SIZE</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.sizeChips}
+          >
+            {SUPPORTED_GRID_SIZES.map((size) => {
+              const active = size === gridSize;
+              return (
+                <Pressable
+                  key={size}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`${size} by ${size}`}
+                  onPress={() => onSelectSize(size)}
+                  style={[styles.sizeChip, active && styles.sizeChipActive]}
+                >
+                  <Text style={[styles.sizeChipText, active && styles.sizeChipTextActive]}>
+                    {size}×{size}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
         <View style={styles.boardShell}>
           <PuzzleBoard
-            key={`${generated.puzzle.id}:${generated.puzzle.revision}:${generation}`}
+            key={`${generated.puzzle.id}:${generated.puzzle.revision}:${gridSize}:${generation}`}
             generated={generated}
             session={session}
-            imageModule={state.imageModule}
+            imageModule={catalog.imageModule}
             onSessionChange={onSessionChange}
           />
         </View>
 
         <Text style={styles.hint}>
           {complete
-            ? 'Nice — every piece locked. Tap Reset to shuffle and play again.'
-            : 'Pieces start in the tray below. Drag one onto its spot; it snaps when close enough.'}
+            ? 'Nice — every piece locked. Tap Reset to shuffle, or pick a bigger size.'
+            : `${total} pieces · drag one onto its spot; it snaps when close enough.`}
         </Text>
       </View>
     </SafeAreaView>
   );
+}
+
+// Kept exported for any caller still importing the old prop shape.
+export function isPlayableGridSize(value: number): value is GridSize {
+  return isSupportedGridSize(value);
 }
 
 const styles = StyleSheet.create({
@@ -300,10 +376,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+  sizeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  sizeLabel: {
+    color: colors.inkMuted,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  sizeChips: {
+    gap: spacing.xs,
+    paddingRight: spacing.sm,
+  },
+  sizeChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  sizeChipActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accent,
+  },
+  sizeChipText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  sizeChipTextActive: {
+    color: colors.surfaceStrong,
+  },
   boardShell: {
     flex: 1,
-    // No hard minimum: the board scales to whatever height is left, so forcing
-    // 420 here only pushed the column past the screen on short devices.
+    // No hard minimum: the board scales to whatever height is left, so forcing a
+    // large value only pushed the column past the screen on short devices.
     minHeight: 220,
     overflow: 'hidden',
     borderRadius: 24,

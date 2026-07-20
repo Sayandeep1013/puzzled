@@ -1,8 +1,19 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { countLockedPieces, type GameSession, type PuzzleStatus } from '@/game-engine';
+import {
+  countLockedPieces,
+  isSupportedGridSize,
+  type GameSession,
+  type GridSize,
+  type PuzzleStatus,
+} from '@/game-engine';
 
-import type { ProgressRepository, PuzzleProgressSummary } from '../repositories';
+import {
+  parseSessionStorageKey,
+  sessionStorageKey,
+  type ProgressRepository,
+  type PuzzleProgressSummary,
+} from '../repositories';
 
 interface SessionRow {
   session_json: string;
@@ -40,10 +51,10 @@ export class SQLiteProgressRepository implements ProgressRepository {
     `);
   }
 
-  async getSession(puzzleId: string): Promise<GameSession | null> {
+  async getSession(puzzleId: string, gridSize: GridSize): Promise<GameSession | null> {
     const row = await this.database.getFirstAsync<SessionRow>(
       'SELECT session_json FROM puzzle_sessions WHERE puzzle_id = ?',
-      puzzleId,
+      sessionStorageKey(puzzleId, gridSize),
     );
 
     return row ? (JSON.parse(row.session_json) as GameSession) : null;
@@ -56,14 +67,29 @@ export class SQLiteProgressRepository implements ProgressRepository {
       ORDER BY updated_at DESC
     `);
 
-    return rows.map((row) => ({
-      puzzleId: row.puzzle_id,
-      status: row.status,
-      lockedPieces: row.locked_pieces,
-      totalPieces: row.total_pieces,
-      elapsedMs: row.elapsed_ms,
-      updatedAt: row.updated_at,
-    }));
+    const summaries: PuzzleProgressSummary[] = [];
+
+    for (const row of rows) {
+      const parsed = parseSessionStorageKey(row.puzzle_id);
+      // Grid size is derivable from the piece count, but the key is authoritative;
+      // sqrt is the fallback for any legacy row written before composite keys.
+      const gridSize = parsed?.gridSize ?? Math.round(Math.sqrt(row.total_pieces));
+      if (!isSupportedGridSize(gridSize)) {
+        continue; // Orphaned/legacy row from a superseded schema; skip rather than crash.
+      }
+
+      summaries.push({
+        puzzleId: parsed?.puzzleId ?? row.puzzle_id,
+        gridSize,
+        status: row.status,
+        lockedPieces: row.locked_pieces,
+        totalPieces: row.total_pieces,
+        elapsedMs: row.elapsed_ms,
+        updatedAt: row.updated_at,
+      });
+    }
+
+    return summaries;
   }
 
   async saveSession(session: GameSession): Promise<void> {
@@ -81,7 +107,7 @@ export class SQLiteProgressRepository implements ProgressRepository {
           updated_at = excluded.updated_at,
           session_json = excluded.session_json
       `,
-      session.puzzleId,
+      sessionStorageKey(session.puzzleId, session.gridSize),
       session.status,
       countLockedPieces(session),
       session.pieces.length,
@@ -91,7 +117,10 @@ export class SQLiteProgressRepository implements ProgressRepository {
     );
   }
 
-  async deleteSession(puzzleId: string): Promise<void> {
-    await this.database.runAsync('DELETE FROM puzzle_sessions WHERE puzzle_id = ?', puzzleId);
+  async deleteSession(puzzleId: string, gridSize: GridSize): Promise<void> {
+    await this.database.runAsync(
+      'DELETE FROM puzzle_sessions WHERE puzzle_id = ?',
+      sessionStorageKey(puzzleId, gridSize),
+    );
   }
 }

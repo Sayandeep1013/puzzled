@@ -1,9 +1,12 @@
 import { useLocalSearchParams } from 'expo-router';
 
-import { GameScreen } from '@/features/game/game-screen';
+import { GameScreen, isPlayableGridSize } from '@/features/game/game-screen';
 
 export default function GameRoute() {
-  const { puzzleId } = useLocalSearchParams<{ puzzleId: string }>();
+  const { puzzleId, size } = useLocalSearchParams<{ puzzleId: string; size?: string }>();
 
-  return <GameScreen puzzleId={puzzleId ?? 'unknown'} />;
+  const requested = Number(size);
+  const initialGridSize = isPlayableGridSize(requested) ? requested : undefined;
+
+  return <GameScreen puzzleId={puzzleId ?? 'unknown'} initialGridSize={initialGridSize} />;
 }

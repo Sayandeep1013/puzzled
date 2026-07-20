@@ -4,15 +4,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getProgressRepository, LocalPuzzleRepository, type PuzzleProgressSummary } from '@/data';
-import { expectedPieceCount, type PuzzleDefinition } from '@/game-engine';
+import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing } from '@/shared/theme';
 
 interface HomeData {
   puzzles: PuzzleDefinition[];
-  summaries: Record<string, PuzzleProgressSummary>;
+  /** All saved sessions for a puzzle, most recently played first. */
+  byPuzzle: Record<string, PuzzleProgressSummary[]>;
 }
 
-const EMPTY: HomeData = { puzzles: [], summaries: {} };
+const EMPTY: HomeData = { puzzles: [], byPuzzle: {} };
 
 export function HomeScreen() {
   const [data, setData] = useState<HomeData>(EMPTY);
@@ -25,16 +26,19 @@ export function HomeScreen() {
       (async () => {
         const puzzles = await new LocalPuzzleRepository().list();
 
-        let summaries: Record<string, PuzzleProgressSummary> = {};
+        const byPuzzle: Record<string, PuzzleProgressSummary[]> = {};
         try {
+          // Rows arrive most-recent-first; preserve that so [0] is the resume target.
           const rows = await (await getProgressRepository()).listSummaries();
-          summaries = Object.fromEntries(rows.map((row) => [row.puzzleId, row]));
+          for (const row of rows) {
+            (byPuzzle[row.puzzleId] ??= []).push(row);
+          }
         } catch {
           // Progress is best-effort; an unreadable database still lists puzzles.
         }
 
         if (active) {
-          setData({ puzzles, summaries });
+          setData({ puzzles, byPuzzle });
         }
       })();
 
@@ -44,8 +48,9 @@ export function HomeScreen() {
     }, []),
   );
 
-  const placed = Object.values(data.summaries).reduce((sum, row) => sum + row.lockedPieces, 0);
-  const totalAcross = Object.values(data.summaries).reduce((sum, row) => sum + row.totalPieces, 0);
+  const allRows = Object.values(data.byPuzzle).flat();
+  const placed = allRows.reduce((sum, row) => sum + row.lockedPieces, 0);
+  const totalAcross = allRows.reduce((sum, row) => sum + row.totalPieces, 0);
   const percent = totalAcross > 0 ? Math.round((placed / totalAcross) * 100) : 0;
 
   return (
@@ -82,10 +87,12 @@ export function HomeScreen() {
         </View>
 
         {data.puzzles.map((puzzle) => {
-          const summary = data.summaries[puzzle.id];
-          const total = expectedPieceCount(puzzle.gridSize);
-          const done = summary?.status === 'completed';
-          const started = summary != null && summary.lockedPieces > 0;
+          const rows = data.byPuzzle[puzzle.id] ?? [];
+          const latest = rows[0]; // Most recently played size, or undefined.
+          const done = latest?.status === 'completed';
+          const started = latest != null && latest.lockedPieces > 0;
+          // Continue resumes the last size you played; a new puzzle uses its default.
+          const resumeSize = latest?.gridSize ?? puzzle.gridSize;
 
           return (
             <View key={puzzle.id} style={styles.puzzleCard}>
@@ -101,12 +108,17 @@ export function HomeScreen() {
                 <View style={styles.puzzleCopy}>
                   <Text style={styles.puzzleTitle}>{puzzle.title}</Text>
                   <Text style={styles.puzzleMeta}>
-                    {puzzle.gridSize}×{puzzle.gridSize} · {total} pieces
-                    {summary ? ` · ${summary.lockedPieces}/${summary.totalPieces} placed` : ''}
+                    {started
+                      ? `${latest.gridSize}×${latest.gridSize} · ${latest.lockedPieces}/${latest.totalPieces} placed`
+                      : `Choose 3×3 up to 10×10`}
+                    {rows.length > 1 ? ` · ${rows.length} sizes` : ''}
                   </Text>
                 </View>
                 <Link
-                  href={{ pathname: '/game/[puzzleId]', params: { puzzleId: puzzle.id } }}
+                  href={{
+                    pathname: '/game/[puzzleId]',
+                    params: { puzzleId: puzzle.id, size: String(resumeSize) },
+                  }}
                   asChild
                 >
                   {/* `Link asChild` overwrites the child's `style` prop, which silently
