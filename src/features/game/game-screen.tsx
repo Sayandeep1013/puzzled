@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getProgressRepository, getPuzzleImageModule, LocalPuzzleRepository } from '@/data';
 import {
+  cellSizeForGrid,
   countLockedPieces,
   createPlayablePuzzle,
   expectedPieceCount,
@@ -16,19 +17,12 @@ import { colors, radii, spacing } from '@/shared/theme';
 
 import { PuzzleBoard } from './puzzle-board';
 
-/** Larger grids need smaller cells to stay readable on a phone. */
-function cellSizeFor(gridSize: number): number {
-  if (gridSize <= 4) return 72;
-  if (gridSize <= 6) return 56;
-  return 44;
-}
-
 function buildPlayable(puzzle: PuzzleDefinition): PlayablePuzzle {
   return createPlayablePuzzle({
     puzzle,
     sessionId: `local-${puzzle.id}`,
     now: new Date().toISOString(),
-    cellSize: cellSizeFor(puzzle.gridSize),
+    cellSize: cellSizeForGrid(puzzle.gridSize),
     layoutMode: 'tray',
   });
 }

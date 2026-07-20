@@ -1,7 +1,19 @@
-import type { PieceGeometry, Point, Size } from './types';
+import type { GridSize, PieceGeometry, Point, Size } from './types';
 
 import { TAB_SIZE_RATIO } from './constants';
 import { createSeededRng } from './rng';
+
+/**
+ * Logical cell size (points) for a grid. The board scales to fit the viewport,
+ * so this sets internal resolution and snap distance, not final on-screen size.
+ *
+ * Anchored so a 4×4 stays at 72pt (its device-verified value) while denser grids
+ * shrink smoothly toward a floor that keeps 10×10 pieces from collapsing.
+ */
+export function cellSizeForGrid(gridSize: GridSize): number {
+  const anchorBoardWidth = 4 * 72;
+  return Math.max(28, Math.round(anchorBoardWidth / gridSize));
+}
 
 /** Deterministic Fisher-Yates. Same seed always produces the same tray order. */
 function shuffled<T>(items: readonly T[], random: () => number): T[] {
