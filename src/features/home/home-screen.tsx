@@ -1,10 +1,53 @@
-import { Link } from 'expo-router';
+import { Link, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getProgressRepository, LocalPuzzleRepository, type PuzzleProgressSummary } from '@/data';
+import { expectedPieceCount, type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing } from '@/shared/theme';
 
+interface HomeData {
+  puzzles: PuzzleDefinition[];
+  summaries: Record<string, PuzzleProgressSummary>;
+}
+
+const EMPTY: HomeData = { puzzles: [], summaries: {} };
+
 export function HomeScreen() {
+  const [data, setData] = useState<HomeData>(EMPTY);
+
+  // Refetch on focus so progress reflects the board you just left.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      (async () => {
+        const puzzles = await new LocalPuzzleRepository().list();
+
+        let summaries: Record<string, PuzzleProgressSummary> = {};
+        try {
+          const rows = await (await getProgressRepository()).listSummaries();
+          summaries = Object.fromEntries(rows.map((row) => [row.puzzleId, row]));
+        } catch {
+          // Progress is best-effort; an unreadable database still lists puzzles.
+        }
+
+        if (active) {
+          setData({ puzzles, summaries });
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
+  const placed = Object.values(data.summaries).reduce((sum, row) => sum + row.lockedPieces, 0);
+  const totalAcross = Object.values(data.summaries).reduce((sum, row) => sum + row.totalPieces, 0);
+  const percent = totalAcross > 0 ? Math.round((placed / totalAcross) * 100) : 0;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -18,48 +61,73 @@ export function HomeScreen() {
 
         <View style={styles.progressCard}>
           <View style={styles.progressCopy}>
-            <Text style={styles.cardLabel}>THIS WEEK</Text>
-            <Text style={styles.progressValue}>0 pieces placed</Text>
+            <Text style={styles.cardLabel}>YOUR PROGRESS</Text>
+            <Text style={styles.progressValue}>
+              {placed} {placed === 1 ? 'piece' : 'pieces'} placed
+            </Text>
             <Text style={styles.cardDescription}>
-              Progress will be stored on this device, even when you are offline.
+              Progress is stored on this device, even when you are offline.
             </Text>
           </View>
           <View style={styles.progressRing}>
-            <Text style={styles.progressPercent}>0%</Text>
+            <Text style={styles.progressPercent}>{percent}%</Text>
           </View>
         </View>
 
         <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>Ready to play?</Text>
-          <Text style={styles.sectionMeta}>4 × 4 · 16 pieces</Text>
+          <Text style={styles.sectionMeta}>
+            {data.puzzles.length} {data.puzzles.length === 1 ? 'puzzle' : 'puzzles'}
+          </Text>
         </View>
 
-        <View style={styles.puzzleCard}>
-          <View style={styles.preview}>
-            <View style={[styles.previewTile, styles.previewTileOne]} />
-            <View style={[styles.previewTile, styles.previewTileTwo]} />
-            <View style={[styles.previewTile, styles.previewTileThree]} />
-            <Text style={styles.previewLabel}>Sample puzzle</Text>
-          </View>
-          <View style={styles.puzzleDetails}>
-            <View>
-              <Text style={styles.puzzleTitle}>First Light</Text>
-              <Text style={styles.puzzleMeta}>Starter 4×4 · Drag & snap</Text>
+        {data.puzzles.map((puzzle) => {
+          const summary = data.summaries[puzzle.id];
+          const total = expectedPieceCount(puzzle.gridSize);
+          const done = summary?.status === 'completed';
+          const started = summary != null && summary.lockedPieces > 0;
+
+          return (
+            <View key={puzzle.id} style={styles.puzzleCard}>
+              <View style={styles.preview}>
+                <View style={[styles.previewTile, styles.previewTileOne]} />
+                <View style={[styles.previewTile, styles.previewTileTwo]} />
+                <View style={[styles.previewTile, styles.previewTileThree]} />
+                <Text style={styles.previewLabel}>
+                  {done ? 'Completed' : started ? 'In progress' : 'Not started'}
+                </Text>
+              </View>
+              <View style={styles.puzzleDetails}>
+                <View style={styles.puzzleCopy}>
+                  <Text style={styles.puzzleTitle}>{puzzle.title}</Text>
+                  <Text style={styles.puzzleMeta}>
+                    {puzzle.gridSize}×{puzzle.gridSize} · {total} pieces
+                    {summary ? ` · ${summary.lockedPieces}/${summary.totalPieces} placed` : ''}
+                  </Text>
+                </View>
+                <Link
+                  href={{ pathname: '/game/[puzzleId]', params: { puzzleId: puzzle.id } }}
+                  asChild
+                >
+                  {/* `Link asChild` overwrites the child's `style` prop, which silently
+                      erased the button fill. Keep the visuals on an inner View. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
+                  >
+                    {({ pressed }) => (
+                      <View style={[styles.playButton, pressed && styles.playButtonPressed]}>
+                        <Text style={styles.playButtonText}>
+                          {done ? 'Play again' : started ? 'Continue' : 'Start puzzle'}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                </Link>
+              </View>
             </View>
-            <Link
-              href={{ pathname: '/game/[puzzleId]', params: { puzzleId: 'first-light' } }}
-              asChild
-            >
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Start First Light puzzle"
-                style={({ pressed }) => [styles.playButton, pressed && styles.playButtonPressed]}
-              >
-                <Text style={styles.playButtonText}>Start puzzle</Text>
-              </Pressable>
-            </Link>
-          </View>
-        </View>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -207,6 +275,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
     padding: spacing.lg,
+  },
+  puzzleCopy: {
+    flex: 1,
   },
   puzzleTitle: {
     color: colors.ink,

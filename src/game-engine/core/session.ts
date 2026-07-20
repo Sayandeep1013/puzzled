@@ -179,6 +179,29 @@ export function snapThresholdForCellSize(
   return cellSize * ratio;
 }
 
+/**
+ * A restored session is only safe to resume if it describes the same board the
+ * generator just produced. Revision bumps, grid changes, or a new generator
+ * algorithm all invalidate stored piece positions.
+ */
+export function isSessionCompatible(
+  session: GameSession,
+  puzzle: PuzzleDefinition,
+  pieces: readonly PieceGeometry[],
+): boolean {
+  if (
+    session.puzzleId !== puzzle.id ||
+    session.puzzleRevision !== puzzle.revision ||
+    session.gridSize !== puzzle.gridSize ||
+    session.pieces.length !== pieces.length
+  ) {
+    return false;
+  }
+
+  const knownIds = new Set(pieces.map((piece) => piece.id));
+  return session.pieces.every((piece) => knownIds.has(piece.pieceId));
+}
+
 export function findGeometry(pieces: readonly PieceGeometry[], pieceId: string): PieceGeometry {
   const geometry = pieces.find((piece) => piece.id === pieceId);
   if (!geometry) {

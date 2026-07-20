@@ -12,7 +12,7 @@ import {
   type SkImage,
   type SkPath,
 } from '@shopify/react-native-skia';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -32,6 +32,7 @@ import {
   type PieceLocalPath,
   type PieceState,
   type Point,
+  type Size,
 } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
 import { colors } from '@/shared/theme';
@@ -55,15 +56,21 @@ function hitTestPiece(point: Point, piece: PieceState, prepared: PreparedPiece):
   }
 
   const { bounds } = prepared.localPath;
-  const left = piece.position.x + bounds.x;
-  const top = piece.position.y + bounds.y;
+  const localX = point.x - piece.position.x;
+  const localY = point.y - piece.position.y;
 
-  return (
-    point.x >= left &&
-    point.x <= left + bounds.width &&
-    point.y >= top &&
-    point.y <= top + bounds.height
-  );
+  // Cheap bounds reject before the exact silhouette test.
+  if (
+    localX < bounds.x ||
+    localX > bounds.x + bounds.width ||
+    localY < bounds.y ||
+    localY > bounds.y + bounds.height
+  ) {
+    return false;
+  }
+
+  // Tray pieces overlap; the bounding box alone grabs the wrong neighbour.
+  return prepared.skPath.contains(localX, localY);
 }
 
 function findTopPieceAt(
@@ -83,7 +90,23 @@ function findTopPieceAt(
   return null;
 }
 
-function StaticPiece({
+/*
+ * Piece fills are drawn by clipping the shared source image per piece.
+ *
+ * An earlier revision pre-baked each piece into its own texture with
+ * `Skia.Surface.MakeOffscreen` to avoid re-clipping a 1024² image once per piece.
+ * That renders correctly nowhere: the offscreen surface is GPU-backed and was
+ * being drawn from the JS thread, while the canvas consuming the snapshots runs
+ * on Skia's render thread under a different GL context — every piece came back
+ * blank on device. Baking has to happen on the render thread (a worklet, or
+ * `Atlas`/`Picture`) before it is worth re-attempting.
+ */
+
+/**
+ * Memoized: a drag changes one piece's props, and re-rendering the other 99 to
+ * move a single piece is what made large boards stutter.
+ */
+const StaticPiece = memo(function StaticPiece({
   piece,
   prepared,
   image,
@@ -100,24 +123,38 @@ function StaticPiece({
     return null;
   }
 
-  const { geometry, skPath } = prepared;
-
   return (
     <Group transform={[{ translateX: piece.position.x }, { translateY: piece.position.y }]}>
-      <Group clip={skPath}>
-        <Image
-          image={image}
-          x={-geometry.sourceRect.x * imageScale}
-          y={-geometry.sourceRect.y * imageScale}
-          width={image.width() * imageScale}
-          height={image.height() * imageScale}
-        />
-      </Group>
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
       <Path
-        path={skPath}
+        path={prepared.skPath}
         style="stroke"
         strokeWidth={piece.isLocked ? 1 : 1.4}
         color={piece.isLocked ? 'rgba(23,33,33,0.14)' : 'rgba(23,33,33,0.32)'}
+      />
+    </Group>
+  );
+});
+
+function PieceFill({
+  prepared,
+  image,
+  imageScale,
+}: {
+  prepared: PreparedPiece;
+  image: SkImage;
+  imageScale: number;
+}) {
+  const { geometry, skPath } = prepared;
+
+  return (
+    <Group clip={skPath}>
+      <Image
+        image={image}
+        x={-geometry.sourceRect.x * imageScale}
+        y={-geometry.sourceRect.y * imageScale}
+        width={image.width() * imageScale}
+        height={image.height() * imageScale}
       />
     </Group>
   );
@@ -137,20 +174,11 @@ function FloatingPiece({
   y: SharedValue<number>;
 }) {
   const transform = useDerivedValue(() => [{ translateX: x.value }, { translateY: y.value }]);
-  const { geometry, skPath } = prepared;
 
   return (
     <Group transform={transform}>
-      <Group clip={skPath}>
-        <Image
-          image={image}
-          x={-geometry.sourceRect.x * imageScale}
-          y={-geometry.sourceRect.y * imageScale}
-          width={image.width() * imageScale}
-          height={image.height() * imageScale}
-        />
-      </Group>
-      <Path path={skPath} style="stroke" strokeWidth={2.2} color="rgba(232,110,69,0.95)" />
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={2.2} color="rgba(232,110,69,0.95)" />
     </Group>
   );
 }
@@ -162,8 +190,10 @@ export function PuzzleBoard({
   onSessionChange,
 }: PuzzleBoardProps) {
   const image = useImage(imageModule);
-  const [viewportWidth, setViewportWidth] = useState(0);
+  const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [startedAtMs] = useState(() => Date.now());
+  // Resuming a saved session must keep the time already banked.
+  const [baselineElapsedMs] = useState(() => session.elapsedMs);
   const [activePieceId, setActivePieceId] = useState<string | null>(null);
 
   const dragX = useSharedValue(0);
@@ -174,6 +204,9 @@ export function PuzzleBoard({
   const activeIdSV = useSharedValue('');
   const scaleSV = useSharedValue(1);
   const paddingSV = useSharedValue(12);
+  /** True between onBegin and onFinalize, so a tap that ends before the JS-thread
+   *  hit test resolves does not strand a piece in the dragging state. */
+  const gestureActive = useSharedValue(false);
 
   const sessionRef = useRef(session);
   const onSessionChangeRef = useRef(onSessionChange);
@@ -196,24 +229,44 @@ export function PuzzleBoard({
   const cellSize = generated.cellSize.width;
   const boardSize = generated.boardSize;
 
-  const worldWidth = boardSize.width + boardPadding * 2;
-  const worldHeight = Math.max(
-    boardSize.height + boardPadding * 2 + boardSize.height * 1.15,
-    ...session.pieces.map((piece) => {
-      const path = generated.paths[piece.pieceId];
-      return piece.position.y + path.bounds.y + path.bounds.height + boardPadding + 24;
-    }),
-  );
+  /**
+   * World extent is measured once from the opening layout — board plus every piece's
+   * tab overhang. Deriving it from live positions instead would rescale the canvas
+   * mid-drag, and pieces only ever move inward toward the board.
+   */
+  const [world] = useState<Size>(() => {
+    let maxX = boardSize.width;
+    let maxY = boardSize.height;
 
-  const scale = viewportWidth > 0 ? Math.min(1, (viewportWidth - 4) / worldWidth) : 1;
+    for (const piece of session.pieces) {
+      const path = generated.paths[piece.pieceId];
+      if (!path) {
+        continue; // Tolerate a restored session whose geometry no longer matches.
+      }
+      maxX = Math.max(maxX, piece.position.x + path.bounds.x + path.bounds.width);
+      maxY = Math.max(maxY, piece.position.y + path.bounds.y + path.bounds.height);
+    }
+
+    return {
+      width: maxX + boardPadding * 2,
+      height: maxY + boardPadding * 2,
+    };
+  });
+
+  // Must fit BOTH axes: fitting width alone pushed the tray outside the clipped
+  // container, leaving the bottom rows unreachable on every phone-sized screen.
+  const scale =
+    viewport.width > 0 && viewport.height > 0
+      ? Math.min(1, viewport.width / world.width, viewport.height / world.height)
+      : 1;
 
   useEffect(() => {
     scaleSV.value = scale;
     paddingSV.value = boardPadding;
   }, [boardPadding, paddingSV, scale, scaleSV]);
 
-  const canvasWidth = worldWidth * scale;
-  const canvasHeight = worldHeight * scale;
+  const canvasWidth = world.width * scale;
+  const canvasHeight = world.height * scale;
 
   const preparedById = useMemo(() => {
     const map: Record<string, PreparedPiece> = {};
@@ -243,7 +296,10 @@ export function PuzzleBoard({
   const activePrepared = activePieceId ? preparedById[activePieceId] : null;
 
   const onLayout = (event: LayoutChangeEvent) => {
-    setViewportWidth(event.nativeEvent.layout.width);
+    const { width, height } = event.nativeEvent.layout;
+    setViewport((current) =>
+      current.width === width && current.height === height ? current : { width, height },
+    );
   };
 
   const panGesture = useMemo(() => {
@@ -259,43 +315,43 @@ export function PuzzleBoard({
         return;
       }
 
-      const raised = raisePiece(sessionRef.current, hit.pieceId, new Date().toISOString());
-      const piece = raised.pieces.find((entry) => entry.pieceId === hit.pieceId);
-      if (!piece) {
+      // The gesture may already have ended while this hop to the JS thread was
+      // in flight; committing now would leave the piece hidden with no finalize.
+      if (!gestureActive.value) {
         return;
       }
 
-      onSessionChangeRef.current(raised);
+      // Deliberately no session update here. Z-order is committed on drop, so
+      // touching a piece no longer re-renders the whole board.
       setActivePieceId(hit.pieceId);
-
-      const boardX = canvasX / currentScale - padding;
-      const boardY = canvasY / currentScale - padding;
       activeIdSV.value = hit.pieceId;
-      dragX.value = piece.position.x;
-      dragY.value = piece.position.y;
-      grabOffsetX.value = boardX - piece.position.x;
-      grabOffsetY.value = boardY - piece.position.y;
+      dragX.value = hit.position.x;
+      dragY.value = hit.position.y;
+      grabOffsetX.value = boardPoint.x - hit.position.x;
+      grabOffsetY.value = boardPoint.y - hit.position.y;
       isDragging.value = true;
     };
 
     const finishDrag = (pieceId: string, x: number, y: number) => {
       const geometry = generatedRef.current.pieces.find((piece) => piece.id === pieceId);
-      isDragging.value = false;
-      activeIdSV.value = '';
       setActivePieceId(null);
 
       if (!geometry) {
         return;
       }
 
+      // Raise then drop in one commit: a single state update per completed drag.
+      const now = new Date().toISOString();
+      const raised = raisePiece(sessionRef.current, pieceId, now);
+
       onSessionChangeRef.current(
         dropPiece({
-          session: sessionRef.current,
+          session: raised,
           pieceId,
           position: { x, y },
           solvedPosition: geometry.solvedPosition,
-          now: new Date().toISOString(),
-          elapsedMs: Date.now() - startedAtMs,
+          now,
+          elapsedMs: baselineElapsedMs + (Date.now() - startedAtMs),
           snapThreshold,
         }),
       );
@@ -303,6 +359,7 @@ export function PuzzleBoard({
 
     return Gesture.Pan()
       .onBegin((event) => {
+        gestureActive.value = true;
         runOnJS(tryBegin)(event.x, event.y);
       })
       .onChange((event) => {
@@ -315,15 +372,23 @@ export function PuzzleBoard({
         dragY.value = boardY - grabOffsetY.value;
       })
       .onFinalize(() => {
+        gestureActive.value = false;
+
         if (!isDragging.value || activeIdSV.value === '') {
           return;
         }
-        runOnJS(finishDrag)(activeIdSV.value, dragX.value, dragY.value);
+
+        const pieceId = activeIdSV.value;
+        isDragging.value = false;
+        activeIdSV.value = '';
+        runOnJS(finishDrag)(pieceId, dragX.value, dragY.value);
       });
   }, [
     activeIdSV,
+    baselineElapsedMs,
     dragX,
     dragY,
+    gestureActive,
     grabOffsetX,
     grabOffsetY,
     isDragging,
@@ -333,7 +398,7 @@ export function PuzzleBoard({
     startedAtMs,
   ]);
 
-  if (!image || viewportWidth === 0) {
+  if (!image || viewport.width === 0 || viewport.height === 0) {
     return <View style={styles.measure} onLayout={onLayout} />;
   }
 
@@ -402,7 +467,6 @@ const styles = StyleSheet.create({
   measure: {
     flex: 1,
     width: '100%',
-    minHeight: 380,
     justifyContent: 'center',
   },
 });

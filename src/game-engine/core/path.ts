@@ -1,6 +1,6 @@
 import type { EdgeShape, PieceEdges, Point, Size } from './types';
 
-import { EDGE_CONTROL, TAB_SIZE_RATIO } from './constants';
+import { KNOB_PROFILE, TAB_SIZE_RATIO } from './constants';
 
 export type PathCommand =
   | { type: 'M'; x: number; y: number }
@@ -75,35 +75,32 @@ function appendEdge(
   }
 
   const normal = unitNormal(start, end);
-  const depth = shape * tabSize * EDGE_CONTROL.tabDepth;
-  const neckStart = pointOn(start, end, EDGE_CONTROL.neckStart);
-  const peakBase = pointOn(start, end, EDGE_CONTROL.tabPeak);
-  const neckEnd = pointOn(start, end, EDGE_CONTROL.neckEnd);
-  const peak = offset(peakBase, normal, depth);
+  const depth = shape * tabSize;
 
-  // Flat run to the tab neck.
-  commands.push({ type: 'L', x: neckStart.x, y: neckStart.y });
+  /** Map a normalized (t along edge, k outward) profile point into piece-local space. */
+  const at = (t: number, k: number): Point => offset(pointOn(start, end, t), normal, k * depth);
 
-  // Smooth tab / blank using two cubics around the peak.
-  commands.push({
-    type: 'C',
-    x1: offset(neckStart, normal, depth * 0.2).x,
-    y1: offset(neckStart, normal, depth * 0.2).y,
-    x2: offset(peak, normal, -depth * 0.05).x - (end.x - start.x) * 0.08,
-    y2: offset(peak, normal, -depth * 0.05).y - (end.y - start.y) * 0.08,
-    x: peak.x,
-    y: peak.y,
-  });
-  commands.push({
-    type: 'C',
-    x1: offset(peak, normal, -depth * 0.05).x + (end.x - start.x) * 0.08,
-    y1: offset(peak, normal, -depth * 0.05).y + (end.y - start.y) * 0.08,
-    x2: offset(neckEnd, normal, depth * 0.2).x,
-    y2: offset(neckEnd, normal, depth * 0.2).y,
-    x: neckEnd.x,
-    y: neckEnd.y,
-  });
+  // Flat run up to the neck.
+  const neck = at(KNOB_PROFILE.neckStart, 0);
+  commands.push({ type: 'L', x: neck.x, y: neck.y });
 
+  for (const segment of KNOB_PROFILE.segments) {
+    const c1 = at(segment.c1.t, segment.c1.k);
+    const c2 = at(segment.c2.t, segment.c2.k);
+    const to = at(segment.to.t, segment.to.k);
+
+    commands.push({
+      type: 'C',
+      x1: c1.x,
+      y1: c1.y,
+      x2: c2.x,
+      y2: c2.y,
+      x: to.x,
+      y: to.y,
+    });
+  }
+
+  // Flat run from the far side of the neck to the corner.
   commands.push({ type: 'L', x: end.x, y: end.y });
 }
 

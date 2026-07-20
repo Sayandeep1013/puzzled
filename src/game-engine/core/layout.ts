@@ -1,6 +1,19 @@
 import type { PieceGeometry, Point, Size } from './types';
 
+import { TAB_SIZE_RATIO } from './constants';
 import { createSeededRng } from './rng';
+
+/** Deterministic Fisher-Yates. Same seed always produces the same tray order. */
+function shuffled<T>(items: readonly T[], random: () => number): T[] {
+  const result = [...items];
+
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    [result[index], result[swap]] = [result[swap], result[index]];
+  }
+
+  return result;
+}
 
 export type LayoutMode = 'tray' | 'scatter';
 
@@ -18,23 +31,26 @@ export interface LayoutOptions {
 function trayPositions(
   pieces: readonly PieceGeometry[],
   boardSize: Size,
+  seed: string,
   gap: number,
-  trayHeightFactor: number,
 ): Record<string, Point> {
   const columns = Math.ceil(Math.sqrt(pieces.length));
-  const cellWidth = boardSize.width / columns;
-  const trayTop = boardSize.height + gap;
-  const trayHeight = boardSize.height * trayHeightFactor;
-  const rows = Math.ceil(pieces.length / columns);
-  const cellHeight = trayHeight / rows;
+  const cellSize = boardSize.width / columns;
+  // Slots must clear the tab overhang, otherwise neighbouring pieces overlap and
+  // the tray reads as one continuous image instead of separate pieces.
+  const slotWidth = cellSize + cellSize * TAB_SIZE_RATIO + gap;
+  const slotHeight = cellSize + cellSize * TAB_SIZE_RATIO * 2 + gap;
+  const trayTop = boardSize.height + gap * 2;
   const positions: Record<string, Point> = {};
 
-  pieces.forEach((piece, index) => {
+  // Laying pieces out in generation order would rebuild the solved picture in the
+  // tray and give the whole puzzle away, so slot assignment is shuffled.
+  shuffled(pieces, createSeededRng(`${seed}:tray`)).forEach((piece, index) => {
     const column = index % columns;
     const row = Math.floor(index / columns);
     positions[piece.id] = {
-      x: column * cellWidth + gap,
-      y: trayTop + row * cellHeight + gap,
+      x: column * slotWidth + gap,
+      y: trayTop + row * slotHeight + gap,
     };
   });
 
@@ -79,7 +95,7 @@ export function createInitialPositions({
   }
 
   if (mode === 'tray') {
-    return trayPositions(pieces, boardSize, gap, trayHeightFactor);
+    return trayPositions(pieces, boardSize, seed, gap);
   }
 
   return scatterPositions(pieces, boardSize, seed, gap, trayHeightFactor);

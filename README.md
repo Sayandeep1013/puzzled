@@ -7,11 +7,15 @@ Repository: [github.com/Sayandeep1013/puzzled](https://github.com/Sayandeep1013/
 
 Right now the app ships:
 
-- Home screen + playable Game screen
-- Pure TypeScript **game engine** (piece generation, paths, layout, snap/lock, completion)
-- **Skia drag board** — clip pieces from one image, drag from tray, snap when close
-- Local catalog + SQLite progress contracts (cloud sync later via Supabase)
+- Home screen with real progress + playable Game screen
+- Pure TypeScript **game engine** (piece generation, jigsaw paths, layout, snap/lock, completion)
+- **Skia drag board** — pieces clipped from one image, dragged from a shuffled tray, snapped when
+  close
+- **Local persistence** — sessions saved to SQLite and resumed on reopen, plus a Reset control
 - Development-build support for native feel-testing on device
+
+**New to the project?** Start with [CONTRIBUTING.md](./CONTRIBUTING.md) — onboarding path, team
+conventions, and the architecture rules that are easy to break by accident.
 
 Architecture details live in [TECH.md](./TECH.md). Read that before changing engine or dependency
 rules.
@@ -206,9 +210,15 @@ Use this when Android Studio is not set up (common on a clean Windows machine).
 ```bash
 npm i -g eas-cli
 eas login
-eas build:configure   # once per machine/repo if prompted
 npm run build:dev:android
 ```
+
+The EAS project is already linked (`extra.eas.projectId` in `app.json`), so `eas build:configure` is
+not needed. You do need an Expo account with access to the `sayandeep1013` organisation — ask the
+repo owner for an invite, then `eas login`.
+
+Android signing keys live on EAS, not in the repo. The first build generates a keystore in the cloud
+and every later build reuses it; nobody needs a local `keytool`.
 
 `eas.json` profile `development` builds an **internal APK** with the dev client.
 
@@ -250,30 +260,41 @@ npm test
 
 ### What you should feel in Game
 
-1. Home shows **First Light** (4×4 starter, 16 pieces — easy to judge snap feel)
-2. Start puzzle → image pieces sit in a tray under the board
+1. Home shows **First Light** (4×4 starter, 16 pieces — easy to judge snap feel) with your placed count
+2. Start puzzle → shuffled pieces sit in a tray under the board, each a distinct jigsaw shape
 3. Drag a piece; it lifts with an accent stroke
 4. Drop near the correct cell → it snaps and locks
 5. Counter updates; status flips to completed when all pieces lock
+6. Leave and reopen → the board is exactly where you left it
+7. **Reset** in the header reshuffles and clears saved progress for that puzzle
 
 Production boards stay 8×8 / 9×9 / 10×10 — bump `gridSize` on the catalog entry when you want denser
 play.
 
 ### APK testing checklist
 
-| Check    | Pass when                                           |
-| -------- | --------------------------------------------------- |
-| Install  | APK installs; app icon **Puzzled** opens            |
-| Home     | Brand + First Light card visible                    |
-| Navigate | **Start puzzle** opens the board                    |
-| Image    | Sunrise landscape shows on pieces (not blank tiles) |
-| Drag     | Piece follows finger without large lag              |
-| Snap     | Piece locks when released near the correct cell     |
-| Miss     | Far drop stays unlocked in the tray/board area      |
-| Progress | Header counter increases on each lock               |
-| Complete | All 16 locks → completed messaging                  |
+| Check       | Pass when                                                        |
+| ----------- | ---------------------------------------------------------------- |
+| Install     | APK installs; app icon **Puzzled** opens                         |
+| Home        | Brand + First Light card visible                                 |
+| Navigate    | **Start puzzle** opens the board                                 |
+| Image       | Sunrise landscape shows on pieces (not blank tiles)              |
+| Shape       | Pieces have rounded knobs and sockets — not squares or spikes    |
+| Tray        | Tray looks shuffled; it does not re-form the photo in rows       |
+| Reachable   | Every tray piece is visible and grabbable without scrolling      |
+| Drag        | Piece follows finger without large lag                           |
+| Grab        | Tapping overlapping pieces picks the one actually under a finger |
+| Snap        | Piece locks when released near the correct cell                  |
+| Miss        | Far drop stays unlocked in the tray/board area                   |
+| Progress    | Header counter increases on each lock                            |
+| Persist     | Leave the screen and return → placed pieces are still placed     |
+| Kill/reopen | Force-close the app and reopen → progress survives               |
+| Reset       | **Reset** clears the board and reshuffles                        |
+| Home total  | Home reflects the placed count after leaving the board           |
+| Complete    | All 16 locks → completed messaging                               |
 
-Tune next: snap threshold (`DEFAULT_SNAP_THRESHOLD_RATIO`), tray spacing, tab size, cell size.
+Tune next: snap threshold (`DEFAULT_SNAP_THRESHOLD_RATIO`), tab size (`TAB_SIZE_RATIO`), knob shape
+(`KNOB_PROFILE`), tray spacing, cell size.
 
 ### Stale cache after a pull
 
@@ -308,15 +329,19 @@ npm run deps:check
 
 ### Engine coverage (current)
 
-| Area                       | Module                   | Tests                                       |
-| -------------------------- | ------------------------ | ------------------------------------------- |
-| Seeded complementary edges | `edges.ts`               | 8 / 9 / 10 grids, borders, determinism      |
-| Piece + path generation    | `generate.ts`, `path.ts` | counts, paths, bounds                       |
-| Tab/blank mating           | `mating.test.ts`         | shared-edge peaks align in board space      |
-| Coordinates                | `coordinates.ts`         | board ↔ image ↔ screen round-trips          |
-| Tray / scatter layout      | `layout.ts`              | below-board placement, seeded scatter       |
-| Session reducers           | `session.ts`             | raise, snap/lock, far drop, full completion |
-| Bootstrap API              | `playable.ts`            | full 8/9/10 session + playthrough           |
+| Area                       | Module                   | Tests                                                        |
+| -------------------------- | ------------------------ | ------------------------------------------------------------ |
+| Seeded complementary edges | `edges.ts`               | 8 / 9 / 10 grids, borders, determinism                       |
+| Piece + path generation    | `generate.ts`, `path.ts` | counts, paths, bounds                                        |
+| Tab/blank mating           | `mating.test.ts`         | every interior edge traces an identical curve on both pieces |
+| Knob shape                 | `mating.test.ts`         | bulb stays wider than its neck (guards the spike regression) |
+| Coordinates                | `coordinates.ts`         | board ↔ image ↔ screen round-trips                           |
+| Tray / scatter layout      | `layout.test.ts`         | below-board placement, shuffle, slot spacing, determinism    |
+| Session reducers           | `session.ts`             | raise, snap/lock, far drop, full completion                  |
+| Bootstrap API              | `playable.ts`            | full 8/9/10 session + playthrough                            |
+
+`mating.test.ts` compares real generated path points between neighbours, so broken geometry fails
+the suite rather than slipping through — do not weaken it into arithmetic it computes itself.
 
 Entry point for features:
 
@@ -334,9 +359,15 @@ src/
   features/            Screen UI + orchestration
   game-engine/
     core/              Pure rules (no React / Skia / SQLite)
-    rendering/         Future Skia adapters
+    rendering/         Skia adapters (path commands → SkPath)
     interaction/       Future gesture controllers
-  data/                Catalog + SQLite repositories
+  data/
+    local/
+      database.ts              Shared SQLite connection + migration
+      local-puzzle-repository  Bundled puzzle catalog
+      puzzle-assets.ts         Puzzle id → bundled image module
+      sqlite-progress-repo     Session save / load / delete
+    repositories.ts    Repository interfaces
   shared/              Theme tokens
 ```
 
@@ -389,13 +420,31 @@ Scripts of interest:
 5. Bump `GENERATOR_ALGORITHM_VERSION` in `constants.ts` if generation math changes incompatibly with
    saved sessions
 
-Suggested next implementation order (also in TECH.md):
+Done so far: Skia board rendering, gesture drag / z-order / snap, session persistence through
+`SQLiteProgressRepository`, and Home progress from real summaries.
 
-1. Skia board rendering from `PieceLocalPath` + image clip
-2. Gesture drag / z-order / snap animation on Reanimated shared values
-3. Persist sessions through `SQLiteProgressRepository`
-4. Wire Home progress from real summaries
+Suggested next implementation order:
+
+1. Per-piece render caching on the **render thread** (see Known gaps below)
+2. Scrollable tray separate from the board, so pieces stay full size on short screens
+3. More puzzles + a real catalog screen
+4. Timer / move count surfaced in the UI
 5. Optional Supabase auth + sync
+
+### Known gaps
+
+- **Piece fills re-clip the shared source image once per piece.** At the current 4×4 that is
+  irrelevant; at a 10×10 board it is 100 clips of a 1024² image per frame and will need attention.
+
+  Do not solve it by baking textures with `Skia.Surface.MakeOffscreen` from React render code — that
+  was tried and **rendered every piece blank on device**. The offscreen surface is GPU-backed, and
+  snapshots taken on the JS thread are invalid on the render thread that draws them. Any caching has
+  to happen on the render thread: a worklet, `<Atlas>`, or a recorded `Picture`. Verify on hardware
+  before trusting it; this failure is invisible to the type checker, the linter, and the test suite.
+
+- Fitting board and tray together shrinks the board to roughly 0.7 scale on ~730pt-tall screens.
+- `src/game-engine/interaction/` is still an empty placeholder; gesture code lives in the board
+  component.
 
 ---
 
