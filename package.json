@@ -3,6 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo-google-fonts/nunito": "^0.4.2",
+    "@expo-google-fonts/patrick-hand": "^0.4.1",
     "@expo/ui": "~57.0.7",
     "@shopify/react-native-skia": "2.6.2",
     "expo": "~57.0.7",
