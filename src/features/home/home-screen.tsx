@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,7 +20,8 @@ import {
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { colors, radii, spacing } from '@/shared/theme';
+import { colors, radii, spacing, typography } from '@/shared/theme';
+import { PaperBackground, SketchButton, SketchFrame, SketchIcon, type IconName } from '@/shared/ui';
 
 interface HomeData {
   bundled: PuzzleDefinition[];
@@ -61,6 +62,7 @@ function titleFromFileName(fileName: string | null | undefined): string {
 export function HomeScreen() {
   const [data, setData] = useState<HomeData>(EMPTY);
   const [importing, setImporting] = useState(false);
+  const router = useRouter();
 
   // Refetch on focus so progress reflects the board you just left.
   useFocusEffect(
@@ -143,87 +145,125 @@ export function HomeScreen() {
   const totalAcross = allRows.reduce((sum, row) => sum + row.totalPieces, 0);
   const percent = totalAcross > 0 ? Math.round((placed / totalAcross) * 100) : 0;
 
+  const firstPlayable = data.bundled[0] ?? data.user[0];
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heading}>
-          <Text style={styles.eyebrow}>YOUR QUIET CORNER</Text>
-          <Text style={styles.title}>Puzzled</Text>
-          <Text style={styles.subtitle}>
-            Slow down, find the edges, and make the picture whole.
-          </Text>
-        </View>
+    <PaperBackground>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.hero}>
+            <Text style={styles.eyebrow}>YOUR QUIET CORNER</Text>
+            <Text style={styles.title}>Puzzle Journey</Text>
 
-        <View style={styles.progressCard}>
-          <View style={styles.progressCopy}>
-            <Text style={styles.cardLabel}>YOUR PROGRESS</Text>
-            <Text style={styles.progressValue}>
-              {placed} {placed === 1 ? 'piece' : 'pieces'} placed
-            </Text>
-            <Text style={styles.cardDescription}>
-              Progress is stored on this device, even when you are offline.
-            </Text>
-          </View>
-          <View style={styles.progressRing}>
-            <Text style={styles.progressPercent}>{percent}%</Text>
-          </View>
-        </View>
+            <View style={styles.heroPiece}>
+              <SketchFrame fill={colors.gold} radius={26} seed={99} style={styles.heroPieceFrame}>
+                <View style={styles.heroPieceInner}>
+                  <SketchIcon name="puzzle" size={92} color={colors.inkSoft} strokeWidth={2.4} />
+                </View>
+              </SketchFrame>
+            </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeading}>
-            <Text style={styles.sectionTitle}>Ready to play?</Text>
-            <Text style={styles.sectionMeta}>
-              {data.bundled.length} starter{data.bundled.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-          {data.bundled.map((puzzle) => (
-            <PuzzleCard key={puzzle.id} puzzle={puzzle} rows={data.byPuzzle[puzzle.id] ?? []} />
-          ))}
-        </View>
+            <Text style={styles.subtitle}>Relax your mind. Enjoy the moment.</Text>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeading}>
-            <Text style={styles.sectionTitle}>Your puzzles</Text>
-            <Text style={styles.sectionMeta}>
-              {data.user.length} {data.user.length === 1 ? 'photo' : 'photos'}
-            </Text>
-          </View>
+            <SketchButton
+              label="Play Now"
+              variant="primary"
+              style={styles.playNow}
+              disabled={!firstPlayable}
+              onPress={() => {
+                if (firstPlayable) {
+                  router.push({
+                    pathname: '/difficulty/[puzzleId]',
+                    params: { puzzleId: firstPlayable.id },
+                  });
+                }
+              }}
+            />
 
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Add a puzzle from your gallery"
-            onPress={onImport}
-            disabled={importing}
-            style={({ pressed }) => [styles.importButton, pressed && styles.importButtonPressed]}
-          >
-            {importing ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : (
-              <Text style={styles.importPlus}>＋</Text>
-            )}
-            <Text style={styles.importText}>
-              {importing ? 'Adding your photo…' : 'Add from gallery'}
-            </Text>
-          </Pressable>
-
-          {data.user.length === 0 ? (
-            <Text style={styles.emptyHint}>
-              Pick any photo and it becomes a jigsaw you can play at 3×3 up to 10×10.
-            </Text>
-          ) : (
-            data.user.map((puzzle) => (
-              <PuzzleCard
-                key={puzzle.id}
-                puzzle={puzzle}
-                rows={data.byPuzzle[puzzle.id] ?? []}
-                previewUri={puzzle.image.uri}
-                onDelete={() => onDelete(puzzle)}
+            <View style={styles.quickRow}>
+              <QuickLink
+                icon="calendar"
+                label="Daily Puzzle"
+                onPress={() => router.push('/daily')}
               />
-            ))
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+              <QuickLink icon="library" label="My Library" onPress={() => router.push('/library')} />
+            </View>
+          </View>
+
+          <SketchFrame fill={colors.sage} radius={radii.lg} seed={5} style={styles.progressCard}>
+            <View style={styles.progressRow}>
+              <View style={styles.progressCopy}>
+                <Text style={styles.cardLabel}>YOUR PROGRESS</Text>
+                <Text style={styles.progressValue}>
+                  {placed} {placed === 1 ? 'piece' : 'pieces'} placed
+                </Text>
+                <Text style={styles.cardDescription}>Saved on this device, even offline.</Text>
+              </View>
+              <View style={styles.progressRing}>
+                <Text style={styles.progressPercent}>{percent}%</Text>
+              </View>
+            </View>
+          </SketchFrame>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeading}>
+              <Text style={styles.sectionTitle}>Ready to play?</Text>
+              <Text style={styles.sectionMeta}>
+                {data.bundled.length} starter{data.bundled.length === 1 ? '' : 's'}
+              </Text>
+            </View>
+            {data.bundled.map((puzzle) => (
+              <PuzzleCard key={puzzle.id} puzzle={puzzle} rows={data.byPuzzle[puzzle.id] ?? []} />
+            ))}
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeading}>
+              <Text style={styles.sectionTitle}>Your puzzles</Text>
+              <Text style={styles.sectionMeta}>
+                {data.user.length} {data.user.length === 1 ? 'photo' : 'photos'}
+              </Text>
+            </View>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add a puzzle from your gallery"
+              onPress={onImport}
+              disabled={importing}
+            >
+              <SketchFrame fill={colors.surface} radius={radii.lg} seed={11}>
+                <View style={styles.importInner}>
+                  {importing ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Text style={styles.importPlus}>＋</Text>
+                  )}
+                  <Text style={styles.importText}>
+                    {importing ? 'Adding your photo…' : 'Add from gallery'}
+                  </Text>
+                </View>
+              </SketchFrame>
+            </Pressable>
+
+            {data.user.length === 0 ? (
+              <Text style={styles.emptyHint}>
+                Pick any photo and it becomes a jigsaw you can play at 3×3 up to 10×10.
+              </Text>
+            ) : (
+              data.user.map((puzzle) => (
+                <PuzzleCard
+                  key={puzzle.id}
+                  puzzle={puzzle}
+                  rows={data.byPuzzle[puzzle.id] ?? []}
+                  previewUri={puzzle.image.uri}
+                  onDelete={() => onDelete(puzzle)}
+                />
+              ))
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </PaperBackground>
   );
 }
 
@@ -241,254 +281,205 @@ function PuzzleCard({
   const latest = rows[0]; // Most recently played size, or undefined.
   const done = latest?.status === 'completed';
   const started = latest != null && latest.lockedPieces > 0;
-  // Continue resumes the last size you played; a new puzzle uses its default.
+  // Continue/replay jumps straight to the last size; a fresh start picks difficulty.
   const resumeSize = latest?.gridSize ?? puzzle.gridSize;
+  const href = started
+    ? { pathname: '/game/[puzzleId]' as const, params: { puzzleId: puzzle.id, size: String(resumeSize) } }
+    : { pathname: '/difficulty/[puzzleId]' as const, params: { puzzleId: puzzle.id } };
 
   return (
-    <View style={styles.puzzleCard}>
-      <View style={styles.preview}>
-        {previewUri ? (
-          <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="cover" />
-        ) : (
-          <>
-            <View style={[styles.previewTile, styles.previewTileOne]} />
-            <View style={[styles.previewTile, styles.previewTileTwo]} />
-            <View style={[styles.previewTile, styles.previewTileThree]} />
-          </>
-        )}
-        <Text style={styles.previewLabel}>
-          {done ? 'Completed' : started ? 'In progress' : 'Not started'}
-        </Text>
-        {onDelete ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Delete ${puzzle.title}`}
-            onPress={onDelete}
-            hitSlop={10}
-            style={({ pressed }) => [styles.deleteButton, pressed && styles.deleteButtonPressed]}
-          >
-            <Text style={styles.deleteButtonText}>Delete</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <View style={styles.puzzleDetails}>
-        <View style={styles.puzzleCopy}>
-          <Text style={styles.puzzleTitle} numberOfLines={1}>
-            {puzzle.title}
+    <SketchFrame fill={colors.surface} radius={radii.lg} seed={puzzle.id.length * 7 + 3}>
+      <View style={styles.cardBody}>
+        <View style={styles.preview}>
+          {previewUri ? (
+            <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="cover" />
+          ) : (
+            <>
+              <View style={[styles.previewTile, styles.previewTileOne]} />
+              <View style={[styles.previewTile, styles.previewTileTwo]} />
+              <View style={[styles.previewTile, styles.previewTileThree]} />
+            </>
+          )}
+          <Text style={styles.previewLabel}>
+            {done ? 'Completed' : started ? 'In progress' : 'Not started'}
           </Text>
-          <Text style={styles.puzzleMeta}>
-            {started
-              ? `${latest.gridSize}×${latest.gridSize} · ${latest.lockedPieces}/${latest.totalPieces} placed`
-              : 'Choose 3×3 up to 10×10'}
-            {rows.length > 1 ? ` · ${rows.length} sizes` : ''}
-          </Text>
+          {onDelete ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${puzzle.title}`}
+              onPress={onDelete}
+              hitSlop={10}
+              style={({ pressed }) => [styles.deleteButton, pressed && styles.deleteButtonPressed]}
+            >
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </Pressable>
+          ) : null}
         </View>
-        <Link
-          href={{
-            pathname: '/game/[puzzleId]',
-            params: { puzzleId: puzzle.id, size: String(resumeSize) },
-          }}
-          asChild
-        >
-          {/* `Link asChild` overwrites the child's `style` prop, which silently
-              erased the button fill. Keep the visuals on an inner View. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
-          >
-            {({ pressed }) => (
-              <View style={[styles.playButton, pressed && styles.playButtonPressed]}>
-                <Text style={styles.playButtonText}>
-                  {done ? 'Play again' : started ? 'Continue' : 'Start puzzle'}
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        </Link>
+        <View style={styles.puzzleDetails}>
+          <View style={styles.puzzleCopy}>
+            <Text style={styles.puzzleTitle} numberOfLines={1}>
+              {puzzle.title}
+            </Text>
+            <Text style={styles.puzzleMeta}>
+              {started
+                ? `${latest.gridSize}×${latest.gridSize} · ${latest.lockedPieces}/${latest.totalPieces} placed`
+                : 'Choose 3×3 up to 10×10'}
+              {rows.length > 1 ? ` · ${rows.length} sizes` : ''}
+            </Text>
+          </View>
+          <Link href={href} asChild>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
+            >
+              {({ pressed }) => (
+                <SketchFrame
+                  fill={pressed ? colors.primaryPressed : colors.primary}
+                  radius={radii.md}
+                  seed={puzzle.id.length * 13 + 1}
+                >
+                  <View style={styles.playButton}>
+                    <Text style={styles.playButtonText}>
+                      {done ? 'Play again' : started ? 'Continue' : 'Start'}
+                    </Text>
+                  </View>
+                </SketchFrame>
+              )}
+            </Pressable>
+          </Link>
+        </View>
       </View>
-    </View>
+    </SketchFrame>
+  );
+}
+
+function QuickLink({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.quickLink}>
+      <SketchFrame fill={colors.surface} radius={radii.md} seed={label.length * 6 + 2}>
+        <View style={styles.quickLinkInner}>
+          <SketchIcon name={icon} size={22} color={colors.primary} />
+          <Text style={styles.quickLinkLabel}>{label}</Text>
+        </View>
+      </SketchFrame>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
+  safeArea: { flex: 1 },
+  quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch', marginTop: spacing.sm, maxWidth: 320, width: '100%' },
+  quickLink: { flex: 1 },
+  quickLinkInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
   },
+  quickLinkLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.ink },
   content: {
     width: '100%',
     maxWidth: 760,
     alignSelf: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.lg,
     gap: spacing.xl,
   },
-  heading: {
-    gap: spacing.sm,
-  },
+  hero: { alignItems: 'center', gap: spacing.sm },
   eyebrow: {
+    ...typography.label,
     color: colors.accent,
-    fontSize: 12,
-    fontWeight: '800',
     letterSpacing: 1.8,
   },
   title: {
+    ...typography.hero,
     color: colors.ink,
-    fontSize: 44,
-    fontWeight: '800',
-    letterSpacing: -1.5,
+    textAlign: 'center',
   },
+  heroPiece: { marginVertical: spacing.sm },
+  heroPieceFrame: { width: 150 },
+  heroPieceInner: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   subtitle: {
-    maxWidth: 500,
-    color: colors.inkMuted,
+    ...typography.body,
     fontSize: 17,
-    lineHeight: 25,
+    color: colors.inkMuted,
+    textAlign: 'center',
   },
-  progressCard: {
+  playNow: { alignSelf: 'stretch', marginTop: spacing.sm, maxWidth: 320, width: '100%' },
+  progressCard: { width: '100%' },
+  progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
     padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.sage,
   },
-  progressCopy: {
-    flex: 1,
-    gap: spacing.sm,
-  },
-  cardLabel: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.4,
-  },
-  progressValue: {
-    color: colors.ink,
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  cardDescription: {
-    maxWidth: 430,
-    color: colors.inkMuted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
+  progressCopy: { flex: 1, gap: spacing.xs },
+  cardLabel: { ...typography.label, color: colors.inkSoft },
+  progressValue: { ...typography.heading, color: colors.inkSoft },
+  cardDescription: { ...typography.caption, color: colors.inkMuted },
   progressRing: {
     width: 72,
     height: 72,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 7,
+    borderWidth: 5,
     borderColor: colors.surfaceStrong,
     borderRadius: radii.pill,
   },
-  progressPercent: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  section: {
-    gap: spacing.md,
-  },
+  progressPercent: { ...typography.bodyStrong, color: colors.inkSoft, fontSize: 17 },
+  section: { gap: spacing.md },
   sectionHeading: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  sectionTitle: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  sectionMeta: {
-    color: colors.inkMuted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  importButton: {
+  sectionTitle: { ...typography.title, fontSize: 26, color: colors.ink },
+  sectionMeta: { ...typography.caption, color: colors.inkMuted },
+  importInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.lg,
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
   },
-  importButtonPressed: {
-    backgroundColor: colors.sage,
-  },
-  importPlus: {
-    color: colors.accent,
-    fontSize: 22,
-    fontWeight: '800',
-    marginTop: -2,
-  },
-  importText: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: '800',
-  },
+  importPlus: { ...typography.title, color: colors.primary, marginTop: -2 },
+  importText: { ...typography.bodyStrong, color: colors.ink },
   emptyHint: {
+    ...typography.body,
     color: colors.inkMuted,
-    fontSize: 14,
-    lineHeight: 20,
     paddingHorizontal: spacing.xs,
   },
-  puzzleCard: {
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-  },
+  cardBody: { overflow: 'hidden', borderRadius: radii.lg },
   preview: {
-    height: 210,
+    height: 200,
     overflow: 'hidden',
     justifyContent: 'flex-end',
     padding: spacing.lg,
     backgroundColor: '#F4C78D',
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
   },
-  previewImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  previewTile: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: radii.pill,
-  },
-  previewTileOne: {
-    top: -70,
-    left: -20,
-    backgroundColor: '#E88962',
-  },
-  previewTileTwo: {
-    top: 20,
-    right: -30,
-    backgroundColor: '#759A88',
-  },
-  previewTileThree: {
-    bottom: -110,
-    left: 110,
-    backgroundColor: '#F8E6B9',
-  },
+  previewImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  previewTile: { position: 'absolute', width: 180, height: 180, borderRadius: radii.pill },
+  previewTileOne: { top: -70, left: -20, backgroundColor: '#E88962' },
+  previewTileTwo: { top: 20, right: -30, backgroundColor: '#759A88' },
+  previewTileThree: { bottom: -110, left: 110, backgroundColor: '#F8E6B9' },
   previewLabel: {
+    ...typography.label,
     alignSelf: 'flex-start',
     color: colors.surfaceStrong,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
     textTransform: 'uppercase',
-    // Legible over any photo.
     backgroundColor: 'rgba(23,33,33,0.45)',
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
@@ -504,14 +495,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: 'rgba(23,33,33,0.55)',
   },
-  deleteButtonPressed: {
-    backgroundColor: colors.accentPressed,
-  },
-  deleteButtonText: {
-    color: colors.surfaceStrong,
-    fontSize: 12,
-    fontWeight: '800',
-  },
+  deleteButtonPressed: { backgroundColor: colors.accentPressed },
+  deleteButtonText: { ...typography.caption, color: colors.surfaceStrong },
   puzzleDetails: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -519,31 +504,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
   },
-  puzzleCopy: {
-    flex: 1,
-  },
-  puzzleTitle: {
-    color: colors.ink,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  puzzleMeta: {
-    marginTop: spacing.xs,
-    color: colors.inkMuted,
-    fontSize: 13,
-  },
-  playButton: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 13,
-    borderRadius: radii.pill,
-    backgroundColor: colors.accent,
-  },
-  playButtonPressed: {
-    backgroundColor: colors.accentPressed,
-  },
-  playButtonText: {
-    color: colors.surfaceStrong,
-    fontSize: 14,
-    fontWeight: '800',
-  },
+  puzzleCopy: { flex: 1 },
+  puzzleTitle: { ...typography.heading, color: colors.ink },
+  puzzleMeta: { ...typography.caption, marginTop: spacing.xs, color: colors.inkMuted },
+  playButton: { paddingHorizontal: spacing.lg, paddingVertical: 11 },
+  playButtonText: { ...typography.bodyStrong, color: colors.surfaceStrong },
 });

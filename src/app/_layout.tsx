@@ -13,14 +13,16 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             contentStyle: { backgroundColor: colors.canvas },
-            headerShadowVisible: false,
-            headerStyle: { backgroundColor: colors.canvas },
-            headerTintColor: colors.ink,
-            headerTitleStyle: { fontWeight: '700' },
+            headerShown: false,
           }}
         >
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="game/[puzzleId]" options={{ title: 'Puzzle' }} />
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="difficulty/[puzzleId]" />
+          <Stack.Screen name="game/[puzzleId]" />
+          <Stack.Screen name="results/[puzzleId]" />
+          <Stack.Screen name="daily" />
+          <Stack.Screen name="shop" />
+          <Stack.Screen name="achievements" />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

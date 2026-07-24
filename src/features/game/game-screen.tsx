@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Image as RNImage, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getProgressRepository, getPuzzleById, resolvePuzzleImageSource } from '@/data';
@@ -10,15 +11,24 @@ import {
   expectedPieceCount,
   isSessionCompatible,
   isSupportedGridSize,
-  SUPPORTED_GRID_SIZES,
   type GameSession,
   type GridSize,
   type PlayablePuzzle,
   type PuzzleDefinition,
 } from '@/game-engine';
-import { colors, radii, spacing } from '@/shared/theme';
+import { colors, radii, spacing, typography } from '@/shared/theme';
+import {
+  PaperBackground,
+  SketchButton,
+  SketchFrame,
+  SketchIcon,
+  SketchToggle,
+  type IconName,
+} from '@/shared/ui';
 
 import { PuzzleBoard } from './puzzle-board';
+
+type OverlayKind = 'none' | 'pause' | 'hint' | 'preview';
 
 function buildPlayable(puzzle: PuzzleDefinition, gridSize: GridSize): PlayablePuzzle {
   const sized: PuzzleDefinition = { ...puzzle, gridSize };
@@ -29,6 +39,12 @@ function buildPlayable(puzzle: PuzzleDefinition, gridSize: GridSize): PlayablePu
     cellSize: cellSizeForGrid(gridSize),
     layoutMode: 'tray',
   });
+}
+
+function formatClock(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 interface GameScreenProps {
@@ -44,12 +60,17 @@ type CatalogState =
   | { status: 'ready'; puzzle: PuzzleDefinition; imageSource: number | string };
 
 export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
+  const router = useRouter();
   const [catalog, setCatalog] = useState<CatalogState>({ status: 'loading' });
   const [gridSize, setGridSize] = useState<GridSize | null>(initialGridSize ?? null);
   const [playable, setPlayable] = useState<PlayablePuzzle | null>(null);
   const [session, setSession] = useState<GameSession | null>(null);
   /** Bumped on reset to force a fresh board with a freshly measured world. */
   const [generation, setGeneration] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [overlay, setOverlay] = useState<OverlayKind>('none');
+  const [sound, setSound] = useState(true);
+  const [music, setMusic] = useState(true);
 
   // Load the catalog entry + artwork once per puzzle.
   useEffect(() => {
@@ -139,23 +160,36 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     };
   }, [session]);
 
+  const complete = session?.status === 'completed';
+
+  // Tick a play clock while the board is live, unfinished, and not paused.
+  useEffect(() => {
+    if (!playable || complete || overlay === 'pause') {
+      return;
+    }
+    const id = setInterval(() => setElapsed((v) => v + 1), 1000);
+    return () => clearInterval(id);
+  }, [playable, complete, generation, overlay]);
+
+  // On completion, hand off to the results screen once.
+  const handedOff = useRef(false);
+  useEffect(() => {
+    if (complete && !handedOff.current && catalog.status === 'ready' && gridSize != null) {
+      handedOff.current = true;
+      router.push({
+        pathname: '/results/[puzzleId]',
+        params: {
+          puzzleId: catalog.puzzle.id,
+          size: String(gridSize),
+          time: String(elapsed),
+        },
+      });
+    }
+  }, [complete, catalog, gridSize, elapsed, router]);
+
   const onSessionChange = useCallback((next: GameSession) => {
     setSession(next);
   }, []);
-
-  const onSelectSize = useCallback(
-    (next: GridSize) => {
-      if (next === gridSize) {
-        return;
-      }
-      if (pendingSave.current) {
-        clearTimeout(pendingSave.current);
-        pendingSave.current = null;
-      }
-      setGridSize(next);
-    },
-    [gridSize],
-  );
 
   const onReset = useCallback(() => {
     if (catalog.status !== 'ready' || gridSize == null) {
@@ -171,6 +205,8 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     setPlayable(fresh);
     setSession(fresh.session);
     setGeneration((value) => value + 1);
+    setElapsed(0);
+    handedOff.current = false;
 
     void (async () => {
       try {
@@ -183,18 +219,20 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
   if (catalog.status === 'missing' || catalog.status === 'missing-art') {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-        <View style={styles.content}>
-          <Text style={styles.title}>
-            {catalog.status === 'missing' ? 'Puzzle not found' : 'Artwork missing'}
-          </Text>
-          <Text style={styles.meta}>
-            {catalog.status === 'missing'
-              ? `No catalog entry for “${puzzleId}”.`
-              : `“${puzzleId}” has no bundled image registered.`}
-          </Text>
-        </View>
-      </SafeAreaView>
+      <PaperBackground>
+        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+          <View style={styles.centered}>
+            <Text style={styles.bigTitle}>
+              {catalog.status === 'missing' ? 'Puzzle not found' : 'Artwork missing'}
+            </Text>
+            <Text style={styles.meta}>
+              {catalog.status === 'missing'
+                ? `No catalog entry for “${puzzleId}”.`
+                : `“${puzzleId}” has no bundled image registered.`}
+            </Text>
+          </View>
+        </SafeAreaView>
+      </PaperBackground>
     );
   }
 
@@ -208,91 +246,188 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     playable.generated.puzzle.gridSize !== gridSize
   ) {
     return (
-      <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Loading puzzle…</Text>
-        </View>
-      </SafeAreaView>
+      <PaperBackground>
+        <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+          <View style={styles.centered}>
+            <Text style={styles.bigTitle}>Loading puzzle…</Text>
+          </View>
+        </SafeAreaView>
+      </PaperBackground>
     );
   }
 
   const { generated } = playable;
   const locked = countLockedPieces(session);
   const total = expectedPieceCount(gridSize);
-  const complete = session.status === 'completed';
 
   return (
-    <SafeAreaView edges={['bottom']} style={styles.safeArea}>
-      <View style={styles.content}>
-        <View style={styles.statusRow}>
-          <View style={styles.heading}>
-            <Text style={styles.eyebrow}>
-              {complete ? 'COMPLETED' : 'DRAG PIECES TO THE BOARD'}
-            </Text>
-            <Text style={styles.title}>{catalog.puzzle.title}</Text>
-          </View>
-          <View style={styles.actions}>
-            <View style={styles.counter}>
-              <Text style={styles.counterValue}>
-                {locked} / {total}
-              </Text>
-              <Text style={styles.counterLabel}>placed</Text>
-            </View>
+    <PaperBackground>
+      <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+        <View style={styles.content}>
+          <View style={styles.header}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Reset puzzle"
-              onPress={onReset}
-              style={({ pressed }) => [styles.resetButton, pressed && styles.resetButtonPressed]}
+              accessibilityLabel="Go back"
+              hitSlop={12}
+              onPress={() => router.back()}
             >
-              <Text style={styles.resetButtonText}>Reset</Text>
+              <SketchIcon name="back" size={26} color={colors.ink} />
             </Pressable>
+
+            <View style={styles.headerCenter}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {catalog.puzzle.title}
+              </Text>
+              <Text style={styles.headerMeta}>
+                {locked} / {total} placed
+              </Text>
+            </View>
+
+            <View style={styles.headerRight}>
+              <SketchFrame fill={colors.surface} radius={radii.md} seed={71}>
+                <Text style={styles.clock}>{formatClock(elapsed)}</Text>
+              </SketchFrame>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Pause"
+                hitSlop={10}
+                onPress={() => setOverlay('pause')}
+              >
+                <SketchIcon name="gear" size={26} color={colors.ink} />
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.boardShell}>
+            <PuzzleBoard
+              key={`${generated.puzzle.id}:${generated.puzzle.revision}:${gridSize}:${generation}`}
+              generated={generated}
+              session={session}
+              imageSource={catalog.imageSource}
+              onSessionChange={onSessionChange}
+            />
+          </View>
+
+          <View style={styles.toolbar}>
+            <ToolButton icon="back" label="Back" onPress={() => router.back()} />
+            <ToolButton icon="puzzle" label="Edges" disabled />
+            <ToolButton icon="sparkle" label="Hint" onPress={() => setOverlay('hint')} />
+            <ToolButton icon="eye" label="Preview" onPress={() => setOverlay('preview')} />
           </View>
         </View>
 
-        <View style={styles.sizeRow}>
-          <Text style={styles.sizeLabel}>SIZE</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.sizeChips}
-          >
-            {SUPPORTED_GRID_SIZES.map((size) => {
-              const active = size === gridSize;
-              return (
-                <Pressable
-                  key={size}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  accessibilityLabel={`${size} by ${size}`}
-                  onPress={() => onSelectSize(size)}
-                  style={[styles.sizeChip, active && styles.sizeChipActive]}
-                >
-                  <Text style={[styles.sizeChipText, active && styles.sizeChipTextActive]}>
-                    {size}×{size}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+        {overlay === 'pause' ? (
+          <GameOverlay onDismiss={() => setOverlay('none')}>
+            <Text style={styles.overlayTitle}>Paused</Text>
+            <View style={styles.pauseRows}>
+              <SettingRow label="Sound">
+                <SketchToggle value={sound} onChange={setSound} accessibilityLabel="Sound" />
+              </SettingRow>
+              <SettingRow label="Music">
+                <SketchToggle value={music} onChange={setMusic} accessibilityLabel="Music" />
+              </SettingRow>
+            </View>
+            <SketchButton label="Resume" variant="primary" onPress={() => setOverlay('none')} />
+            <SketchButton
+              label="Restart"
+              variant="gold"
+              onPress={() => {
+                setOverlay('none');
+                onReset();
+              }}
+            />
+            <SketchButton
+              label="Exit Puzzle"
+              variant="plain"
+              onPress={() => {
+                setOverlay('none');
+                router.back();
+              }}
+            />
+          </GameOverlay>
+        ) : null}
 
-        <View style={styles.boardShell}>
-          <PuzzleBoard
-            key={`${generated.puzzle.id}:${generated.puzzle.revision}:${gridSize}:${generation}`}
-            generated={generated}
-            session={session}
-            imageSource={catalog.imageSource}
-            onSessionChange={onSessionChange}
-          />
-        </View>
+        {overlay === 'hint' ? (
+          <GameOverlay onDismiss={() => setOverlay('none')}>
+            <Text style={styles.overlayTitle}>Hint</Text>
+            <View style={styles.hintPiece}>
+              <SketchIcon name="puzzle" size={80} color={colors.gold} strokeWidth={2.4} />
+            </View>
+            <SketchFrame fill={colors.sage} radius={radii.md} seed={44}>
+              <Text style={styles.hintText}>
+                Look for a corner piece first — its two flat edges make it easy to place.
+              </Text>
+            </SketchFrame>
+            <SketchButton label="Okay" variant="primary" onPress={() => setOverlay('none')} />
+          </GameOverlay>
+        ) : null}
 
-        <Text style={styles.hint}>
-          {complete
-            ? 'Nice — every piece locked. Tap Reset to shuffle, or pick a bigger size.'
-            : `${total} pieces · drag one onto its spot; it snaps when close enough.`}
-        </Text>
-      </View>
-    </SafeAreaView>
+        {overlay === 'preview' ? (
+          <GameOverlay onDismiss={() => setOverlay('none')}>
+            <Text style={styles.overlayTitle}>Preview</Text>
+            <SketchFrame fill={colors.kraft} radius={radii.md} seed={55}>
+              <View style={styles.previewImageWrap}>
+                <RNImage
+                  source={
+                    typeof catalog.imageSource === 'number'
+                      ? catalog.imageSource
+                      : { uri: catalog.imageSource }
+                  }
+                  style={styles.previewImage}
+                  resizeMode="cover"
+                />
+              </View>
+            </SketchFrame>
+            <SketchButton label="Close" variant="primary" onPress={() => setOverlay('none')} />
+          </GameOverlay>
+        ) : null}
+      </SafeAreaView>
+    </PaperBackground>
+  );
+}
+
+function GameOverlay({ children, onDismiss }: { children: ReactNode; onDismiss: () => void }) {
+  return (
+    <View style={styles.scrim}>
+      <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Dismiss" onPress={onDismiss} />
+      <SketchFrame fill={colors.canvas} radius={radii.lg} seed={200} style={styles.overlayCard}>
+        <View style={styles.overlayInner}>{children}</View>
+      </SketchFrame>
+    </View>
+  );
+}
+
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={styles.settingRow}>
+      <Text style={styles.settingLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+function ToolButton({
+  icon,
+  label,
+  onPress,
+  disabled,
+}: {
+  icon: IconName;
+  label: string;
+  onPress?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.tool, disabled && styles.toolDisabled]}
+    >
+      <SketchIcon name={icon} size={24} color={disabled ? colors.inkMuted : colors.ink} />
+      <Text style={styles.toolLabel}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -302,131 +437,89 @@ export function isPlayableGridSize(value: number): value is GridSize {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
+  safeArea: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.lg },
+  bigTitle: { ...typography.title, color: colors.ink },
+  meta: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
   content: {
     flex: 1,
     width: '100%',
     maxWidth: 900,
     alignSelf: 'center',
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    paddingVertical: spacing.sm,
     gap: spacing.sm,
   },
-  statusRow: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
     paddingHorizontal: spacing.sm,
   },
-  heading: {
-    flex: 1,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.4,
-  },
-  title: {
-    marginTop: 4,
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  meta: {
-    color: colors.inkMuted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  counter: {
-    alignItems: 'flex-end',
-  },
-  counterValue: {
-    color: colors.ink,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  counterLabel: {
-    color: colors.inkMuted,
-    fontSize: 12,
-  },
-  resetButton: {
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { ...typography.heading, color: colors.ink },
+  headerMeta: { ...typography.caption, color: colors.inkMuted },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  clock: {
+    ...typography.bodyStrong,
+    color: colors.inkSoft,
     paddingHorizontal: spacing.md,
-    paddingVertical: 9,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  resetButtonPressed: {
-    backgroundColor: colors.sage,
-  },
-  resetButtonText: {
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  sizeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-  },
-  sizeLabel: {
-    color: colors.inkMuted,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-  },
-  sizeChips: {
-    gap: spacing.xs,
-    paddingRight: spacing.sm,
-  },
-  sizeChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  sizeChipActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accent,
-  },
-  sizeChipText: {
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  sizeChipTextActive: {
-    color: colors.surfaceStrong,
+    paddingVertical: 6,
   },
   boardShell: {
     flex: 1,
-    // No hard minimum: the board scales to whatever height is left, so forcing a
-    // large value only pushed the column past the screen on short devices.
     minHeight: 220,
     overflow: 'hidden',
     borderRadius: 24,
     backgroundColor: colors.surfaceStrong,
-    borderWidth: 1,
-    borderColor: colors.line,
+    borderWidth: 2,
+    borderColor: colors.sketch,
   },
-  hint: {
-    paddingHorizontal: spacing.sm,
-    color: colors.inkMuted,
-    fontSize: 13,
-    lineHeight: 18,
+  toolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
   },
+  tool: { alignItems: 'center', gap: 3, paddingHorizontal: spacing.sm },
+  toolDisabled: { opacity: 0.45 },
+  toolLabel: { ...typography.caption, fontSize: 11, color: colors.ink },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(23,33,33,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  overlayCard: { width: '100%', maxWidth: 380 },
+  overlayInner: { padding: spacing.lg, gap: spacing.md },
+  overlayTitle: { ...typography.title, color: colors.ink, textAlign: 'center' },
+  pauseRows: { gap: spacing.sm },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.xs,
+  },
+  settingLabel: { ...typography.heading, fontSize: 18, color: colors.ink },
+  hintPiece: { alignItems: 'center', paddingVertical: spacing.sm },
+  hintText: {
+    ...typography.body,
+    color: colors.inkSoft,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  previewImageWrap: {
+    height: 240,
+    borderRadius: radii.md,
+    overflow: 'hidden',
+    margin: spacing.xs,
+  },
+  previewImage: { width: '100%', height: '100%' },
 });
