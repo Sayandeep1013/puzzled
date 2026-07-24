@@ -26,6 +26,7 @@ import {
   type IconName,
 } from '@/shared/ui';
 
+import { FX } from './board-fx';
 import { PuzzleBoard } from './puzzle-board';
 
 type OverlayKind = 'none' | 'pause' | 'hint' | 'preview';
@@ -71,6 +72,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const [overlay, setOverlay] = useState<OverlayKind>('none');
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(true);
+  const [highlightEdges, setHighlightEdges] = useState(false);
 
   // Load the catalog entry + artwork once per puzzle.
   useEffect(() => {
@@ -171,20 +173,26 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     return () => clearInterval(id);
   }, [playable, complete, generation, overlay]);
 
-  // On completion, hand off to the results screen once.
+  // On completion, hand off to the results screen once — but only after a short
+  // beat so the board's celebration (confetti + success haptic) is actually seen.
   const handedOff = useRef(false);
   useEffect(() => {
-    if (complete && !handedOff.current && catalog.status === 'ready' && gridSize != null) {
-      handedOff.current = true;
+    if (!complete || handedOff.current || catalog.status !== 'ready' || gridSize == null) {
+      return;
+    }
+    handedOff.current = true;
+    const puzzleId = catalog.puzzle.id;
+    const timer = setTimeout(() => {
       router.push({
         pathname: '/results/[puzzleId]',
         params: {
-          puzzleId: catalog.puzzle.id,
+          puzzleId,
           size: String(gridSize),
           time: String(elapsed),
         },
       });
-    }
+    }, FX.celebrateMs);
+    return () => clearTimeout(timer);
   }, [complete, catalog, gridSize, elapsed, router]);
 
   const onSessionChange = useCallback((next: GameSession) => {
@@ -305,12 +313,18 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
               session={session}
               imageSource={catalog.imageSource}
               onSessionChange={onSessionChange}
+              highlightEdges={highlightEdges}
             />
           </View>
 
           <View style={styles.toolbar}>
             <ToolButton icon="back" label="Back" onPress={() => router.back()} />
-            <ToolButton icon="puzzle" label="Edges" disabled />
+            <ToolButton
+              icon="puzzle"
+              label="Edges"
+              active={highlightEdges}
+              onPress={() => setHighlightEdges((on) => !on)}
+            />
             <ToolButton icon="sparkle" label="Hint" onPress={() => setOverlay('hint')} />
             <ToolButton icon="eye" label="Preview" onPress={() => setOverlay('preview')} />
           </View>
@@ -411,22 +425,26 @@ function ToolButton({
   label,
   onPress,
   disabled,
+  active,
 }: {
   icon: IconName;
   label: string;
   onPress?: () => void;
   disabled?: boolean;
+  active?: boolean;
 }) {
+  const tint = disabled ? colors.inkMuted : active ? colors.accent : colors.ink;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ selected: active, disabled }}
       onPress={onPress}
       disabled={disabled}
       style={[styles.tool, disabled && styles.toolDisabled]}
     >
-      <SketchIcon name={icon} size={24} color={disabled ? colors.inkMuted : colors.ink} />
-      <Text style={styles.toolLabel}>{label}</Text>
+      <SketchIcon name={icon} size={24} color={tint} />
+      <Text style={[styles.toolLabel, active && { color: colors.accent }]}>{label}</Text>
     </Pressable>
   );
 }
