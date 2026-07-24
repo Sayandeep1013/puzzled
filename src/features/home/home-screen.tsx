@@ -405,9 +405,9 @@ const styles = StyleSheet.create({
     color: colors.ink,
     textAlign: 'center',
   },
-  heroPiece: { marginVertical: spacing.sm },
-  heroPieceFrame: { width: 150 },
-  heroPieceInner: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  heroPiece: { marginVertical: spacing.xs },
+  heroPieceFrame: { width: 116 },
+  heroPieceInner: { alignItems: 'center', justifyContent: 'center', padding: spacing.md },
   subtitle: {
     ...typography.body,
     fontSize: 17,

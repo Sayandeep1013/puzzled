@@ -6,10 +6,12 @@ import {
   Circle,
   Group,
   Image,
+  Line,
   Path,
   Rect,
   RoundedRect,
   useImage,
+  vec,
   type SkImage,
   type SkPath,
 } from '@shopify/react-native-skia';
@@ -30,12 +32,12 @@ import {
   isWithinSnapDistance,
   raisePiece,
   snapThresholdForCellSize,
+  TAB_SIZE_RATIO,
   type GameSession,
   type GeneratedPuzzle,
   type PieceEdges,
   type PieceGeometry,
   type PieceLocalPath,
-  type PieceState,
   type Point,
   type Size,
 } from '@/game-engine';
@@ -43,9 +45,11 @@ import { commandsToSkPath } from '@/game-engine/rendering';
 import { colors } from '@/shared/theme';
 
 import { FX, impact, success } from './board-fx';
-import { useBoardCamera } from './use-board-camera';
 
 const BOARD_PADDING = 12;
+const TRAY_HEIGHT = 132;
+const TRAY_PAD = 12;
+const SLOT_GAP = 6;
 const CONFETTI_COLORS = [colors.primary, colors.gold, colors.accent, colors.sage, colors.rose];
 
 interface PuzzleBoardProps {
@@ -54,7 +58,7 @@ interface PuzzleBoardProps {
   /** Bundled `require` module id, or a `file://` uri for an imported photo. */
   imageSource: number | string;
   onSessionChange: (session: GameSession) => void;
-  /** When true, unplaced border pieces get an accent outline (edges-first helper). */
+  /** When true, unplaced border pieces are outlined in the tray (edges-first helper). */
   highlightEdges?: boolean;
 }
 
@@ -63,97 +67,16 @@ interface PreparedPiece {
   localPath: PieceLocalPath;
   skPath: SkPath;
   isEdge: boolean;
+  /** Centre of the piece's silhouette in local (piece) space. */
+  cx: number;
+  cy: number;
 }
 
 function isEdgePiece(edges: PieceEdges): boolean {
   return edges.top === 0 || edges.right === 0 || edges.bottom === 0 || edges.left === 0;
 }
 
-function hitTestPiece(point: Point, piece: PieceState, prepared: PreparedPiece): boolean {
-  if (piece.isLocked) {
-    return false;
-  }
-
-  const { bounds } = prepared.localPath;
-  const localX = point.x - piece.position.x;
-  const localY = point.y - piece.position.y;
-
-  // Cheap bounds reject before the exact silhouette test.
-  if (
-    localX < bounds.x ||
-    localX > bounds.x + bounds.width ||
-    localY < bounds.y ||
-    localY > bounds.y + bounds.height
-  ) {
-    return false;
-  }
-
-  // Tray pieces overlap; the bounding box alone grabs the wrong neighbour.
-  return prepared.skPath.contains(localX, localY);
-}
-
-function findTopPieceAt(
-  point: Point,
-  session: GameSession,
-  preparedById: Record<string, PreparedPiece>,
-): PieceState | null {
-  const ordered = [...session.pieces].sort((a, b) => b.zIndex - a.zIndex);
-
-  for (const piece of ordered) {
-    const prepared = preparedById[piece.pieceId];
-    if (prepared && hitTestPiece(point, piece, prepared)) {
-      return piece;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Memoized: a drag changes one piece's props, and re-rendering the other 99 to
- * move a single piece is what made large boards stutter.
- */
-const StaticPiece = memo(function StaticPiece({
-  piece,
-  prepared,
-  image,
-  imageScale,
-  hidden,
-  highlightEdges,
-}: {
-  piece: PieceState;
-  prepared: PreparedPiece;
-  image: SkImage;
-  imageScale: number;
-  hidden: boolean;
-  highlightEdges: boolean;
-}) {
-  if (hidden) {
-    return null;
-  }
-
-  // Loose edge pieces glow with the accent when the edges-first helper is on.
-  const flagged = highlightEdges && prepared.isEdge && !piece.isLocked;
-
-  return (
-    <Group transform={[{ translateX: piece.position.x }, { translateY: piece.position.y }]}>
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path
-        path={prepared.skPath}
-        style="stroke"
-        strokeWidth={flagged ? 2.4 : piece.isLocked ? 1 : 1.4}
-        color={
-          flagged
-            ? colors.accent
-            : piece.isLocked
-              ? 'rgba(23,33,33,0.14)'
-              : 'rgba(23,33,33,0.32)'
-        }
-      />
-    </Group>
-  );
-});
-
+/** Clip the shared source image to a piece silhouette. Scale-agnostic (parent Group scales). */
 function PieceFill({
   prepared,
   image,
@@ -164,7 +87,6 @@ function PieceFill({
   imageScale: number;
 }) {
   const { geometry, skPath } = prepared;
-
   return (
     <Group clip={skPath}>
       <Image
@@ -178,90 +100,117 @@ function PieceFill({
   );
 }
 
-/** Faint silhouette of the active piece at its home slot, revealed as you near it. */
-function GhostTarget({
+/** A piece locked into the board at its solved position. */
+const BoardPiece = memo(function BoardPiece({
   prepared,
-  solved,
-  x,
-  y,
-  magnetRadius,
+  image,
+  imageScale,
 }: {
   prepared: PreparedPiece;
-  solved: Point;
-  x: SharedValue<number>;
-  y: SharedValue<number>;
-  magnetRadius: number;
+  image: SkImage;
+  imageScale: number;
 }) {
-  const opacity = useDerivedValue(() => {
-    const dx = solved.x - x.value;
-    const dy = solved.y - y.value;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist >= magnetRadius) {
-      return 0;
-    }
-    return (1 - dist / magnetRadius) * 0.55;
-  });
+  const { solvedPosition } = prepared.geometry;
+  return (
+    <Group transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}>
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={1} color="rgba(23,33,33,0.12)" />
+    </Group>
+  );
+});
 
+/** One unplaced piece sitting in a tray slot, centred and scaled to the thumbnail size. */
+const TrayPiece = memo(function TrayPiece({
+  prepared,
+  image,
+  imageScale,
+  slotCenterX,
+  slotCenterY,
+  scale,
+  highlight,
+  hidden,
+}: {
+  prepared: PreparedPiece;
+  image: SkImage;
+  imageScale: number;
+  slotCenterX: number;
+  slotCenterY: number;
+  scale: number;
+  highlight: boolean;
+  hidden: boolean;
+}) {
+  if (hidden) {
+    return null;
+  }
   return (
     <Group
-      transform={[{ translateX: solved.x }, { translateY: solved.y }]}
-      opacity={opacity}
+      transform={[
+        { translateX: slotCenterX },
+        { translateY: slotCenterY },
+        { scale },
+        { translateX: -prepared.cx },
+        { translateY: -prepared.cy },
+      ]}
     >
-      <Path path={prepared.skPath} color={colors.accent} opacity={0.18} />
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
       <Path
         path={prepared.skPath}
         style="stroke"
-        strokeWidth={2}
-        color={colors.accent}
+        strokeWidth={highlight ? 3 : 1.6}
+        color={highlight ? colors.accent : 'rgba(23,33,33,0.28)'}
       />
+    </Group>
+  );
+});
+
+/** Faint silhouette at a piece's home slot, shown while that piece is being dragged. */
+function GhostTarget({ prepared }: { prepared: PreparedPiece }) {
+  const { solvedPosition } = prepared.geometry;
+  return (
+    <Group transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}>
+      <Path path={prepared.skPath} color={colors.accent} opacity={0.14} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.accent} opacity={0.5} />
     </Group>
   );
 }
 
-/** The dragged piece: lifted (scaled about its centre) with a gentle magnet pull. */
+/** The piece under the finger, drawn at board scale and pulled toward its slot when close. */
 function FloatingPiece({
   prepared,
   image,
   imageScale,
-  x,
-  y,
-  solved,
+  boardScale,
+  fx,
+  fy,
+  solvedCenterCanvas,
   magnetRadius,
 }: {
   prepared: PreparedPiece;
   image: SkImage;
   imageScale: number;
-  x: SharedValue<number>;
-  y: SharedValue<number>;
-  solved: Point;
+  boardScale: number;
+  fx: SharedValue<number>;
+  fy: SharedValue<number>;
+  solvedCenterCanvas: Point;
   magnetRadius: number;
 }) {
-  const { bounds } = prepared.localPath;
-  const cx = bounds.x + bounds.width / 2;
-  const cy = bounds.y + bounds.height / 2;
-
   const transform = useDerivedValue(() => {
-    const px = x.value;
-    const py = y.value;
-    const dx = solved.x - px;
-    const dy = solved.y - py;
+    let px = fx.value;
+    let py = fy.value;
+    const dx = solvedCenterCanvas.x - px;
+    const dy = solvedCenterCanvas.y - py;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    let ox = px;
-    let oy = py;
     if (dist < magnetRadius && dist > 0.001) {
       const pull = (1 - dist / magnetRadius) * FX.magnetPull;
-      ox = px + dx * pull;
-      oy = py + dy * pull;
+      px += dx * pull;
+      py += dy * pull;
     }
     return [
-      { translateX: ox },
-      { translateY: oy },
-      // Scale about the piece centre so the lift doesn't shift it off the finger.
-      { translateX: cx },
-      { translateY: cy },
-      { scale: FX.liftScale },
-      { translateX: -cx },
-      { translateY: -cy },
+      { translateX: px },
+      { translateY: py },
+      { scale: boardScale * FX.liftScale },
+      { translateX: -prepared.cx },
+      { translateY: -prepared.cy },
     ];
   });
 
@@ -273,7 +222,7 @@ function FloatingPiece({
   );
 }
 
-/** A one-shot ring that pops outward when a piece locks home. */
+/** A one-shot ring that pops outward when a piece locks home (canvas coords). */
 function GlowRing({
   id,
   cx,
@@ -286,7 +235,6 @@ function GlowRing({
   onDone: (id: number) => void;
 }) {
   const progress = useSharedValue(0);
-
   useEffect(() => {
     progress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.quad) }, (done) => {
       if (done) {
@@ -294,20 +242,10 @@ function GlowRing({
       }
     });
   }, [progress, id, onDone]);
-
-  const radius = useDerivedValue(() => 8 + progress.value * 34);
+  const radius = useDerivedValue(() => 10 + progress.value * 40);
   const opacity = useDerivedValue(() => (1 - progress.value) * 0.85);
-
   return (
-    <Circle
-      cx={cx}
-      cy={cy}
-      r={radius}
-      style="stroke"
-      strokeWidth={3}
-      color={colors.accent}
-      opacity={opacity}
-    />
+    <Circle cx={cx} cy={cy} r={radius} style="stroke" strokeWidth={3} color={colors.accent} opacity={opacity} />
   );
 }
 
@@ -322,15 +260,7 @@ interface Particle {
   color: string;
 }
 
-function ConfettiPiece({
-  particle,
-  t,
-  height,
-}: {
-  particle: Particle;
-  t: SharedValue<number>;
-  height: number;
-}) {
+function ConfettiPiece({ particle, t, height }: { particle: Particle; t: SharedValue<number>; height: number }) {
   const transform = useDerivedValue(() => {
     const span = 1 - particle.delay;
     const tt = Math.min(1, Math.max(0, (t.value - particle.delay) / span));
@@ -338,9 +268,7 @@ function ConfettiPiece({
     const x = particle.startX + Math.sin(tt * 6 + particle.i) * particle.drift;
     return [{ translateX: x }, { translateY: y }, { rotate: tt * particle.spin }];
   });
-
   const opacity = useDerivedValue(() => (t.value < 0.85 ? 1 : Math.max(0, 1 - (t.value - 0.85) / 0.15)));
-
   return (
     <Group transform={transform} opacity={opacity}>
       <RoundedRect x={0} y={0} width={particle.size} height={particle.size * 0.5} r={1.5} color={particle.color} />
@@ -350,28 +278,27 @@ function ConfettiPiece({
 
 function Confetti({ width, height }: { width: number; height: number }) {
   const t = useSharedValue(0);
-
   useEffect(() => {
     t.value = withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) });
   }, [t]);
-
-  const particles = useMemo<Particle[]>(() => {
-    return Array.from({ length: FX.confettiCount }, (_, i) => ({
-      i,
-      startX: Math.random() * width,
-      startY: -20 - Math.random() * height * 0.3,
-      delay: Math.random() * 0.35,
-      drift: 20 + Math.random() * 40,
-      spin: (Math.random() * 8 - 4) * Math.PI,
-      size: 8 + Math.random() * 6,
-      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-    }));
-  }, [width, height]);
-
+  const particles = useMemo<Particle[]>(
+    () =>
+      Array.from({ length: FX.confettiCount }, (_, i) => ({
+        i,
+        startX: Math.random() * width,
+        startY: -20 - Math.random() * height * 0.3,
+        delay: Math.random() * 0.35,
+        drift: 20 + Math.random() * 40,
+        spin: (Math.random() * 8 - 4) * Math.PI,
+        size: 8 + Math.random() * 6,
+        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      })),
+    [width, height],
+  );
   return (
     <Canvas style={[styles.overlay, { width, height }]} pointerEvents="none">
-      {particles.map((particle) => (
-        <ConfettiPiece key={particle.i} particle={particle} t={t} height={height} />
+      {particles.map((p) => (
+        <ConfettiPiece key={p.i} particle={p} t={t} height={height} />
       ))}
     </Canvas>
   );
@@ -387,124 +314,99 @@ export function PuzzleBoard({
   const image = useImage(imageSource);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [startedAtMs] = useState(() => Date.now());
-  // Resuming a saved session must keep the time already banked.
   const [baselineElapsedMs] = useState(() => session.elapsedMs);
-  const [activePieceId, setActivePieceId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [snapFlash, setSnapFlash] = useState<{ id: number; cx: number; cy: number } | null>(null);
 
-  const dragX = useSharedValue(0);
-  const dragY = useSharedValue(0);
-  const grabOffsetX = useSharedValue(0);
-  const grabOffsetY = useSharedValue(0);
-  const isDragging = useSharedValue(false);
-  const activeIdSV = useSharedValue('');
-  /** 0 = undecided, 1 = dragging a piece, 2 = panning the camera. */
-  const dragMode = useSharedValue(0);
-  /** True between onBegin and onFinalize, so a tap that ends before the JS-thread
-   *  hit test resolves does not strand a piece in the dragging state. */
-  const gestureActive = useSharedValue(false);
+  // Finger position of the floating piece, in canvas coordinates.
+  const fx = useSharedValue(0);
+  const fy = useSharedValue(0);
+  const trayScroll = useSharedValue(0);
+  /** 0 undecided · 1 dragging a piece · 2 scrolling the tray. */
+  const mode = useSharedValue(0);
+  const grabSlot = useSharedValue(-1);
+  const startX = useSharedValue(0);
+  const startY = useSharedValue(0);
   const flashId = useRef(0);
 
   const sessionRef = useRef(session);
   const onSessionChangeRef = useRef(onSessionChange);
-  const generatedRef = useRef(generated);
-  const preparedRef = useRef<Record<string, PreparedPiece>>({});
+  const unplacedIdsRef = useRef<string[]>([]);
   const celebratedRef = useRef(false);
 
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
-
   useEffect(() => {
     onSessionChangeRef.current = onSessionChange;
   }, [onSessionChange]);
 
-  useEffect(() => {
-    generatedRef.current = generated;
-  }, [generated]);
-
   const cellSize = generated.cellSize.width;
   const boardSize = generated.boardSize;
-
-  /**
-   * World extent is measured once from the opening layout — board plus every piece's
-   * tab overhang. Deriving it from live positions instead would rescale the camera
-   * bounds mid-drag, and pieces only ever move inward toward the board.
-   */
-  const [world] = useState<Size>(() => {
-    let maxX = boardSize.width;
-    let maxY = boardSize.height;
-
-    for (const piece of session.pieces) {
-      const path = generated.paths[piece.pieceId];
-      if (!path) {
-        continue; // Tolerate a restored session whose geometry no longer matches.
-      }
-      maxX = Math.max(maxX, piece.position.x + path.bounds.x + path.bounds.width);
-      maxY = Math.max(maxY, piece.position.y + path.bounds.y + path.bounds.height);
-    }
-
-    return {
-      width: maxX + BOARD_PADDING * 2,
-      height: maxY + BOARD_PADDING * 2,
-    };
-  });
-
-  const camera = useBoardCamera({
-    world,
-    viewport,
-    board: boardSize,
-    boardPadding: BOARD_PADDING,
-    cellSize,
-  });
-  // Stable members (shared values + memoized gestures) — pulled out so the
-  // gesture memo depends on plain identifiers, not the per-render camera object.
-  const {
-    scale: camScale,
-    translateX: camTx,
-    translateY: camTy,
-    panBy: camPanBy,
-    pinch: camPinch,
-    doubleTap: camDoubleTap,
-    ready: camReady,
-  } = camera;
-
-  const cameraTransform = useDerivedValue(() => [
-    { translateX: camTx.value },
-    { translateY: camTy.value },
-    { scale: camScale.value },
-  ]);
+  const imageScale = boardSize.width / generated.crop.width;
+  const snapThreshold = snapThresholdForCellSize(cellSize);
+  const gridSize = generated.puzzle.gridSize;
 
   const preparedById = useMemo(() => {
     const map: Record<string, PreparedPiece> = {};
     for (const geometry of generated.pieces) {
       const localPath = generated.paths[geometry.id];
+      const b = localPath.bounds;
       map[geometry.id] = {
         geometry,
         localPath,
         skPath: commandsToSkPath(localPath.commands),
         isEdge: isEdgePiece(geometry.edges),
+        cx: b.x + b.width / 2,
+        cy: b.y + b.height / 2,
       };
     }
     return map;
   }, [generated]);
 
+  // Locked pieces live on the board; everything else waits in the tray (stable order).
+  const lockedPieces = useMemo(() => session.pieces.filter((p) => p.isLocked), [session.pieces]);
+  const unplaced = useMemo(() => session.pieces.filter((p) => !p.isLocked), [session.pieces]);
+  const unplacedIds = useMemo(() => unplaced.map((p) => p.pieceId), [unplaced]);
   useEffect(() => {
-    preparedRef.current = preparedById;
-  }, [preparedById]);
+    unplacedIdsRef.current = unplacedIds;
+  }, [unplacedIds]);
 
-  const imageScale = boardSize.width / generated.crop.width;
-  const snapThreshold = snapThresholdForCellSize(cellSize);
-  const magnetRadius = snapThreshold * FX.magnetRatio;
+  // ---- Layout: board zone (fits, edges visible) above a fixed tray strip. ----
+  const layout = useMemo(() => {
+    const vw = viewport.width;
+    const vh = viewport.height;
+    const boardZoneH = Math.max(vh - TRAY_HEIGHT, 1);
+    const outerW = boardSize.width + BOARD_PADDING * 2;
+    const outerH = boardSize.height + BOARD_PADDING * 2;
+    // Fit the whole board (with margin) so every edge stays on screen.
+    const boardScale = Math.min((vw * 0.96) / outerW, (boardZoneH * 0.94) / outerH);
+    const boardOffsetX = (vw - outerW * boardScale) / 2;
+    const boardOffsetY = (boardZoneH - outerH * boardScale) / 2;
 
-  const sortedPieces = useMemo(
-    () => [...session.pieces].sort((a, b) => a.zIndex - b.zIndex),
-    [session.pieces],
-  );
+    const slotInner = TRAY_HEIGHT - TRAY_PAD * 2;
+    const pieceExtent = cellSize * (1 + 2 * TAB_SIZE_RATIO);
+    const thumbScale = (slotInner * 0.88) / pieceExtent;
+    const slotW = slotInner + SLOT_GAP;
 
-  const activePrepared = activePieceId ? preparedById[activePieceId] : null;
+    return { vw, vh, boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, thumbScale, slotInner };
+  }, [viewport.width, viewport.height, boardSize.width, boardSize.height, cellSize]);
 
-  // Celebrate exactly once when the final piece locks.
+  const magnetRadius = snapThreshold * layout.boardScale * FX.magnetRatio;
+
+  // Canvas-space centre of the dragging piece's home slot, for the magnet + ghost.
+  const draggingPrepared = draggingId ? preparedById[draggingId] : null;
+  const solvedCenterCanvas: Point = useMemo(() => {
+    if (!draggingPrepared) {
+      return { x: 0, y: 0 };
+    }
+    const { solvedPosition } = draggingPrepared.geometry;
+    return {
+      x: layout.boardOffsetX + (BOARD_PADDING + solvedPosition.x + draggingPrepared.cx) * layout.boardScale,
+      y: layout.boardOffsetY + (BOARD_PADDING + solvedPosition.y + draggingPrepared.cy) * layout.boardScale,
+    };
+  }, [draggingPrepared, layout.boardOffsetX, layout.boardOffsetY, layout.boardScale]);
+
   const complete = session.status === 'completed';
   useEffect(() => {
     if (complete && !celebratedRef.current) {
@@ -515,152 +417,184 @@ export function PuzzleBoard({
 
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
-    setViewport((current) =>
-      current.width === width && current.height === height ? current : { width, height },
-    );
+    setViewport((cur) => (cur.width === width && cur.height === height ? cur : { width, height }));
   };
 
   const clearFlash = useCallback(
-    (id: number) => setSnapFlash((current) => (current && current.id === id ? null : current)),
+    (id: number) => setSnapFlash((cur) => (cur && cur.id === id ? null : cur)),
     [],
   );
 
-  const gesture = useMemo(() => {
-    const tryBegin = (screenX: number, screenY: number) => {
-      // Screen → world → board-piece space, reading the live camera on the JS thread.
-      const sc = camScale.value;
-      const worldX = (screenX - camTx.value) / sc;
-      const worldY = (screenY - camTy.value) / sc;
-      const boardPoint = { x: worldX - BOARD_PADDING, y: worldY - BOARD_PADDING };
-      const hit = findTopPieceAt(boardPoint, sessionRef.current, preparedRef.current);
-
-      if (!hit) {
-        dragMode.value = 2; // Empty space → pan the camera.
-        return;
-      }
-
-      // The gesture may already have ended while this hop to the JS thread was
-      // in flight; committing now would leave the piece hidden with no finalize.
-      if (!gestureActive.value) {
-        return;
-      }
-
-      setActivePieceId(hit.pieceId);
-      activeIdSV.value = hit.pieceId;
-      dragX.value = hit.position.x;
-      dragY.value = hit.position.y;
-      grabOffsetX.value = boardPoint.x - hit.position.x;
-      grabOffsetY.value = boardPoint.y - hit.position.y;
-      isDragging.value = true;
-      dragMode.value = 1;
+  const beginGrab = useCallback((slot: number) => {
+    const id = unplacedIdsRef.current[slot];
+    if (id) {
+      setDraggingId(id);
       impact('light');
-    };
+    }
+  }, []);
 
-    const finishDrag = (pieceId: string, x: number, y: number) => {
-      const geometry = generatedRef.current.pieces.find((piece) => piece.id === pieceId);
-      setActivePieceId(null);
+  const trayScrollRef = useRef(0);
+  useEffect(() => {
+    // Keep a JS mirror so re-layout can clamp without reading the shared value.
+    trayScrollRef.current = 0;
+  }, [unplacedIds.length]);
 
-      if (!geometry) {
+  const gesture = useMemo(() => {
+    const { boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, vw } = layout;
+    const count = unplacedIds.length;
+    const contentW = count * slotW + TRAY_PAD * 2;
+    const minScroll = Math.min(0, vw - contentW);
+
+    const placeFromTray = (slot: number, canvasX: number, canvasY: number) => {
+      const id = unplacedIdsRef.current[slot];
+      setDraggingId(null);
+      if (!id) {
         return;
+      }
+      const prepared = preparedById[id];
+      if (!prepared) {
+        return;
+      }
+      // Canvas → board piece-space; the piece is centred on the finger.
+      const boardX = (canvasX - boardOffsetX) / boardScale - BOARD_PADDING;
+      const boardY = (canvasY - boardOffsetY) / boardScale - BOARD_PADDING;
+      const position = { x: boardX - prepared.cx, y: boardY - prepared.cy };
+      const solved = prepared.geometry.solvedPosition;
+
+      // Placing from a tray is coarser than nudging, so accept anything the
+      // magnet would have visually pulled in (matches the on-screen magnet radius).
+      const placeThreshold = snapThreshold * FX.magnetRatio;
+      if (!isWithinSnapDistance(position, solved, placeThreshold)) {
+        return; // Miss → the piece simply reappears in the tray.
       }
 
       const now = new Date().toISOString();
-      const snapped = isWithinSnapDistance({ x, y }, geometry.solvedPosition, snapThreshold);
-
-      // Raise then drop in one commit: a single state update per completed drag.
-      const raised = raisePiece(sessionRef.current, pieceId, now);
+      const raised = raisePiece(sessionRef.current, id, now);
       onSessionChangeRef.current(
         dropPiece({
           session: raised,
-          pieceId,
-          position: { x, y },
-          solvedPosition: geometry.solvedPosition,
+          pieceId: id,
+          position,
+          solvedPosition: solved,
           now,
           elapsedMs: baselineElapsedMs + (Date.now() - startedAtMs),
-          snapThreshold,
+          snapThreshold: placeThreshold,
         }),
       );
-
-      if (snapped) {
-        impact('medium');
-        const prepared = preparedRef.current[pieceId];
-        const bounds = prepared?.localPath.bounds;
-        const cx = geometry.solvedPosition.x + (bounds ? bounds.x + bounds.width / 2 : cellSize / 2);
-        const cy = geometry.solvedPosition.y + (bounds ? bounds.y + bounds.height / 2 : cellSize / 2);
-        flashId.current += 1;
-        setSnapFlash({ id: flashId.current, cx, cy });
-      }
+      impact('medium');
+      flashId.current += 1;
+      setSnapFlash({
+        id: flashId.current,
+        cx: boardOffsetX + (BOARD_PADDING + solved.x + prepared.cx) * boardScale,
+        cy: boardOffsetY + (BOARD_PADDING + solved.y + prepared.cy) * boardScale,
+      });
     };
 
-    const pan = Gesture.Pan()
+    return Gesture.Pan()
       .maxPointers(1)
-      .onBegin((event) => {
-        gestureActive.value = true;
-        dragMode.value = 0;
-        runOnJS(tryBegin)(event.x, event.y);
+      .onBegin((e) => {
+        'worklet';
+        startX.value = e.x;
+        startY.value = e.y;
+        mode.value = 0;
+        if (e.y >= boardZoneH) {
+          const local = e.x - trayScroll.value;
+          const slot = Math.floor((local - TRAY_PAD) / slotW);
+          grabSlot.value = slot >= 0 && slot < count ? slot : -1;
+        } else {
+          grabSlot.value = -1;
+        }
       })
-      .onChange((event) => {
-        if (dragMode.value === 1) {
-          if (!isDragging.value) {
+      .onChange((e) => {
+        'worklet';
+        if (mode.value === 0) {
+          const dx = e.x - startX.value;
+          const dy = e.y - startY.value;
+          if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
             return;
           }
-          const worldX = (event.x - camTx.value) / camScale.value;
-          const worldY = (event.y - camTy.value) / camScale.value;
-          dragX.value = worldX - BOARD_PADDING - grabOffsetX.value;
-          dragY.value = worldY - BOARD_PADDING - grabOffsetY.value;
-        } else if (dragMode.value === 2) {
-          camPanBy(event.changeX, event.changeY);
+          if (grabSlot.value >= 0 && (dy < -6 || Math.abs(dy) >= Math.abs(dx))) {
+            mode.value = 1;
+            fx.value = e.x;
+            fy.value = e.y;
+            runOnJS(beginGrab)(grabSlot.value);
+          } else {
+            mode.value = 2;
+          }
+        }
+        if (mode.value === 1) {
+          fx.value = e.x;
+          fy.value = e.y;
+        } else if (mode.value === 2) {
+          trayScroll.value = Math.min(0, Math.max(minScroll, trayScroll.value + e.changeX));
         }
       })
       .onFinalize(() => {
-        gestureActive.value = false;
-        const wasDraggingPiece = dragMode.value === 1 && isDragging.value && activeIdSV.value !== '';
-        dragMode.value = 0;
-
-        if (!wasDraggingPiece) {
-          return;
+        'worklet';
+        if (mode.value === 1) {
+          const slot = grabSlot.value;
+          const dropX = fx.value;
+          const dropY = fy.value;
+          mode.value = 0;
+          grabSlot.value = -1;
+          runOnJS(placeFromTray)(slot, dropX, dropY);
+        } else {
+          mode.value = 0;
+          grabSlot.value = -1;
         }
-
-        const pieceId = activeIdSV.value;
-        isDragging.value = false;
-        activeIdSV.value = '';
-        runOnJS(finishDrag)(pieceId, dragX.value, dragY.value);
       });
-
-    return Gesture.Simultaneous(Gesture.Exclusive(camDoubleTap, pan), camPinch);
   }, [
-    activeIdSV,
-    baselineElapsedMs,
-    camDoubleTap,
-    camPanBy,
-    camPinch,
-    camScale,
-    camTx,
-    camTy,
-    cellSize,
-    dragMode,
-    dragX,
-    dragY,
-    gestureActive,
-    grabOffsetX,
-    grabOffsetY,
-    isDragging,
+    layout,
+    unplacedIds.length,
+    preparedById,
     snapThreshold,
+    baselineElapsedMs,
     startedAtMs,
+    beginGrab,
+    fx,
+    fy,
+    grabSlot,
+    mode,
+    startX,
+    startY,
+    trayScroll,
   ]);
 
-  // Hold the first paint until the image is decoded, the play area is measured,
-  // and the camera has framed itself — otherwise the board flashes unscaled.
-  if (!image || viewport.width === 0 || viewport.height === 0 || !camReady) {
+  const trayTransform = useDerivedValue(() => [
+    { translateX: trayScroll.value },
+    { translateY: layout.boardZoneH },
+  ]);
+
+  if (!image || viewport.width === 0 || viewport.height === 0) {
     return <View style={styles.measure} onLayout={onLayout} />;
   }
+
+  const { boardScale, boardOffsetX, boardOffsetY, boardZoneH, slotW, thumbScale, vw } = layout;
+  const gridLines = Array.from({ length: gridSize - 1 }, (_, i) => cellSize * (i + 1));
 
   return (
     <View style={styles.measure} onLayout={onLayout}>
       <GestureDetector gesture={gesture}>
         <Animated.View style={{ width: viewport.width, height: viewport.height }}>
           <Canvas style={{ width: viewport.width, height: viewport.height }}>
-            <Group transform={cameraTransform}>
+            {/* Tray backdrop */}
+            <Rect x={0} y={boardZoneH} width={vw} height={TRAY_HEIGHT} color={colors.kraft} opacity={0.5} />
+            <Line
+              p1={vec(0, boardZoneH)}
+              p2={vec(vw, boardZoneH)}
+              color="rgba(23,33,33,0.12)"
+              style="stroke"
+              strokeWidth={1}
+            />
+
+            {/* Board zone */}
+            <Group
+              transform={[
+                { translateX: boardOffsetX },
+                { translateY: boardOffsetY },
+                { scale: boardScale },
+              ]}
+            >
               <RoundedRect
                 x={BOARD_PADDING - 6}
                 y={BOARD_PADDING - 6}
@@ -674,63 +608,87 @@ export function PuzzleBoard({
                 y={BOARD_PADDING}
                 width={boardSize.width}
                 height={boardSize.height}
-                color="rgba(185,205,189,0.28)"
+                color="rgba(185,205,189,0.22)"
               />
-              <Rect
-                x={BOARD_PADDING}
-                y={BOARD_PADDING}
-                width={boardSize.width}
-                height={boardSize.height}
-                style="stroke"
-                strokeWidth={2}
-                color="rgba(23,33,33,0.14)"
-              />
-
               <Group transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}>
-                {sortedPieces.map((piece) => (
-                  <StaticPiece
+                {/* Faint cell grid to guide placement */}
+                {gridLines.map((x, i) => (
+                  <Line
+                    key={`v${i}`}
+                    p1={vec(x, 0)}
+                    p2={vec(x, boardSize.height)}
+                    color="rgba(23,33,33,0.07)"
+                    style="stroke"
+                    strokeWidth={1}
+                  />
+                ))}
+                {gridLines.map((y, i) => (
+                  <Line
+                    key={`h${i}`}
+                    p1={vec(0, y)}
+                    p2={vec(boardSize.width, y)}
+                    color="rgba(23,33,33,0.07)"
+                    style="stroke"
+                    strokeWidth={1}
+                  />
+                ))}
+                <Rect
+                  x={0}
+                  y={0}
+                  width={boardSize.width}
+                  height={boardSize.height}
+                  style="stroke"
+                  strokeWidth={2}
+                  color="rgba(23,33,33,0.14)"
+                />
+
+                {lockedPieces.map((piece) => (
+                  <BoardPiece
                     key={piece.pieceId}
-                    piece={piece}
                     prepared={preparedById[piece.pieceId]}
                     image={image}
                     imageScale={imageScale}
-                    hidden={piece.pieceId === activePieceId}
-                    highlightEdges={highlightEdges}
                   />
                 ))}
 
-                {activePieceId && activePrepared ? (
-                  <>
-                    <GhostTarget
-                      prepared={activePrepared}
-                      solved={activePrepared.geometry.solvedPosition}
-                      x={dragX}
-                      y={dragY}
-                      magnetRadius={magnetRadius}
-                    />
-                    <FloatingPiece
-                      prepared={activePrepared}
-                      image={image}
-                      imageScale={imageScale}
-                      x={dragX}
-                      y={dragY}
-                      solved={activePrepared.geometry.solvedPosition}
-                      magnetRadius={magnetRadius}
-                    />
-                  </>
-                ) : null}
-
-                {snapFlash ? (
-                  <GlowRing
-                    key={snapFlash.id}
-                    id={snapFlash.id}
-                    cx={snapFlash.cx}
-                    cy={snapFlash.cy}
-                    onDone={clearFlash}
-                  />
-                ) : null}
+                {draggingPrepared ? <GhostTarget prepared={draggingPrepared} /> : null}
               </Group>
             </Group>
+
+            {/* Tray zone */}
+            <Group transform={trayTransform}>
+              {unplaced.map((piece, index) => (
+                <TrayPiece
+                  key={piece.pieceId}
+                  prepared={preparedById[piece.pieceId]}
+                  image={image}
+                  imageScale={imageScale}
+                  slotCenterX={TRAY_PAD + index * slotW + slotW / 2}
+                  slotCenterY={TRAY_HEIGHT / 2}
+                  scale={thumbScale}
+                  highlight={highlightEdges && preparedById[piece.pieceId].isEdge}
+                  hidden={piece.pieceId === draggingId}
+                />
+              ))}
+            </Group>
+
+            {/* Floating piece (above everything) */}
+            {draggingPrepared ? (
+              <FloatingPiece
+                prepared={draggingPrepared}
+                image={image}
+                imageScale={imageScale}
+                boardScale={boardScale}
+                fx={fx}
+                fy={fy}
+                solvedCenterCanvas={solvedCenterCanvas}
+                magnetRadius={magnetRadius}
+              />
+            ) : null}
+
+            {snapFlash ? (
+              <GlowRing key={snapFlash.id} id={snapFlash.id} cx={snapFlash.cx} cy={snapFlash.cy} onDone={clearFlash} />
+            ) : null}
           </Canvas>
 
           {complete ? <Confetti width={viewport.width} height={viewport.height} /> : null}
