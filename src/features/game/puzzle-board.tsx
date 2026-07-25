@@ -38,6 +38,8 @@ import {
   type PieceEdges,
   type PieceGeometry,
   type PieceLocalPath,
+  type PieceState,
+  type Point,
   type Size,
 } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
@@ -114,6 +116,35 @@ const BoardPiece = memo(function BoardPiece({
     <Group transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}>
       <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
       <Path path={prepared.skPath} style="stroke" strokeWidth={1} color="rgba(23,33,33,0.12)" />
+    </Group>
+  );
+});
+
+/**
+ * An unplaced piece resting directly on the board — a miss that stayed where it
+ * landed instead of returning to the tray. Same silhouette as `BoardPiece`, but
+ * outlined with the tray's accent stroke to read as unlocked.
+ */
+const LoosePiece = memo(function LoosePiece({
+  prepared,
+  image,
+  imageScale,
+  position,
+  hidden,
+}: {
+  prepared: PreparedPiece;
+  image: SkImage;
+  imageScale: number;
+  position: Point;
+  hidden: boolean;
+}) {
+  if (hidden) {
+    return null;
+  }
+  return (
+    <Group transform={[{ translateX: position.x }, { translateY: position.y }]}>
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.accent} />
     </Group>
   );
 });
@@ -294,16 +325,18 @@ export function PuzzleBoard({
   const fx = useSharedValue(0);
   const fy = useSharedValue(0);
   const trayScroll = useSharedValue(0);
-  /** 0 undecided · 1 dragging a piece · 2 scrolling the tray. */
+  /** 0 idle · 1 dragging a piece · 2 scrolling the tray. Decided instantly in onBegin. */
   const mode = useSharedValue(0);
+  /** Index into the current tray render order, or -1 when the grab isn't from the tray. */
   const grabSlot = useSharedValue(-1);
-  const startX = useSharedValue(0);
-  const startY = useSharedValue(0);
+  /** Index into `looseHitTestData`/`looseIdsRef`, or -1 when the grab isn't a loose piece. */
+  const grabLoose = useSharedValue(-1);
   const flashId = useRef(0);
 
   const sessionRef = useRef(session);
   const onSessionChangeRef = useRef(onSessionChange);
-  const unplacedIdsRef = useRef<string[]>([]);
+  const trayIdsRef = useRef<string[]>([]);
+  const looseIdsRef = useRef<string[]>([]);
   const celebratedRef = useRef(false);
 
   useEffect(() => {
@@ -336,13 +369,62 @@ export function PuzzleBoard({
     return map;
   }, [generated]);
 
-  // Locked pieces live on the board; everything else waits in the tray (stable order).
+  // Locked pieces live on the board at their solved position; unlocked pieces are
+  // either loose on the board (a miss that stayed put) or waiting in the tray.
   const lockedPieces = useMemo(() => session.pieces.filter((p) => p.isLocked), [session.pieces]);
-  const unplaced = useMemo(() => session.pieces.filter((p) => !p.isLocked), [session.pieces]);
-  const unplacedIds = useMemo(() => unplaced.map((p) => p.pieceId), [unplaced]);
+
+  /**
+   * The engine lays unplaced pieces out below the board (`layout.ts` tray rows),
+   * so a y inside the board rect means the player has dropped this piece on the
+   * board and it should stay there, re-grabbable, instead of returning to a slot.
+   */
+  const isOnBoard = useCallback(
+    (piece: PieceState) => piece.position.y < boardSize.height,
+    [boardSize.height],
+  );
+
+  // Loose pieces are sorted by z-index (ascending) so overlapping drops paint
+  // and hit-test in the same order: the most recently touched piece is on top.
+  const loosePieces = useMemo(
+    () =>
+      session.pieces
+        .filter((p) => !p.isLocked && isOnBoard(p))
+        .sort((a, b) => a.zIndex - b.zIndex),
+    [session.pieces, isOnBoard],
+  );
+
+  const trayPieces = useMemo(
+    () => session.pieces.filter((p) => !p.isLocked && !isOnBoard(p)),
+    [session.pieces, isOnBoard],
+  );
+
+  const looseIds = useMemo(() => loosePieces.map((p) => p.pieceId), [loosePieces]);
+  const trayIds = useMemo(() => trayPieces.map((p) => p.pieceId), [trayPieces]);
   useEffect(() => {
-    unplacedIdsRef.current = unplacedIds;
-  }, [unplacedIds]);
+    looseIdsRef.current = looseIds;
+  }, [looseIds]);
+  useEffect(() => {
+    trayIdsRef.current = trayIds;
+  }, [trayIds]);
+
+  // Hit-test boxes for loose board pieces, in the same board-local space as
+  // `releasePiece`'s coordinate conversion (post BOARD_PADDING removal). Kept as
+  // plain numbers/strings only — no SkPath/Skia objects — so the gesture worklet
+  // can safely close over this array.
+  const looseHitTestData = useMemo(
+    () =>
+      loosePieces.map((piece) => {
+        const prepared = preparedById[piece.pieceId];
+        const bounds = prepared.localPath.bounds;
+        return {
+          cx: piece.position.x + prepared.cx,
+          cy: piece.position.y + prepared.cy,
+          halfW: bounds.width / 2,
+          halfH: bounds.height / 2,
+        };
+      }),
+    [loosePieces, preparedById],
+  );
 
   // ---- Layout: board zone (fits, edges visible) above a fixed tray strip. ----
   const layout = useMemo(() => {
@@ -384,28 +466,31 @@ export function PuzzleBoard({
     [],
   );
 
-  const beginGrab = useCallback((slot: number) => {
-    const id = unplacedIdsRef.current[slot];
-    if (id) {
-      setDraggingId(id);
-      impact('light');
-    }
+  /** Resolve a grab/release origin (0 = tray slot, 1 = loose board piece) to a piece id. */
+  const resolveGrabbedId = useCallback((source: 0 | 1, index: number) => {
+    return source === 0 ? trayIdsRef.current[index] : looseIdsRef.current[index];
   }, []);
 
-  const trayScrollRef = useRef(0);
-  useEffect(() => {
-    // Keep a JS mirror so re-layout can clamp without reading the shared value.
-    trayScrollRef.current = 0;
-  }, [unplacedIds.length]);
+  const beginGrab = useCallback(
+    (source: 0 | 1, index: number) => {
+      const id = resolveGrabbedId(source, index);
+      if (id) {
+        setDraggingId(id);
+        impact('light');
+      }
+    },
+    [resolveGrabbedId],
+  );
 
   const gesture = useMemo(() => {
     const { boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, vw } = layout;
-    const count = unplacedIds.length;
+    const count = trayIds.length;
     const contentW = count * slotW + TRAY_PAD * 2;
     const minScroll = Math.min(0, vw - contentW);
+    const looseBoxes = looseHitTestData;
 
-    const placeFromTray = (slot: number, canvasX: number, canvasY: number) => {
-      const id = unplacedIdsRef.current[slot];
+    const releasePiece = (source: 0 | 1, index: number, canvasX: number, canvasY: number) => {
+      const id = resolveGrabbedId(source, index);
       setDraggingId(null);
       if (!id) {
         return;
@@ -420,24 +505,23 @@ export function PuzzleBoard({
       const position = { x: boardX - prepared.cx, y: boardY - prepared.cy };
       const solved = prepared.geometry.solvedPosition;
 
-      const placeThreshold = snapThreshold;
-      if (!isWithinSnapDistance(position, solved, placeThreshold)) {
-        return; // Miss → the piece simply reappears in the tray.
-      }
-
       const now = new Date().toISOString();
       const raised = raisePiece(sessionRef.current, id, now);
-      onSessionChangeRef.current(
-        dropPiece({
-          session: raised,
-          pieceId: id,
-          position,
-          solvedPosition: solved,
-          now,
-          elapsedMs: baselineElapsedMs + (Date.now() - startedAtMs),
-          snapThreshold: placeThreshold,
-        }),
-      );
+      const elapsedMs = baselineElapsedMs + (Date.now() - startedAtMs);
+      const common = { session: raised, pieceId: id, solvedPosition: solved, now, elapsedMs };
+
+      const placeThreshold = snapThreshold;
+      if (!isWithinSnapDistance(position, solved, placeThreshold)) {
+        // Out of range on the board: leave the piece exactly where it was released so
+        // it can be nudged and re-grabbed. Released over the tray, it returns to the
+        // tray instead (its position never changes, so it's simply back where it was).
+        if (canvasY < boardZoneH) {
+          onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: 0 }));
+        }
+        return;
+      }
+
+      onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: placeThreshold }));
       impact('medium');
       flashId.current += 1;
       setSnapFlash({
@@ -451,34 +535,43 @@ export function PuzzleBoard({
       .maxPointers(1)
       .onBegin((e) => {
         'worklet';
-        startX.value = e.x;
-        startY.value = e.y;
         mode.value = 0;
-        if (e.y >= boardZoneH) {
+        grabSlot.value = -1;
+        grabLoose.value = -1;
+
+        if (e.y < boardZoneH) {
+          // Board zone: hit-test loose pieces, topmost (highest z-index) first.
+          const boardX = (e.x - boardOffsetX) / boardScale - BOARD_PADDING;
+          const boardY = (e.y - boardOffsetY) / boardScale - BOARD_PADDING;
+          for (let i = looseBoxes.length - 1; i >= 0; i -= 1) {
+            const box = looseBoxes[i];
+            if (Math.abs(boardX - box.cx) <= box.halfW && Math.abs(boardY - box.cy) <= box.halfH) {
+              mode.value = 1;
+              grabLoose.value = i;
+              fx.value = e.x;
+              fy.value = e.y;
+              runOnJS(beginGrab)(1, i);
+              break;
+            }
+          }
+          // Otherwise: empty board space. No drag, no scroll.
+        } else {
+          // Tray zone: a valid slot grabs instantly; empty slot space scrolls.
           const local = e.x - trayScroll.value;
           const slot = Math.floor((local - TRAY_PAD) / slotW);
-          grabSlot.value = slot >= 0 && slot < count ? slot : -1;
-        } else {
-          grabSlot.value = -1;
-        }
-      })
-      .onChange((e) => {
-        'worklet';
-        if (mode.value === 0) {
-          const dx = e.x - startX.value;
-          const dy = e.y - startY.value;
-          if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
-            return;
-          }
-          if (grabSlot.value >= 0 && (dy < -6 || Math.abs(dy) >= Math.abs(dx))) {
+          if (slot >= 0 && slot < count) {
             mode.value = 1;
+            grabSlot.value = slot;
             fx.value = e.x;
             fy.value = e.y;
-            runOnJS(beginGrab)(grabSlot.value);
+            runOnJS(beginGrab)(0, slot);
           } else {
             mode.value = 2;
           }
         }
+      })
+      .onChange((e) => {
+        'worklet';
         if (mode.value === 1) {
           fx.value = e.x;
           fy.value = e.y;
@@ -489,31 +582,35 @@ export function PuzzleBoard({
       .onFinalize(() => {
         'worklet';
         if (mode.value === 1) {
-          const slot = grabSlot.value;
+          const source: 0 | 1 = grabSlot.value >= 0 ? 0 : 1;
+          const index = source === 0 ? grabSlot.value : grabLoose.value;
           const dropX = fx.value;
           const dropY = fy.value;
           mode.value = 0;
           grabSlot.value = -1;
-          runOnJS(placeFromTray)(slot, dropX, dropY);
+          grabLoose.value = -1;
+          runOnJS(releasePiece)(source, index, dropX, dropY);
         } else {
           mode.value = 0;
           grabSlot.value = -1;
+          grabLoose.value = -1;
         }
       });
   }, [
     layout,
-    unplacedIds.length,
+    trayIds.length,
+    looseHitTestData,
     preparedById,
     snapThreshold,
     baselineElapsedMs,
     startedAtMs,
     beginGrab,
+    resolveGrabbedId,
     fx,
     fy,
     grabSlot,
+    grabLoose,
     mode,
-    startX,
-    startY,
     trayScroll,
   ]);
 
@@ -607,12 +704,24 @@ export function PuzzleBoard({
                     imageScale={imageScale}
                   />
                 ))}
+
+                {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
+                {loosePieces.map((piece) => (
+                  <LoosePiece
+                    key={piece.pieceId}
+                    prepared={preparedById[piece.pieceId]}
+                    image={image}
+                    imageScale={imageScale}
+                    position={piece.position}
+                    hidden={piece.pieceId === draggingId}
+                  />
+                ))}
               </Group>
             </Group>
 
             {/* Tray zone */}
             <Group transform={trayTransform}>
-              {unplaced.map((piece, index) => (
+              {trayPieces.map((piece, index) => (
                 <TrayPiece
                   key={piece.pieceId}
                   prepared={preparedById[piece.pieceId]}
