@@ -47,6 +47,18 @@ export interface ProgressRepository {
   deleteSessionsForPuzzle(puzzleId: string): Promise<void>;
 }
 
+/** Player-controlled toggles for sound, music, and haptics feedback. */
+export interface AppSettings {
+  sound: boolean;
+  music: boolean;
+  haptics: boolean;
+}
+
+export interface SettingsRepository {
+  get(): Promise<AppSettings>;
+  set(patch: Partial<AppSettings>): Promise<AppSettings>;
+}
+
 const KEY_SEPARATOR = '::';
 
 /** Row identity in the sessions table. Encodes puzzle + size in one column. */
