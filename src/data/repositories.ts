@@ -59,6 +59,45 @@ export interface SettingsRepository {
   set(patch: Partial<AppSettings>): Promise<AppSettings>;
 }
 
+/** Coin/hint balance. Always derived by summing the ledger, never stored directly. */
+export interface Wallet {
+  coins: number;
+  hints: number;
+}
+
+/** Why a ledger row exists. Extend rather than repurpose an existing reason. */
+export type LedgerReason =
+  | 'puzzle-complete'
+  | 'daily-complete'
+  | 'streak-bonus'
+  | 'hint-spend'
+  | 'hint-purchase'
+  | 'coin-purchase'
+  | 'starter-grant';
+
+export interface LedgerEntry {
+  id: number;
+  deltaCoins: number;
+  deltaHints: number;
+  reason: LedgerReason;
+  /** Optional correlation id, e.g. the puzzle id that earned the reward. */
+  ref: string | null;
+  createdAt: string;
+}
+
+export type NewLedgerEntry = Omit<LedgerEntry, 'id' | 'createdAt'>;
+
+/**
+ * Append-only coin/hint ledger. The balance is never a mutable counter — it is
+ * always the sum of every row — so a future server can reconcile without
+ * guessing which side is authoritative.
+ */
+export interface WalletRepository {
+  balance(): Promise<Wallet>;
+  record(entry: NewLedgerEntry): Promise<Wallet>;
+  history(limit?: number): Promise<LedgerEntry[]>;
+}
+
 const KEY_SEPARATOR = '::';
 
 /** Row identity in the sessions table. Encodes puzzle + size in one column. */

@@ -5,4 +5,5 @@ export * from './local/puzzle-assets';
 export * from './local/settings-repository';
 export * from './local/sqlite-progress-repository';
 export * from './local/user-puzzle-repository';
+export * from './local/wallet-repository';
 export * from './repositories';
