@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react-native';
-import { Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import { colors, radii, shadow } from '@/shared/theme';
 
@@ -27,7 +27,9 @@ describe('PopSurface', () => {
     const { getByTestId } = render(<PopSurface testID="surface" />);
     const shade = getByTestId('surface-shadow');
     expect(shade).toHaveStyle({ backgroundColor: colors.ink });
-    expect(shade.props.style).not.toHaveProperty('shadowRadius');
+    const flat = StyleSheet.flatten(shade.props.style);
+    expect(flat).not.toHaveProperty('shadowRadius');
+    expect(flat).not.toHaveProperty('elevation');
   });
 
   it('applies the requested fill and radius to the face', () => {
