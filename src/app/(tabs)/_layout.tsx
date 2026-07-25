@@ -1,12 +1,12 @@
 import { Tabs } from 'expo-router';
 
-import { SketchTabBar } from '@/shared/ui';
+import { PopTabBar } from '@/shared/ui';
 
 export default function TabsLayout() {
   return (
-    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <SketchTabBar {...props} />}>
+    <Tabs screenOptions={{ headerShown: false }} tabBar={(props) => <PopTabBar {...props} />}>
       <Tabs.Screen name="index" />
-      <Tabs.Screen name="explore" />
+      <Tabs.Screen name="puzzles" />
       <Tabs.Screen name="library" />
       <Tabs.Screen name="profile" />
     </Tabs>
