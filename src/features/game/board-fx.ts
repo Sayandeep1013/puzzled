@@ -36,10 +36,6 @@ export const FX = {
   popScale: 1.12,
   /** Spring settle time for a snapped piece, ms (visual only). */
   snapMs: 180,
-  /** Multiplier on snapThreshold within which the ghost target + magnet appear. */
-  magnetRatio: 1.6,
-  /** How far (0..1) the rendered piece is pulled toward the slot at the magnet edge. */
-  magnetPull: 0.35,
   /** Beat before handing off to the results screen so the celebration is seen, ms. */
   celebrateMs: 1200,
   /** Confetti particle count cap. */

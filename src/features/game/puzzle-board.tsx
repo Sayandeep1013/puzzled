@@ -38,7 +38,6 @@ import {
   type PieceEdges,
   type PieceGeometry,
   type PieceLocalPath,
-  type Point,
   type Size,
 } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
@@ -163,18 +162,7 @@ const TrayPiece = memo(function TrayPiece({
   );
 });
 
-/** Faint silhouette at a piece's home slot, shown while that piece is being dragged. */
-function GhostTarget({ prepared }: { prepared: PreparedPiece }) {
-  const { solvedPosition } = prepared.geometry;
-  return (
-    <Group transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}>
-      <Path path={prepared.skPath} color={colors.accent} opacity={0.14} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.accent} opacity={0.5} />
-    </Group>
-  );
-}
-
-/** The piece under the finger, drawn at board scale and pulled toward its slot when close. */
+/** The piece under the finger, drawn at board scale and tracking the finger exactly. */
 function FloatingPiece({
   prepared,
   image,
@@ -182,8 +170,6 @@ function FloatingPiece({
   boardScale,
   fx,
   fy,
-  solvedCenterCanvas,
-  magnetRadius,
 }: {
   prepared: PreparedPiece;
   image: SkImage;
@@ -191,28 +177,14 @@ function FloatingPiece({
   boardScale: number;
   fx: SharedValue<number>;
   fy: SharedValue<number>;
-  solvedCenterCanvas: Point;
-  magnetRadius: number;
 }) {
-  const transform = useDerivedValue(() => {
-    let px = fx.value;
-    let py = fy.value;
-    const dx = solvedCenterCanvas.x - px;
-    const dy = solvedCenterCanvas.y - py;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < magnetRadius && dist > 0.001) {
-      const pull = (1 - dist / magnetRadius) * FX.magnetPull;
-      px += dx * pull;
-      py += dy * pull;
-    }
-    return [
-      { translateX: px },
-      { translateY: py },
-      { scale: boardScale * FX.liftScale },
-      { translateX: -prepared.cx },
-      { translateY: -prepared.cy },
-    ];
-  });
+  const transform = useDerivedValue(() => [
+    { translateX: fx.value },
+    { translateY: fy.value },
+    { scale: boardScale * FX.liftScale },
+    { translateX: -prepared.cx },
+    { translateY: -prepared.cy },
+  ]);
 
   return (
     <Group transform={transform}>
@@ -392,20 +364,7 @@ export function PuzzleBoard({
     return { vw, vh, boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, thumbScale, slotInner };
   }, [viewport.width, viewport.height, boardSize.width, boardSize.height, cellSize]);
 
-  const magnetRadius = snapThreshold * layout.boardScale * FX.magnetRatio;
-
-  // Canvas-space centre of the dragging piece's home slot, for the magnet + ghost.
   const draggingPrepared = draggingId ? preparedById[draggingId] : null;
-  const solvedCenterCanvas: Point = useMemo(() => {
-    if (!draggingPrepared) {
-      return { x: 0, y: 0 };
-    }
-    const { solvedPosition } = draggingPrepared.geometry;
-    return {
-      x: layout.boardOffsetX + (BOARD_PADDING + solvedPosition.x + draggingPrepared.cx) * layout.boardScale,
-      y: layout.boardOffsetY + (BOARD_PADDING + solvedPosition.y + draggingPrepared.cy) * layout.boardScale,
-    };
-  }, [draggingPrepared, layout.boardOffsetX, layout.boardOffsetY, layout.boardScale]);
 
   const complete = session.status === 'completed';
   useEffect(() => {
@@ -461,9 +420,7 @@ export function PuzzleBoard({
       const position = { x: boardX - prepared.cx, y: boardY - prepared.cy };
       const solved = prepared.geometry.solvedPosition;
 
-      // Placing from a tray is coarser than nudging, so accept anything the
-      // magnet would have visually pulled in (matches the on-screen magnet radius).
-      const placeThreshold = snapThreshold * FX.magnetRatio;
+      const placeThreshold = snapThreshold;
       if (!isWithinSnapDistance(position, solved, placeThreshold)) {
         return; // Miss → the piece simply reappears in the tray.
       }
@@ -650,8 +607,6 @@ export function PuzzleBoard({
                     imageScale={imageScale}
                   />
                 ))}
-
-                {draggingPrepared ? <GhostTarget prepared={draggingPrepared} /> : null}
               </Group>
             </Group>
 
@@ -681,8 +636,6 @@ export function PuzzleBoard({
                 boardScale={boardScale}
                 fx={fx}
                 fy={fy}
-                solvedCenterCanvas={solvedCenterCanvas}
-                magnetRadius={magnetRadius}
               />
             ) : null}
 
