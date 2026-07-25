@@ -76,7 +76,8 @@
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"
-    }
+    },
+    "resolver": "react-native-worklets/jest/resolver"
   },
   "private": true
 }
