@@ -1,4 +1,5 @@
 export * from './catalog';
+export * from './local/achievements-repository';
 export * from './local/database';
 export * from './local/local-puzzle-repository';
 export * from './local/puzzle-assets';
