@@ -11,7 +11,7 @@ import {
   type PuzzleDefinition,
 } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PaperBackground, SketchButton, SketchFrame, SketchIcon } from '@/shared/ui';
+import { PopButton, PopHeader, PopIcon, PopSurface } from '@/shared/ui';
 
 /** Difficulty word for a grid size, mirroring the tiers in the mockup. */
 function tierFor(size: GridSize): string {
@@ -49,24 +49,15 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
   };
 
   return (
-    <PaperBackground>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            hitSlop={12}
-            onPress={() => router.back()}
-          >
-            <SketchIcon name="back" size={26} color={colors.ink} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Select Difficulty</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <PopHeader title="Select Difficulty" onBack={() => router.back()} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          <SketchFrame fill={colors.surface} radius={radii.lg} seed={31}>
-            <View style={styles.previewWrap}>
+          {/* Tangerine frames a white body around the preview image, matching
+              `daily-screen.tsx`'s `featureFrame` treatment. */}
+          <PopSurface fill={colors.tangerine} radius={radii.lg} contentStyle={styles.previewFrame}>
+            <View style={styles.previewBody}>
               {image != null ? (
                 <Image
                   source={typeof image === 'number' ? image : { uri: image }}
@@ -75,11 +66,11 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                 />
               ) : (
                 <View style={styles.previewFallback}>
-                  <SketchIcon name="puzzle" size={64} color={colors.inkMuted} />
+                  <PopIcon name="puzzle" size={64} color={colors.inkMuted} />
                 </View>
               )}
             </View>
-          </SketchFrame>
+          </PopSurface>
 
           <Text style={styles.puzzleTitle}>{puzzle?.title ?? 'Puzzle'}</Text>
 
@@ -95,19 +86,21 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                   onPress={() => setSelected(size)}
                   style={styles.tile}
                 >
-                  <SketchFrame
-                    fill={active ? colors.gold : colors.surface}
-                    stroke={colors.sketch}
+                  {/* Selected tiles ring in sunshine; the body underneath stays
+                      white either way, so the two-line label is always read
+                      against a plain surface — never a full colour wash. */}
+                  <PopSurface
+                    fill={active ? colors.sunshine : colors.surface}
                     radius={radii.md}
-                    seed={size * 17 + 2}
+                    contentStyle={styles.tileFrame}
                   >
-                    <View style={styles.tileInner}>
+                    <View style={styles.tileBody}>
                       <Text style={styles.tileCount}>{expectedPieceCount(size)}</Text>
                       <Text style={styles.tileTier}>
                         {tierFor(size)} · {size}×{size}
                       </Text>
                     </View>
-                  </SketchFrame>
+                  </PopSurface>
                 </Pressable>
               );
             })}
@@ -115,24 +108,16 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
         </ScrollView>
 
         <View style={styles.footer}>
-          <SketchButton label="Start Puzzle" variant="primary" onPress={start} disabled={!puzzle} />
+          <PopButton label="Start Puzzle" tone="grape" onPress={start} disabled={!puzzle} />
         </View>
       </SafeAreaView>
-    </PaperBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  headerTitle: { ...typography.title, color: colors.ink },
-  headerSpacer: { width: 26 },
   content: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
@@ -141,11 +126,14 @@ const styles = StyleSheet.create({
     maxWidth: 620,
     alignSelf: 'center',
   },
-  previewWrap: {
+  // Inset padding on the coloured `PopSurface` face, so a ring of `tangerine`
+  // shows as a frame around the white preview body nested inside it.
+  previewFrame: { padding: spacing.xs },
+  previewBody: {
     height: 200,
-    borderRadius: radii.lg,
     overflow: 'hidden',
-    backgroundColor: colors.kraft,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
   },
   previewImage: { width: '100%', height: '100%' },
   previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -157,8 +145,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   tile: { width: '47%' },
-  tileInner: { alignItems: 'center', paddingVertical: spacing.md, gap: 2 },
-  tileCount: { ...typography.title, fontSize: 32, color: colors.inkSoft },
+  tileFrame: { padding: spacing.xs },
+  tileBody: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: 2,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+  },
+  tileCount: { ...typography.title, fontSize: 32, color: colors.ink },
   tileTier: { ...typography.label, color: colors.inkMuted },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
 });

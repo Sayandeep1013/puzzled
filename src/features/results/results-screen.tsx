@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PaperBackground, SketchButton, SketchFrame, SketchIcon } from '@/shared/ui';
+import { PopButton, PopIcon, PopSurface } from '@/shared/ui';
 
 function formatClock(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '—';
@@ -28,20 +28,23 @@ export function ResultsScreen({
   const pieces = size * size;
 
   return (
-    <PaperBackground>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.body}>
           <Text style={styles.title}>Well Done!</Text>
 
-          <SketchFrame fill={colors.gold} radius={30} seed={88} style={styles.trophyFrame}>
+          <PopSurface fill={colors.sunshine} radius={30} style={styles.trophyFrame}>
             <View style={styles.trophyInner}>
-              <SketchIcon name="trophy" size={110} color={colors.inkSoft} strokeWidth={2.4} />
+              <PopIcon name="trophy" size={110} color={colors.ink} />
             </View>
-          </SketchFrame>
+          </PopSurface>
 
-          <SketchFrame fill={colors.sage} radius={radii.md} seed={12} style={styles.banner}>
+          {/* Mint is light enough for direct ink text — matches
+              `home-screen.tsx`'s `progressCard` and `daily-screen.tsx`'s
+              `streakFrame`, so no nested white body is needed here. */}
+          <PopSurface fill={colors.mint} radius={radii.md} style={styles.banner}>
             <Text style={styles.bannerText}>You completed the puzzle!</Text>
-          </SketchFrame>
+          </PopSurface>
 
           <View style={styles.stats}>
             <View style={styles.stat}>
@@ -66,9 +69,9 @@ export function ResultsScreen({
         </View>
 
         <View style={styles.footer}>
-          <SketchButton
+          <PopButton
             label="Play Again"
-            variant="gold"
+            tone="sunshine"
             onPress={() =>
               router.replace({
                 pathname: '/game/[puzzleId]',
@@ -76,18 +79,15 @@ export function ResultsScreen({
               })
             }
           />
-          <SketchButton
-            label="Back Home"
-            variant="primary"
-            onPress={() => router.dismissAll()}
-          />
+          <PopButton label="Back Home" tone="grape" onPress={() => router.dismissAll()} />
         </View>
       </SafeAreaView>
-    </PaperBackground>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
   body: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.lg },
   title: { ...typography.hero, color: colors.ink },
@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
   banner: { alignSelf: 'center' },
   bannerText: {
     ...typography.bodyStrong,
-    color: colors.inkSoft,
+    color: colors.ink,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
@@ -110,6 +110,6 @@ const styles = StyleSheet.create({
   stat: { alignItems: 'center', gap: 2 },
   statLabel: { ...typography.label, color: colors.inkMuted },
   statValue: { ...typography.title, fontSize: 34, color: colors.ink },
-  statDivider: { width: 2, height: 44, backgroundColor: colors.line },
+  statDivider: { width: 2, height: 44, backgroundColor: colors.ink },
   footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
 });
