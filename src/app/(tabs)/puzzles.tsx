@@ -1,5 +1,5 @@
-import { ExploreScreen } from '@/features/explore/explore-screen';
+import { PuzzlesScreen } from '@/features/puzzles/puzzles-screen';
 
-export default function ExploreRoute() {
-  return <ExploreScreen />;
+export default function PuzzlesRoute() {
+  return <PuzzlesScreen />;
 }

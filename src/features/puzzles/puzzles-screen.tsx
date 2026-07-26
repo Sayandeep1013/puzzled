@@ -1,34 +1,54 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { listCatalog, resolvePuzzleImageSource } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PaperBackground, SketchFrame, SketchIcon, type IconName } from '@/shared/ui';
+import { PopChip, PopIcon, PopSurface } from '@/shared/ui';
 
-const CATEGORIES: { key: string; label: string; icon: IconName; tint: string }[] = [
-  { key: 'nature', label: 'Nature', icon: 'leaf', tint: colors.sage },
-  { key: 'animals', label: 'Animals', icon: 'paw', tint: colors.rose },
-  { key: 'cities', label: 'Cities', icon: 'city', tint: colors.primary },
-  { key: 'art', label: 'Art', icon: 'palette', tint: colors.gold },
-  { key: 'food', label: 'Food', icon: 'food', tint: colors.accent },
+/**
+ * `PuzzleDefinition` has no category/tag field — just id, title, image,
+ * gridSize, seed, revision (`src/game-engine/core/types.ts`). There is nothing
+ * to honestly bucket into "nature/animals/cities/art/food", so those fake
+ * chips are gone. The filter instead runs on the one real split the catalog
+ * already makes: bundled starters vs. puzzles the player imported
+ * (`listCatalog()` returns `{ bundled, user }` — the same split `HomeScreen`
+ * sections its lists by).
+ */
+type SourceFilter = 'all' | 'bundled' | 'user';
+
+const FILTERS: { key: SourceFilter; label: string; tone: string }[] = [
+  { key: 'all', label: 'All', tone: colors.grape },
+  { key: 'bundled', label: 'Starters', tone: colors.tangerine },
+  { key: 'user', label: 'My Photos', tone: colors.bubblegum },
 ];
+
+/** Tones used to frame grid cards, cycling independently of the filter tones above. */
+const CARD_TONES = [colors.grape, colors.bubblegum, colors.tangerine, colors.mint, colors.sky];
+
+interface CatalogData {
+  bundled: PuzzleDefinition[];
+  user: PuzzleDefinition[];
+}
+
+const EMPTY: CatalogData = { bundled: [], user: [] };
 
 function imageFor(puzzle: PuzzleDefinition): number | string | null {
   return resolvePuzzleImageSource(puzzle);
 }
 
-export function ExploreScreen() {
+export function PuzzlesScreen() {
   const router = useRouter();
-  const [puzzles, setPuzzles] = useState<PuzzleDefinition[]>([]);
+  const [data, setData] = useState<CatalogData>(EMPTY);
+  const [filter, setFilter] = useState<SourceFilter>('all');
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       listCatalog().then(({ bundled, user }) => {
-        if (active) setPuzzles([...bundled, ...user]);
+        if (active) setData({ bundled, user });
       });
       return () => {
         active = false;
@@ -36,36 +56,48 @@ export function ExploreScreen() {
     }, []),
   );
 
+  const filtered = useMemo(() => {
+    if (filter === 'bundled') return data.bundled;
+    if (filter === 'user') return data.user;
+    return [...data.bundled, ...data.user];
+  }, [data, filter]);
+
   const open = (puzzle: PuzzleDefinition) =>
     router.push({ pathname: '/difficulty/[puzzleId]', params: { puzzleId: puzzle.id } });
 
-  const recommended = puzzles[0];
-  const popular = puzzles.slice(1);
+  const recommended = filtered[0];
+  const rest = filtered.slice(1);
 
   return (
-    <PaperBackground>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.pageTitle}>Explore</Text>
+          <Text style={styles.pageTitle}>Puzzles</Text>
 
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Categories</Text>
-            <Text style={styles.seeAll}>See all</Text>
+            <Text style={styles.sectionTitle}>Browse</Text>
+            {/* "See all" clears the current filter — a real action, not a dead link. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Clear filter and show every puzzle"
+              onPress={() => setFilter('all')}
+            >
+              <Text style={styles.seeAll}>See all</Text>
+            </Pressable>
           </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.catRow}
+            contentContainerStyle={styles.chipRow}
           >
-            {CATEGORIES.map((cat) => (
-              <View key={cat.key} style={styles.cat}>
-                <SketchFrame fill={cat.tint} radius={20} seed={cat.key.length * 9 + 4}>
-                  <View style={styles.catInner}>
-                    <SketchIcon name={cat.icon} size={30} color={colors.inkSoft} />
-                  </View>
-                </SketchFrame>
-                <Text style={styles.catLabel}>{cat.label}</Text>
-              </View>
+            {FILTERS.map((item) => (
+              <PopChip
+                key={item.key}
+                label={item.label}
+                tone={item.tone}
+                selected={filter === item.key}
+                onPress={() => setFilter(item.key)}
+              />
             ))}
           </ScrollView>
 
@@ -75,7 +107,7 @@ export function ExploreScreen() {
                 <Text style={styles.sectionTitle}>Recommended</Text>
               </View>
               <Pressable onPress={() => open(recommended)} accessibilityRole="button">
-                <SketchFrame fill={colors.surface} radius={radii.lg} seed={21}>
+                <PopSurface fill={colors.tangerine} radius={radii.lg} contentStyle={styles.featureFrame}>
                   <View style={styles.featureBody}>
                     <View style={styles.featureImageWrap}>
                       <Preview puzzle={recommended} />
@@ -90,24 +122,30 @@ export function ExploreScreen() {
                       <Text style={styles.featureMeta}>Tap to choose a difficulty</Text>
                     </View>
                   </View>
-                </SketchFrame>
+                </PopSurface>
               </Pressable>
             </>
           ) : null}
 
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Popular puzzles</Text>
-            <Text style={styles.seeAll}>See all</Text>
+            <Text style={styles.sectionTitle}>All puzzles</Text>
+            <Text style={styles.sectionMeta}>
+              {filtered.length} {filtered.length === 1 ? 'puzzle' : 'puzzles'}
+            </Text>
           </View>
           <View style={styles.grid}>
-            {popular.map((puzzle) => (
+            {rest.map((puzzle, index) => (
               <Pressable
                 key={puzzle.id}
                 onPress={() => open(puzzle)}
                 accessibilityRole="button"
                 style={styles.gridItem}
               >
-                <SketchFrame fill={colors.surface} radius={radii.md} seed={puzzle.id.length * 5 + 2}>
+                <PopSurface
+                  fill={CARD_TONES[index % CARD_TONES.length]}
+                  radius={radii.md}
+                  contentStyle={styles.gridFrame}
+                >
                   <View style={styles.gridBody}>
                     <View style={styles.gridImageWrap}>
                       <Preview puzzle={puzzle} />
@@ -116,16 +154,20 @@ export function ExploreScreen() {
                       {puzzle.title}
                     </Text>
                   </View>
-                </SketchFrame>
+                </PopSurface>
               </Pressable>
             ))}
-            {popular.length === 0 ? (
-              <Text style={styles.empty}>Add photos from Home to see more puzzles here.</Text>
+            {filtered.length === 0 ? (
+              <Text style={styles.empty}>
+                {filter === 'user'
+                  ? 'Add photos from Home to see them here.'
+                  : 'No puzzles to show yet.'}
+              </Text>
             ) : null}
           </View>
         </ScrollView>
       </SafeAreaView>
-    </PaperBackground>
+    </View>
   );
 }
 
@@ -134,7 +176,7 @@ function Preview({ puzzle }: { puzzle: PuzzleDefinition }) {
   if (source == null) {
     return (
       <View style={styles.previewFallback}>
-        <SketchIcon name="puzzle" size={40} color={colors.inkMuted} />
+        <PopIcon name="puzzle" size={40} color={colors.inkMuted} />
       </View>
     );
   }
@@ -148,6 +190,7 @@ function Preview({ puzzle }: { puzzle: PuzzleDefinition }) {
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
   content: {
     paddingHorizontal: spacing.lg,
@@ -165,41 +208,44 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   sectionTitle: { ...typography.heading, color: colors.ink },
-  seeAll: { ...typography.caption, color: colors.primary },
-  catRow: { gap: spacing.md, paddingVertical: spacing.xs, paddingRight: spacing.md },
-  cat: { alignItems: 'center', gap: spacing.xs, width: 74 },
-  catInner: { width: 62, height: 62, alignItems: 'center', justifyContent: 'center' },
-  catLabel: { ...typography.caption, color: colors.ink },
-  featureBody: { padding: spacing.sm, gap: spacing.sm },
+  sectionMeta: { ...typography.caption, color: colors.inkMuted },
+  seeAll: { ...typography.caption, color: colors.grape },
+  chipRow: { gap: spacing.sm, paddingVertical: spacing.xs, paddingRight: spacing.md },
+  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+  // as a frame around the white card body nested inside it (see HomeScreen's
+  // `PuzzleCard` — ink-on-saturated-fill body text fails contrast).
+  featureFrame: { padding: spacing.xs },
+  featureBody: { overflow: 'hidden', borderRadius: radii.md, backgroundColor: colors.surface },
   featureImageWrap: {
     height: 150,
     borderRadius: radii.md,
     overflow: 'hidden',
-    backgroundColor: colors.kraft,
+    backgroundColor: colors.sunshine,
   },
-  featureCopy: { paddingHorizontal: spacing.xs, paddingBottom: spacing.xs, gap: 2 },
+  featureCopy: { padding: spacing.md, gap: 2 },
   featureTitle: { ...typography.heading, color: colors.ink },
   featureMeta: { ...typography.caption, color: colors.inkMuted },
   newTag: {
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.cherry,
     borderRadius: radii.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
   },
-  newTagText: { ...typography.label, fontSize: 10, color: colors.surfaceStrong },
+  newTagText: { ...typography.label, fontSize: 10, color: colors.onFill },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'space-between' },
   gridItem: { width: '47%' },
-  gridBody: { padding: spacing.sm, gap: spacing.sm },
+  gridFrame: { padding: spacing.xs },
+  gridBody: { overflow: 'hidden', borderRadius: radii.sm, backgroundColor: colors.surface },
   gridImageWrap: {
     height: 110,
     borderRadius: radii.sm,
     overflow: 'hidden',
-    backgroundColor: colors.kraft,
+    backgroundColor: colors.sunshine,
   },
-  gridTitle: { ...typography.caption, color: colors.ink, paddingHorizontal: 2 },
+  gridTitle: { ...typography.caption, color: colors.ink, padding: spacing.sm },
   previewImage: { width: '100%', height: '100%' },
   previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { ...typography.body, color: colors.inkMuted },
