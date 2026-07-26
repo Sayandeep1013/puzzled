@@ -74,6 +74,25 @@ export function PuzzlesScreen() {
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.pageTitle}>Puzzles</Text>
 
+          <Pressable
+            onPress={() =>
+              router.push({ pathname: '/pack/[packId]', params: { packId: 'starter' } })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Browse the Starter Pack"
+          >
+            <PopSurface fill={colors.sunshine} radius={radii.md} contentStyle={styles.packFrame}>
+              <View style={styles.packBody}>
+                <PopIcon name="packs" size={26} color={colors.ink} />
+                <View style={styles.packCopy}>
+                  <Text style={styles.packTitle}>Starter Pack</Text>
+                  <Text style={styles.packMeta}>Every puzzle bundled with Puzzled</Text>
+                </View>
+                <PopIcon name="chevron" size={20} color={colors.inkMuted} />
+              </View>
+            </PopSurface>
+          </Pressable>
+
           <View style={styles.sectionHead}>
             <Text style={styles.sectionTitle}>Browse</Text>
             {/* "See all" clears the current filter — a real action, not a dead link. */}
@@ -201,6 +220,21 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   pageTitle: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
+  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+  // as a frame around the white row body nested inside it (the
+  // `pack-screen.tsx` row / `home-screen.tsx` `PuzzleCard` pattern).
+  packFrame: { padding: spacing.xs },
+  packBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+  },
+  packCopy: { flex: 1, gap: 2 },
+  packTitle: { ...typography.heading, fontSize: 17, color: colors.ink },
+  packMeta: { ...typography.caption, color: colors.inkMuted },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'baseline',
