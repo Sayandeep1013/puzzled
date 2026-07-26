@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { Link, useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,8 +20,8 @@ import {
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PaperBackground, SketchButton, SketchFrame, SketchIcon, type IconName } from '@/shared/ui';
+import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
+import { PopButton, PopIcon, PopSurface, type PopIconName } from '@/shared/ui';
 
 interface HomeData {
   bundled: PuzzleDefinition[];
@@ -148,7 +148,7 @@ export function HomeScreen() {
   const firstPlayable = data.bundled[0] ?? data.user[0];
 
   return (
-    <PaperBackground>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.hero}>
@@ -156,18 +156,18 @@ export function HomeScreen() {
             <Text style={styles.title}>Puzzle Journey</Text>
 
             <View style={styles.heroPiece}>
-              <SketchFrame fill={colors.gold} radius={26} seed={99} style={styles.heroPieceFrame}>
+              <PopSurface fill={colors.sunshine} radius={26} style={styles.heroPieceFrame}>
                 <View style={styles.heroPieceInner}>
-                  <SketchIcon name="puzzle" size={92} color={colors.inkSoft} strokeWidth={2.4} />
+                  <PopIcon name="puzzle" size={92} color={colors.ink} />
                 </View>
-              </SketchFrame>
+              </PopSurface>
             </View>
 
             <Text style={styles.subtitle}>Relax your mind. Enjoy the moment.</Text>
 
-            <SketchButton
+            <PopButton
               label="Play Now"
-              variant="primary"
+              tone="grape"
               style={styles.playNow}
               disabled={!firstPlayable}
               onPress={() => {
@@ -190,7 +190,7 @@ export function HomeScreen() {
             </View>
           </View>
 
-          <SketchFrame fill={colors.sage} radius={radii.lg} seed={5} style={styles.progressCard}>
+          <PopSurface fill={colors.mint} radius={radii.lg} style={styles.progressCard}>
             <View style={styles.progressRow}>
               <View style={styles.progressCopy}>
                 <Text style={styles.cardLabel}>YOUR PROGRESS</Text>
@@ -203,7 +203,7 @@ export function HomeScreen() {
                 <Text style={styles.progressPercent}>{percent}%</Text>
               </View>
             </View>
-          </SketchFrame>
+          </PopSurface>
 
           <View style={styles.section}>
             <View style={styles.sectionHeading}>
@@ -212,8 +212,13 @@ export function HomeScreen() {
                 {data.bundled.length} starter{data.bundled.length === 1 ? '' : 's'}
               </Text>
             </View>
-            {data.bundled.map((puzzle) => (
-              <PuzzleCard key={puzzle.id} puzzle={puzzle} rows={data.byPuzzle[puzzle.id] ?? []} />
+            {data.bundled.map((puzzle, index) => (
+              <PuzzleCard
+                key={puzzle.id}
+                puzzle={puzzle}
+                rows={data.byPuzzle[puzzle.id] ?? []}
+                fill={accentAt(index)}
+              />
             ))}
           </View>
 
@@ -231,10 +236,10 @@ export function HomeScreen() {
               onPress={onImport}
               disabled={importing}
             >
-              <SketchFrame fill={colors.surface} radius={radii.lg} seed={11}>
+              <PopSurface fill={colors.surface} radius={radii.lg}>
                 <View style={styles.importInner}>
                   {importing ? (
-                    <ActivityIndicator color={colors.primary} />
+                    <ActivityIndicator color={colors.grape} />
                   ) : (
                     <Text style={styles.importPlus}>＋</Text>
                   )}
@@ -242,7 +247,7 @@ export function HomeScreen() {
                     {importing ? 'Adding your photo…' : 'Add from gallery'}
                   </Text>
                 </View>
-              </SketchFrame>
+              </PopSurface>
             </Pressable>
 
             {data.user.length === 0 ? (
@@ -250,11 +255,12 @@ export function HomeScreen() {
                 Pick any photo and it becomes a jigsaw you can play at 3×3 up to 10×10.
               </Text>
             ) : (
-              data.user.map((puzzle) => (
+              data.user.map((puzzle, index) => (
                 <PuzzleCard
                   key={puzzle.id}
                   puzzle={puzzle}
                   rows={data.byPuzzle[puzzle.id] ?? []}
+                  fill={accentAt(index)}
                   previewUri={puzzle.image.uri}
                   onDelete={() => onDelete(puzzle)}
                 />
@@ -263,21 +269,25 @@ export function HomeScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
-    </PaperBackground>
+    </View>
   );
 }
 
 function PuzzleCard({
   puzzle,
   rows,
+  fill,
   previewUri,
   onDelete,
 }: {
   puzzle: PuzzleDefinition;
   rows: PuzzleProgressSummary[];
+  /** Deterministic per-position accent from `accentAt` — the colour frame around the card. */
+  fill: string;
   previewUri?: string;
   onDelete?: () => void;
 }) {
+  const router = useRouter();
   const latest = rows[0]; // Most recently played size, or undefined.
   const done = latest?.status === 'completed';
   const started = latest != null && latest.lockedPieces > 0;
@@ -288,7 +298,7 @@ function PuzzleCard({
     : { pathname: '/difficulty/[puzzleId]' as const, params: { puzzleId: puzzle.id } };
 
   return (
-    <SketchFrame fill={colors.surface} radius={radii.lg} seed={puzzle.id.length * 7 + 3}>
+    <PopSurface fill={fill} radius={radii.lg} contentStyle={styles.cardFrame}>
       <View style={styles.cardBody}>
         <View style={styles.preview}>
           {previewUri ? (
@@ -327,29 +337,16 @@ function PuzzleCard({
               {rows.length > 1 ? ` · ${rows.length} sizes` : ''}
             </Text>
           </View>
-          <Link href={href} asChild>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
-            >
-              {({ pressed }) => (
-                <SketchFrame
-                  fill={pressed ? colors.primaryPressed : colors.primary}
-                  radius={radii.md}
-                  seed={puzzle.id.length * 13 + 1}
-                >
-                  <View style={styles.playButton}>
-                    <Text style={styles.playButtonText}>
-                      {done ? 'Play again' : started ? 'Continue' : 'Start'}
-                    </Text>
-                  </View>
-                </SketchFrame>
-              )}
-            </Pressable>
-          </Link>
+          <PopButton
+            label={done ? 'Play again' : started ? 'Continue' : 'Start'}
+            tone="grape"
+            size="sm"
+            accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
+            onPress={() => router.push(href)}
+          />
         </View>
       </View>
-    </SketchFrame>
+    </PopSurface>
   );
 }
 
@@ -358,23 +355,24 @@ function QuickLink({
   label,
   onPress,
 }: {
-  icon: IconName;
+  icon: PopIconName;
   label: string;
   onPress: () => void;
 }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.quickLink}>
-      <SketchFrame fill={colors.surface} radius={radii.md} seed={label.length * 6 + 2}>
+      <PopSurface fill={colors.surface} radius={radii.md}>
         <View style={styles.quickLinkInner}>
-          <SketchIcon name={icon} size={22} color={colors.primary} />
+          <PopIcon name={icon} size={22} color={colors.grape} />
           <Text style={styles.quickLinkLabel}>{label}</Text>
         </View>
-      </SketchFrame>
+      </PopSurface>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.paper },
   safeArea: { flex: 1 },
   quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch', marginTop: spacing.sm, maxWidth: 320, width: '100%' },
   quickLink: { flex: 1 },
@@ -397,7 +395,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: spacing.sm },
   eyebrow: {
     ...typography.label,
-    color: colors.accent,
+    color: colors.tangerine,
     letterSpacing: 1.8,
   },
   title: {
@@ -424,8 +422,8 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   progressCopy: { flex: 1, gap: spacing.xs },
-  cardLabel: { ...typography.label, color: colors.inkSoft },
-  progressValue: { ...typography.heading, color: colors.inkSoft },
+  cardLabel: { ...typography.label, color: colors.ink },
+  progressValue: { ...typography.heading, color: colors.ink },
   cardDescription: { ...typography.caption, color: colors.inkMuted },
   progressRing: {
     width: 72,
@@ -433,10 +431,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 5,
-    borderColor: colors.surfaceStrong,
+    borderColor: colors.surface,
     borderRadius: radii.pill,
   },
-  progressPercent: { ...typography.bodyStrong, color: colors.inkSoft, fontSize: 17 },
+  progressPercent: { ...typography.bodyStrong, color: colors.ink, fontSize: 17 },
   section: { gap: spacing.md },
   sectionHeading: {
     flexDirection: 'row',
@@ -453,22 +451,25 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.lg,
   },
-  importPlus: { ...typography.title, color: colors.primary, marginTop: -2 },
+  importPlus: { ...typography.title, color: colors.grape, marginTop: -2 },
   importText: { ...typography.bodyStrong, color: colors.ink },
   emptyHint: {
     ...typography.body,
     color: colors.inkMuted,
     paddingHorizontal: spacing.xs,
   },
-  cardBody: { overflow: 'hidden', borderRadius: radii.lg },
+  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+  // as a frame around the white card body nested inside it.
+  cardFrame: { padding: spacing.xs },
+  cardBody: { overflow: 'hidden', borderRadius: radii.md, backgroundColor: colors.surface },
   preview: {
     height: 200,
     overflow: 'hidden',
     justifyContent: 'flex-end',
     padding: spacing.lg,
     backgroundColor: '#F4C78D',
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
+    borderTopLeftRadius: radii.md,
+    borderTopRightRadius: radii.md,
   },
   previewImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   previewTile: { position: 'absolute', width: 180, height: 180, borderRadius: radii.pill },
@@ -478,7 +479,7 @@ const styles = StyleSheet.create({
   previewLabel: {
     ...typography.label,
     alignSelf: 'flex-start',
-    color: colors.surfaceStrong,
+    color: colors.surface,
     textTransform: 'uppercase',
     backgroundColor: 'rgba(23,33,33,0.45)',
     paddingHorizontal: spacing.sm,
@@ -495,8 +496,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: 'rgba(23,33,33,0.55)',
   },
-  deleteButtonPressed: { backgroundColor: colors.accentPressed },
-  deleteButtonText: { ...typography.caption, color: colors.surfaceStrong },
+  deleteButtonPressed: { backgroundColor: colors.cherry },
+  deleteButtonText: { ...typography.caption, color: colors.surface },
   puzzleDetails: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -507,6 +508,4 @@ const styles = StyleSheet.create({
   puzzleCopy: { flex: 1 },
   puzzleTitle: { ...typography.heading, color: colors.ink },
   puzzleMeta: { ...typography.caption, marginTop: spacing.xs, color: colors.inkMuted },
-  playButton: { paddingHorizontal: spacing.lg, paddingVertical: 11 },
-  playButtonText: { ...typography.bodyStrong, color: colors.surfaceStrong },
 });
