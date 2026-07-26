@@ -10,6 +10,7 @@ import {
   getSettingsRepository,
   getWalletRepository,
   resolvePuzzleImageSource,
+  sessionStorageKey,
   type Wallet,
 } from '@/data';
 import {
@@ -91,6 +92,16 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const [haptics, setHaptics] = useState(true);
   const [highlightEdges, setHighlightEdges] = useState(false);
   const [wallet, setWallet] = useState<Wallet | null>(null);
+
+  // Tracks whether the component is still mounted, for async work (like the
+  // hint spend below) that must not call state setters after unmount.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Load the catalog entry + artwork once per puzzle.
   useEffect(() => {
@@ -233,9 +244,14 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
   // On completion, hand off to the results screen once — but only after a short
   // beat so the board's celebration (confetti + success haptic) is actually seen.
-  // The same `handedOff` guard also gates the coin credit so a re-render can
-  // never double-award: it flips to `true` synchronously, before either the
-  // credit or the navigation timer is scheduled.
+  // `handedOff` prevents a same-mount double navigation/credit (e.g. a spurious
+  // re-render while `complete` is still true), but it is a per-mount ref and
+  // resets on remount — it CANNOT prevent a re-credit across "Play Again"
+  // (results screen → router.replace back into a fresh GameScreen mount, which
+  // restores the same completed session and fires this effect again). The
+  // coin credit's actual correctness comes from `recordOnce` below, keyed on
+  // the (puzzle, size) identity, so a given board pays out exactly once for
+  // its lifetime no matter how many times it is remounted or replayed.
   const handedOff = useRef(false);
   useEffect(() => {
     if (!complete || handedOff.current || catalog.status !== 'ready' || gridSize == null) {
@@ -247,11 +263,11 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
     void (async () => {
       try {
-        await (await getWalletRepository()).record({
+        await (await getWalletRepository()).recordOnce({
           deltaCoins: earnedCoins,
           deltaHints: 0,
           reason: 'puzzle-complete',
-          ref: completedPuzzleId,
+          ref: sessionStorageKey(completedPuzzleId, gridSize),
         });
       } catch {
         // Best-effort: a failed credit must not block the trip to results.
@@ -339,11 +355,23 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   // "Show me one": debits a hint BEFORE placing anything, then locks a random
   // unplaced piece at its solved position via the engine's own `dropPiece`
   // (position === solvedPosition with a zero threshold always snaps+locks).
+  //
+  // `hintSpendInFlight` closes a fast-double-tap window: the `disabled` prop
+  // on the button and the `wallet.hints > 0` check just below both read the
+  // same closured `wallet` state, which only updates once the async debit
+  // resolves. Two taps fired inside that window would both pass the check,
+  // both debit, and both place a piece for the price of one hint. The ref
+  // flips to `true` synchronously — before the first `await` — so a second
+  // tap during the in-flight debit is a no-op regardless of stale state.
+  const hintSpendInFlight = useRef(false);
   const onSpendHint = useCallback(() => {
     if (!session || !playable) {
       return;
     }
     if ((wallet?.hints ?? 0) <= 0) {
+      return;
+    }
+    if (hintSpendInFlight.current) {
       return;
     }
     const unplaced = session.pieces.filter((piece) => !piece.isLocked);
@@ -352,35 +380,44 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
       return;
     }
 
+    hintSpendInFlight.current = true;
     void (async () => {
-      let nextWallet: Wallet;
       try {
-        nextWallet = await (await getWalletRepository()).record({
-          deltaCoins: 0,
-          deltaHints: -1,
-          reason: 'hint-spend',
-          ref: puzzleId,
-        });
-      } catch {
-        // Debit failed — do not reveal a hint the player was never charged for.
-        return;
-      }
-      setWallet(nextWallet);
+        let nextWallet: Wallet;
+        try {
+          nextWallet = await (await getWalletRepository()).record({
+            deltaCoins: 0,
+            deltaHints: -1,
+            reason: 'hint-spend',
+            ref: puzzleId,
+          });
+        } catch {
+          // Debit failed — do not reveal a hint the player was never charged for.
+          return;
+        }
+        if (!mounted.current) return;
+        setWallet(nextWallet);
 
-      const target = unplaced[Math.floor(Math.random() * unplaced.length)];
-      const geometry = findGeometry(playable.generated.pieces, target.pieceId);
-      const now = new Date().toISOString();
-      const placed = dropPiece({
-        session,
-        pieceId: target.pieceId,
-        position: geometry.solvedPosition,
-        solvedPosition: geometry.solvedPosition,
-        now,
-        elapsedMs: session.elapsedMs,
-        snapThreshold: 0,
-      });
-      onSessionChange(placed);
-      setOverlay('none');
+        const target = unplaced[Math.floor(Math.random() * unplaced.length)];
+        const geometry = findGeometry(playable.generated.pieces, target.pieceId);
+        const now = new Date().toISOString();
+        const placed = dropPiece({
+          session,
+          pieceId: target.pieceId,
+          position: geometry.solvedPosition,
+          solvedPosition: geometry.solvedPosition,
+          now,
+          elapsedMs: session.elapsedMs,
+          snapThreshold: 0,
+        });
+        if (!mounted.current) return;
+        onSessionChange(placed);
+        setOverlay('none');
+      } finally {
+        // Cleared regardless of success/failure/early-return so the next tap
+        // (or the same tap after a debit failure) is never permanently locked out.
+        hintSpendInFlight.current = false;
+      }
     })();
   }, [session, playable, wallet, puzzleId, onSessionChange]);
 

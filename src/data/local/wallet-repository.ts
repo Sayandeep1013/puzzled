@@ -90,6 +90,20 @@ export class SQLiteWalletRepository implements WalletRepository {
     return this.balance();
   }
 
+  async recordOnce(entry: NewLedgerEntry): Promise<Wallet> {
+    if (entry.ref != null) {
+      const existing = await this.database.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM ledger WHERE reason = ? AND ref = ?',
+        entry.reason,
+        entry.ref,
+      );
+      if (existing && existing.count > 0) {
+        return this.balance();
+      }
+    }
+    return this.record(entry);
+  }
+
   async history(limit?: number): Promise<LedgerEntry[]> {
     const rows =
       limit === undefined

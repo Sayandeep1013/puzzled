@@ -95,6 +95,13 @@ export type NewLedgerEntry = Omit<LedgerEntry, 'id' | 'createdAt'>;
 export interface WalletRepository {
   balance(): Promise<Wallet>;
   record(entry: NewLedgerEntry): Promise<Wallet>;
+  /**
+   * Records `entry` only if no existing ledger row shares the same `reason`
+   * AND the same `ref` — otherwise a no-op that returns the current balance
+   * unchanged. A null/undefined `ref` is never deduped (always recorded),
+   * since dedup requires a concrete (reason, ref) identity to key on.
+   */
+  recordOnce(entry: NewLedgerEntry): Promise<Wallet>;
   history(limit?: number): Promise<LedgerEntry[]>;
 }
 
