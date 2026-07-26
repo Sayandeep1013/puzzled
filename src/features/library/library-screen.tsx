@@ -1,155 +1,293 @@
-import { Link, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  getFavouritesRepository,
   getProgressRepository,
   listCatalog,
   resolvePuzzleImageSource,
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PaperBackground, SketchFrame, SketchIcon } from '@/shared/ui';
+import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
+import { PopChip, PopIcon, PopProgress, PopSurface, type PopIconName } from '@/shared/ui';
 
-type Tab = 'progress' | 'completed' | 'favorites';
+type Tab = 'progress' | 'completed' | 'favourites' | 'photos';
 
-interface Row extends PuzzleProgressSummary {
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'progress', label: 'In Progress' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'favourites', label: 'Favourites' },
+  { key: 'photos', label: 'My Photos' },
+];
+
+const EMPTY_COPY: Record<Tab, { icon: PopIconName; text: string; sub: string }> = {
+  progress: {
+    icon: 'library',
+    text: 'Nothing in progress',
+    sub: 'Start a puzzle from Home or Puzzles.',
+  },
+  completed: {
+    icon: 'library',
+    text: 'No completed puzzles yet',
+    sub: 'Finish a puzzle to see it here.',
+  },
+  favourites: {
+    icon: 'heart',
+    text: 'No favourites yet',
+    sub: 'Tap the heart on a puzzle to save it here.',
+  },
+  photos: {
+    icon: 'library',
+    text: 'No photos yet',
+    sub: 'Import a photo from Home to see it here.',
+  },
+};
+
+/** One row's worth of joined data: a puzzle plus its (optional) saved progress. */
+interface VisibleItem {
+  puzzleId: string;
   puzzle?: PuzzleDefinition;
+  progress?: PuzzleProgressSummary;
+}
+
+interface LibraryData {
+  /** Every saved session, most recently played first (mirrors HomeScreen's loader). */
+  rows: (PuzzleProgressSummary & { puzzle?: PuzzleDefinition })[];
+  /** Sessions grouped per puzzle id, so Favourites/Photos can show the latest one. */
+  byPuzzle: Record<string, PuzzleProgressSummary[]>;
+  catalogById: Map<string, PuzzleDefinition>;
+  userPuzzles: PuzzleDefinition[];
+  favouriteIds: Set<string>;
+}
+
+const EMPTY_DATA: LibraryData = {
+  rows: [],
+  byPuzzle: {},
+  catalogById: new Map(),
+  userPuzzles: [],
+  favouriteIds: new Set(),
+};
+
+async function loadLibraryData(): Promise<LibraryData> {
+  const [{ bundled, user }, summaries, favouriteIds] = await Promise.all([
+    listCatalog(),
+    (await getProgressRepository()).listSummaries().catch(() => [] as PuzzleProgressSummary[]),
+    (await getFavouritesRepository()).list().catch(() => [] as string[]),
+  ]);
+
+  const catalogById = new Map<string, PuzzleDefinition>();
+  for (const puzzle of [...bundled, ...user]) catalogById.set(puzzle.id, puzzle);
+
+  const byPuzzle: Record<string, PuzzleProgressSummary[]> = {};
+  for (const row of summaries) {
+    (byPuzzle[row.puzzleId] ??= []).push(row);
+  }
+
+  return {
+    rows: summaries.map((s) => ({ ...s, puzzle: catalogById.get(s.puzzleId) })),
+    byPuzzle,
+    catalogById,
+    userPuzzles: user,
+    favouriteIds: new Set(favouriteIds),
+  };
 }
 
 export function LibraryScreen() {
   const [tab, setTab] = useState<Tab>('progress');
-  const [rows, setRows] = useState<Row[]>([]);
+  const [data, setData] = useState<LibraryData>(EMPTY_DATA);
 
+  // Refetch on focus so progress, favourites, and imported photos reflect
+  // whatever changed on the board or on Home since this screen last showed.
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      (async () => {
-        const [{ bundled, user }, summaries] = await Promise.all([
-          listCatalog(),
-          (await getProgressRepository())
-            .listSummaries()
-            .catch(() => [] as PuzzleProgressSummary[]),
-        ]);
-        const byId = new Map<string, PuzzleDefinition>();
-        for (const puzzle of [...bundled, ...user]) byId.set(puzzle.id, puzzle);
-        if (active) {
-          setRows(summaries.map((s) => ({ ...s, puzzle: byId.get(s.puzzleId) })));
-        }
-      })();
+      loadLibraryData().then((next) => {
+        if (active) setData(next);
+      });
       return () => {
         active = false;
       };
     }, []),
   );
 
-  const inProgress = rows.filter((r) => r.status !== 'completed' && r.lockedPieces > 0);
-  const completed = rows.filter((r) => r.status === 'completed');
-  const visible = tab === 'progress' ? inProgress : tab === 'completed' ? completed : [];
+  const onToggleFavourite = useCallback(async (puzzleId: string) => {
+    const isFavourite = await (await getFavouritesRepository()).toggle(puzzleId);
+    // Optimistic local update — a full refetch also happens next time this
+    // screen gains focus, but the Favourites tab should react immediately.
+    setData((prev) => {
+      const favouriteIds = new Set(prev.favouriteIds);
+      if (isFavourite) {
+        favouriteIds.add(puzzleId);
+      } else {
+        favouriteIds.delete(puzzleId);
+      }
+      return { ...prev, favouriteIds };
+    });
+  }, []);
+
+  const inProgress = data.rows.filter((r) => r.status !== 'completed' && r.lockedPieces > 0);
+  const completed = data.rows.filter((r) => r.status === 'completed');
+  const favouritePuzzles = Array.from(data.favouriteIds)
+    .map((id) => data.catalogById.get(id))
+    .filter((puzzle): puzzle is PuzzleDefinition => puzzle != null);
+
+  const visible: VisibleItem[] =
+    tab === 'progress'
+      ? inProgress.map((row) => ({ puzzleId: row.puzzleId, puzzle: row.puzzle, progress: row }))
+      : tab === 'completed'
+        ? completed.map((row) => ({ puzzleId: row.puzzleId, puzzle: row.puzzle, progress: row }))
+        : tab === 'favourites'
+          ? favouritePuzzles.map((puzzle) => ({
+              puzzleId: puzzle.id,
+              puzzle,
+              progress: data.byPuzzle[puzzle.id]?.[0],
+            }))
+          : data.userPuzzles.map((puzzle) => ({
+              puzzleId: puzzle.id,
+              puzzle,
+              progress: data.byPuzzle[puzzle.id]?.[0],
+            }));
+
+  const emptyCopy = EMPTY_COPY[tab];
 
   return (
-    <PaperBackground>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <Text style={styles.pageTitle}>My Library</Text>
 
-        <View style={styles.tabs}>
-          {(
-            [
-              ['progress', 'In Progress'],
-              ['completed', 'Completed'],
-              ['favorites', 'Favorites'],
-            ] as [Tab, string][]
-          ).map(([key, label]) => {
-            const active = tab === key;
-            return (
-              <Pressable
-                key={key}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => setTab(key)}
-                style={styles.tab}
-              >
-                <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
-                {active ? <View style={styles.tabUnderline} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabs}
+        >
+          {TABS.map(({ key, label }, index) => (
+            <PopChip
+              key={key}
+              label={label}
+              tone={accentAt(index)}
+              selected={tab === key}
+              onPress={() => setTab(key)}
+            />
+          ))}
+        </ScrollView>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {tab === 'favorites' ? (
-            <EmptyState
-              icon="heart"
-              text="No favorites yet"
-              sub="Favoriting puzzles is coming soon."
-            />
-          ) : visible.length === 0 ? (
-            <EmptyState
-              icon="library"
-              text={tab === 'progress' ? 'Nothing in progress' : 'No completed puzzles yet'}
-              sub="Start a puzzle from Home or Explore."
-            />
+          {visible.length === 0 ? (
+            <EmptyState icon={emptyCopy.icon} text={emptyCopy.text} sub={emptyCopy.sub} />
           ) : (
-            visible.map((row) => <LibraryRow key={`${row.puzzleId}-${row.gridSize}`} row={row} />)
+            visible.map((item, index) => (
+              <LibraryRow
+                key={item.progress ? `${item.puzzleId}-${item.progress.gridSize}` : item.puzzleId}
+                puzzleId={item.puzzleId}
+                puzzle={item.puzzle}
+                progress={item.progress}
+                accent={accentAt(index)}
+                isFavourite={data.favouriteIds.has(item.puzzleId)}
+                onToggleFavourite={onToggleFavourite}
+              />
+            ))
           )}
         </ScrollView>
       </SafeAreaView>
-    </PaperBackground>
+    </View>
   );
 }
 
-function LibraryRow({ row }: { row: Row }) {
-  const pct = row.totalPieces > 0 ? Math.round((row.lockedPieces / row.totalPieces) * 100) : 0;
-  const source = row.puzzle ? resolvePuzzleImageSource(row.puzzle) : null;
-  const done = row.status === 'completed';
+function LibraryRow({
+  puzzleId,
+  puzzle,
+  progress,
+  accent,
+  isFavourite,
+  onToggleFavourite,
+}: {
+  puzzleId: string;
+  puzzle?: PuzzleDefinition;
+  progress?: PuzzleProgressSummary;
+  /** Deterministic per-position accent from `accentAt` — the colour frame around the row. */
+  accent: string;
+  isFavourite: boolean;
+  onToggleFavourite: (puzzleId: string) => void;
+}) {
+  const router = useRouter();
+  const done = progress?.status === 'completed';
+  const source = puzzle ? resolvePuzzleImageSource(puzzle) : null;
+  const title = puzzle?.title ?? puzzleId;
+
+  // A puzzle with a saved session resumes straight onto the board; anything
+  // else (favourited or imported but never played) starts at difficulty pick.
+  const href =
+    progress != null && progress.lockedPieces > 0
+      ? { pathname: '/game/[puzzleId]' as const, params: { puzzleId, size: String(progress.gridSize) } }
+      : { pathname: '/difficulty/[puzzleId]' as const, params: { puzzleId } };
 
   return (
-    <Link
-      href={{
-        pathname: '/game/[puzzleId]',
-        params: { puzzleId: row.puzzleId, size: String(row.gridSize) },
-      }}
-      asChild
-    >
-      <Pressable accessibilityRole="button">
-        <SketchFrame fill={colors.surface} radius={radii.md} seed={row.puzzleId.length * 6 + row.gridSize}>
-          <View style={styles.row}>
-            <View style={styles.thumb}>
-              {source != null ? (
-                <Image
-                  source={typeof source === 'number' ? source : { uri: source }}
-                  style={styles.thumbImage}
-                  resizeMode="cover"
-                />
-              ) : (
-                <SketchIcon name="puzzle" size={28} color={colors.inkMuted} />
-              )}
-            </View>
-            <View style={styles.rowBody}>
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {row.puzzle?.title ?? row.puzzleId}
-              </Text>
-              <Text style={styles.rowMeta}>
-                {row.gridSize}×{row.gridSize} · {done ? 'Completed' : `${pct}%`}
-              </Text>
-              <View style={styles.track}>
-                <View style={[styles.fill, { width: `${done ? 100 : pct}%` }]} />
-              </View>
-            </View>
-            <SketchIcon name="chevron" size={20} color={colors.inkMuted} />
+    <PopSurface fill={accent} radius={radii.md} contentStyle={styles.rowFrame}>
+      <View style={styles.rowBody}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          style={styles.rowMain}
+          onPress={() => router.push(href)}
+        >
+          <View style={styles.thumb}>
+            {source != null ? (
+              <Image
+                source={typeof source === 'number' ? source : { uri: source }}
+                style={styles.thumbImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <PopIcon name="puzzle" size={26} color={colors.inkMuted} />
+            )}
           </View>
-        </SketchFrame>
-      </Pressable>
-    </Link>
+          <View style={styles.rowCopy}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.rowMeta}>
+              {progress
+                ? `${progress.gridSize}×${progress.gridSize} · ${done ? 'Completed' : `${Math.round((progress.lockedPieces / progress.totalPieces) * 100)}%`}`
+                : 'Choose 3×3 up to 10×10'}
+            </Text>
+            {progress ? (
+              <PopProgress
+                value={progress.lockedPieces}
+                goal={progress.totalPieces}
+                tone={done ? colors.mint : colors.grape}
+                height={8}
+              />
+            ) : null}
+          </View>
+          <PopIcon name="chevron" size={20} color={colors.inkMuted} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={isFavourite ? `Remove ${title} from favourites` : `Add ${title} to favourites`}
+          accessibilityState={{ selected: isFavourite }}
+          hitSlop={10}
+          onPress={() => onToggleFavourite(puzzleId)}
+          style={styles.heartButton}
+        >
+          <PopIcon
+            name="heart"
+            size={22}
+            color={isFavourite ? colors.cherry : colors.inkMuted}
+            weight={isFavourite ? 'fill' : 'regular'}
+          />
+        </Pressable>
+      </View>
+    </PopSurface>
   );
 }
 
-function EmptyState({ icon, text, sub }: { icon: 'heart' | 'library'; text: string; sub: string }) {
+function EmptyState({ icon, text, sub }: { icon: PopIconName; text: string; sub: string }) {
   return (
     <View style={styles.emptyWrap}>
-      <SketchIcon name={icon} size={48} color={colors.inkMuted} />
+      <PopIcon name={icon} size={48} color={colors.inkMuted} />
       <Text style={styles.emptyTitle}>{text}</Text>
       <Text style={styles.emptySub}>{sub}</Text>
     </View>
@@ -157,43 +295,44 @@ function EmptyState({ icon, text, sub }: { icon: 'heart' | 'library'; text: stri
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
   pageTitle: { ...typography.title, color: colors.ink, marginTop: spacing.sm, paddingHorizontal: spacing.lg },
-  tabs: { flexDirection: 'row', paddingHorizontal: spacing.lg, gap: spacing.lg, marginTop: spacing.sm },
-  tab: { paddingVertical: spacing.xs, alignItems: 'center', gap: 4 },
-  tabText: { ...typography.bodyStrong, color: colors.inkMuted },
-  tabTextActive: { color: colors.ink },
-  tabUnderline: { height: 3, width: '100%', borderRadius: 2, backgroundColor: colors.primary },
+  tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   content: {
     padding: spacing.lg,
+    paddingTop: 0,
     gap: spacing.md,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+  // Inset padding on the coloured `PopSurface` face, so a ring of `accent` shows
+  // as a frame around the white row body nested inside it (see HomeScreen's
+  // `PuzzleCard` — ink-on-saturated-fill body text fails contrast).
+  rowFrame: { padding: spacing.xs },
+  rowBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+  heartButton: { alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md },
   thumb: {
     width: 56,
     height: 56,
     borderRadius: radii.sm,
     overflow: 'hidden',
-    backgroundColor: colors.kraft,
+    backgroundColor: colors.sunshine,
     alignItems: 'center',
     justifyContent: 'center',
   },
   thumbImage: { width: '100%', height: '100%' },
-  rowBody: { flex: 1, gap: 4 },
+  rowCopy: { flex: 1, gap: 4 },
   rowTitle: { ...typography.heading, fontSize: 18, color: colors.ink },
   rowMeta: { ...typography.caption, color: colors.inkMuted },
-  track: {
-    height: 8,
-    borderRadius: radii.pill,
-    backgroundColor: colors.kraft,
-    borderWidth: 1,
-    borderColor: colors.line,
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', backgroundColor: colors.gold },
   emptyWrap: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xxl },
   emptyTitle: { ...typography.heading, color: colors.ink, marginTop: spacing.sm },
   emptySub: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
