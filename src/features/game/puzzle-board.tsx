@@ -452,6 +452,14 @@ export function PuzzleBoard({
         }
         setHapticsEnabled(settings.haptics);
         await initBoardAudio(settings);
+        if (!active) {
+          // Unmounted while init was in flight (e.g. `ensurePlayersLoaded()`
+          // was still pending): the cleanup's `pauseBoardAudio()` ran before
+          // the ambient player existed and no-opped. Players are guaranteed
+          // to exist now, so pause again to stop a loop `applyMusicState()`
+          // may have just started.
+          pauseBoardAudio();
+        }
       } catch {
         // Settings/audio are best-effort; the board must stay playable
         // even if the read fails (defaults are already sound-on/haptics-on).
