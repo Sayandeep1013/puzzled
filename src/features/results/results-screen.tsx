@@ -16,10 +16,13 @@ export function ResultsScreen({
   puzzleId,
   size,
   time,
+  coins = 0,
 }: {
   puzzleId: string;
   size: number;
   time: number;
+  /** Coins credited for this completion (Task 14), shown when positive. */
+  coins?: number;
 }) {
   const router = useRouter();
   const pieces = size * size;
@@ -50,6 +53,15 @@ export function ResultsScreen({
               <Text style={styles.statLabel}>PIECES</Text>
               <Text style={styles.statValue}>{pieces}</Text>
             </View>
+            {coins > 0 ? (
+              <>
+                <View style={styles.statDivider} />
+                <View style={styles.stat}>
+                  <Text style={styles.statLabel}>COINS</Text>
+                  <Text style={styles.statValue}>+{coins}</Text>
+                </View>
+              </>
+            ) : null}
           </View>
         </View>
 
