@@ -9,6 +9,7 @@ import {
   Line,
   Path,
   Rect,
+  rect,
   RoundedRect,
   useImage,
   vec,
@@ -716,82 +717,92 @@ export function PuzzleBoard({
 
             {/* Board zone: cameraTransform ∘ staticBoardTransform. At rest
                 (scale 1, translate 0) the camera is the identity, so this is
-                pixel-identical to the Task 11 static framing alone. */}
-            <Group transform={cameraTransform}>
-              <Group
-                transform={[
-                  { translateX: boardOffsetX },
-                  { translateY: boardOffsetY },
-                  { scale: boardScale },
-                ]}
-              >
-                <RoundedRect
-                  x={BOARD_PADDING - 6}
-                  y={BOARD_PADDING - 6}
-                  width={boardSize.width + 12}
-                  height={boardSize.height + 12}
-                  r={18}
-                  color={colors.surface}
-                />
-                <Rect
-                  x={BOARD_PADDING}
-                  y={BOARD_PADDING}
-                  width={boardSize.width}
-                  height={boardSize.height}
-                  color="rgba(185,205,189,0.22)"
-                />
-                <Group transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}>
-                  {/* Faint cell grid to guide placement */}
-                  {gridLines.map((x, i) => (
-                    <Line
-                      key={`v${i}`}
-                      p1={vec(x, 0)}
-                      p2={vec(x, boardSize.height)}
-                      color="rgba(23,33,33,0.07)"
-                      style="stroke"
-                      strokeWidth={1}
-                    />
-                  ))}
-                  {gridLines.map((y, i) => (
-                    <Line
-                      key={`h${i}`}
-                      p1={vec(0, y)}
-                      p2={vec(boardSize.width, y)}
-                      color="rgba(23,33,33,0.07)"
-                      style="stroke"
-                      strokeWidth={1}
-                    />
-                  ))}
+                pixel-identical to the Task 11 static framing alone.
+                The outer clip Group carries NO transform of its own, so its
+                clip rect is evaluated in the Canvas' fixed screen space —
+                Skia concats a Group's own `transform` before applying its
+                `clip` (see saveCTM), so a clip placed on the SAME node as
+                cameraTransform would scale/pan with the camera and clip
+                nothing new. Clipping here, above the camera, keeps the
+                board zone boundary pinned to the tray line regardless of
+                zoom/pan. */}
+            <Group clip={rect(0, 0, vw, boardZoneH)}>
+              <Group transform={cameraTransform}>
+                <Group
+                  transform={[
+                    { translateX: boardOffsetX },
+                    { translateY: boardOffsetY },
+                    { scale: boardScale },
+                  ]}
+                >
+                  <RoundedRect
+                    x={BOARD_PADDING - 6}
+                    y={BOARD_PADDING - 6}
+                    width={boardSize.width + 12}
+                    height={boardSize.height + 12}
+                    r={18}
+                    color={colors.surface}
+                  />
                   <Rect
-                    x={0}
-                    y={0}
+                    x={BOARD_PADDING}
+                    y={BOARD_PADDING}
                     width={boardSize.width}
                     height={boardSize.height}
-                    style="stroke"
-                    strokeWidth={2}
-                    color="rgba(23,33,33,0.14)"
+                    color="rgba(185,205,189,0.22)"
                   />
-
-                  {lockedPieces.map((piece) => (
-                    <BoardPiece
-                      key={piece.pieceId}
-                      prepared={preparedById[piece.pieceId]}
-                      image={image}
-                      imageScale={imageScale}
+                  <Group transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}>
+                    {/* Faint cell grid to guide placement */}
+                    {gridLines.map((x, i) => (
+                      <Line
+                        key={`v${i}`}
+                        p1={vec(x, 0)}
+                        p2={vec(x, boardSize.height)}
+                        color="rgba(23,33,33,0.07)"
+                        style="stroke"
+                        strokeWidth={1}
+                      />
+                    ))}
+                    {gridLines.map((y, i) => (
+                      <Line
+                        key={`h${i}`}
+                        p1={vec(0, y)}
+                        p2={vec(boardSize.width, y)}
+                        color="rgba(23,33,33,0.07)"
+                        style="stroke"
+                        strokeWidth={1}
+                      />
+                    ))}
+                    <Rect
+                      x={0}
+                      y={0}
+                      width={boardSize.width}
+                      height={boardSize.height}
+                      style="stroke"
+                      strokeWidth={2}
+                      color="rgba(23,33,33,0.14)"
                     />
-                  ))}
 
-                  {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
-                  {loosePieces.map((piece) => (
-                    <LoosePiece
-                      key={piece.pieceId}
-                      prepared={preparedById[piece.pieceId]}
-                      image={image}
-                      imageScale={imageScale}
-                      position={piece.position}
-                      hidden={piece.pieceId === draggingId}
-                    />
-                  ))}
+                    {lockedPieces.map((piece) => (
+                      <BoardPiece
+                        key={piece.pieceId}
+                        prepared={preparedById[piece.pieceId]}
+                        image={image}
+                        imageScale={imageScale}
+                      />
+                    ))}
+
+                    {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
+                    {loosePieces.map((piece) => (
+                      <LoosePiece
+                        key={piece.pieceId}
+                        prepared={preparedById[piece.pieceId]}
+                        image={image}
+                        imageScale={imageScale}
+                        position={piece.position}
+                        hidden={piece.pieceId === draggingId}
+                      />
+                    ))}
+                  </Group>
                 </Group>
               </Group>
             </Group>
