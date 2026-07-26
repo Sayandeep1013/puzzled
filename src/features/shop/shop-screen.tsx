@@ -72,7 +72,9 @@ export function ShopScreen() {
       }
       setPurchasing(bundle.key);
       try {
-        const next = await (await getWalletRepository()).record({
+        const next = await (
+          await getWalletRepository()
+        ).record({
           deltaCoins: -bundle.price,
           deltaHints: bundle.hints,
           reason: 'hint-purchase',

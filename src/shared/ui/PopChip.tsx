@@ -15,7 +15,13 @@ interface PopChipProps {
 }
 
 /** A small pill filter/tag. Selected chips fill solid with `tone`. */
-export function PopChip({ label, icon, selected = false, tone = colors.grape, onPress }: PopChipProps) {
+export function PopChip({
+  label,
+  icon,
+  selected = false,
+  tone = colors.grape,
+  onPress,
+}: PopChipProps) {
   // Most tones in the palette are dark/saturated enough that ink text fails
   // contrast on them once filled, so selected chips flip to onFill instead.
   const contentColor = selected ? colors.onFill : colors.ink;

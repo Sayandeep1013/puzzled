@@ -21,7 +21,9 @@ export function ProfileScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
-        const rows = await (await getProgressRepository())
+        const rows = await (
+          await getProgressRepository()
+        )
           .listSummaries()
           .catch(() => [] as PuzzleProgressSummary[]);
         if (active) setCompleted(rows.filter((r) => r.status === 'completed').length);

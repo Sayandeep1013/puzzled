@@ -5,14 +5,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { border, colors, radii, shadow, spacing, springs, typography } from '@/shared/theme';
 
 export type PopTone =
-  | 'grape'
-  | 'bubblegum'
-  | 'tangerine'
-  | 'sunshine'
-  | 'mint'
-  | 'sky'
-  | 'cherry'
-  | 'surface';
+  'grape' | 'bubblegum' | 'tangerine' | 'sunshine' | 'mint' | 'sky' | 'cherry' | 'surface';
 
 const FILL: Record<PopTone, string> = {
   grape: colors.grape,
@@ -38,9 +31,24 @@ const LABEL: Record<PopTone, string> = {
 };
 
 const SIZE = {
-  sm: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md, fontSize: 15, radius: radii.sm },
-  md: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg, fontSize: 18, radius: radii.md },
-  lg: { paddingVertical: spacing.md + 4, paddingHorizontal: spacing.xl, fontSize: 22, radius: radii.lg },
+  sm: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    fontSize: 15,
+    radius: radii.sm,
+  },
+  md: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    fontSize: 18,
+    radius: radii.md,
+  },
+  lg: {
+    paddingVertical: spacing.md + 4,
+    paddingHorizontal: spacing.xl,
+    fontSize: 22,
+    radius: radii.lg,
+  },
 } as const;
 
 interface PopButtonProps {
@@ -72,10 +80,7 @@ export function PopButton({
   // Only the face moves. The shadow stays put, so the gap between them shrinks
   // from `shadow.default` to `shadow.pressed` — the button presses into the page.
   const faceStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: press.value * travel },
-      { translateY: press.value * travel },
-    ],
+    transform: [{ translateX: press.value * travel }, { translateY: press.value * travel }],
   }));
 
   return (
@@ -91,11 +96,18 @@ export function PopButton({
       onPressOut={() => {
         press.value = withSpring(0, springs.pop);
       }}
-      style={[{ paddingRight: shadow.default, paddingBottom: shadow.default }, disabled && styles.disabled, style]}
+      style={[
+        { paddingRight: shadow.default, paddingBottom: shadow.default },
+        disabled && styles.disabled,
+        style,
+      ]}
     >
       <View
         pointerEvents="none"
-        style={[styles.shade, { left: shadow.default, top: shadow.default, borderRadius: metrics.radius }]}
+        style={[
+          styles.shade,
+          { left: shadow.default, top: shadow.default, borderRadius: metrics.radius },
+        ]}
       />
       <Animated.View
         style={[

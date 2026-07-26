@@ -226,7 +226,10 @@ function LibraryRow({
   // else (favourited or imported but never played) starts at difficulty pick.
   const href =
     progress != null && progress.lockedPieces > 0
-      ? { pathname: '/game/[puzzleId]' as const, params: { puzzleId, size: String(progress.gridSize) } }
+      ? {
+          pathname: '/game/[puzzleId]' as const,
+          params: { puzzleId, size: String(progress.gridSize) },
+        }
       : { pathname: '/difficulty/[puzzleId]' as const, params: { puzzleId } };
 
   return (
@@ -271,7 +274,9 @@ function LibraryRow({
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={isFavourite ? `Remove ${title} from favourites` : `Add ${title} to favourites`}
+          accessibilityLabel={
+            isFavourite ? `Remove ${title} from favourites` : `Add ${title} to favourites`
+          }
           accessibilityState={{ selected: isFavourite }}
           hitSlop={10}
           onPress={() => onToggleFavourite(puzzleId)}
@@ -302,7 +307,12 @@ function EmptyState({ icon, text, sub }: { icon: PopIconName; text: string; sub:
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
-  pageTitle: { ...typography.title, color: colors.ink, marginTop: spacing.sm, paddingHorizontal: spacing.lg },
+  pageTitle: {
+    ...typography.title,
+    color: colors.ink,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
   tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   content: {
     padding: spacing.lg,
@@ -323,8 +333,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     overflow: 'hidden',
   },
-  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  heartButton: { alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md },
+  rowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  heartButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
   thumb: {
     width: 56,
     height: 56,

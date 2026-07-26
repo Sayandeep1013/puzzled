@@ -17,8 +17,18 @@ import { PopButton, PopHeader, PopIcon, PopSurface } from '@/shared/ui';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 interface DailyData {
@@ -132,7 +142,9 @@ export function DailyScreen() {
                     <View key={i} style={styles.dayCell}>
                       {day != null ? (
                         isToday ? (
-                          <View style={[styles.todayDot, data.playedToday && styles.todayDotPlayed]}>
+                          <View
+                            style={[styles.todayDot, data.playedToday && styles.todayDotPlayed]}
+                          >
                             {data.playedToday ? (
                               <PopIcon name="check" size={16} color={colors.ink} />
                             ) : (
@@ -159,7 +171,9 @@ export function DailyScreen() {
               </View>
               <View style={styles.streakCopy}>
                 <Text style={styles.streakValue}>
-                  {streak > 0 ? `${streak} day${streak === 1 ? '' : 's'} streak` : 'Start your streak today'}
+                  {streak > 0
+                    ? `${streak} day${streak === 1 ? '' : 's'} streak`
+                    : 'Start your streak today'}
                 </Text>
                 <Text style={styles.streakHint}>
                   {streak > 0
@@ -226,7 +240,13 @@ const styles = StyleSheet.create({
   calendar: { padding: spacing.md, gap: spacing.sm },
   month: { ...typography.heading, color: colors.ink, textAlign: 'center' },
   weekRow: { flexDirection: 'row' },
-  weekday: { ...typography.label, fontSize: 11, color: colors.inkMuted, flex: 1, textAlign: 'center' },
+  weekday: {
+    ...typography.label,
+    fontSize: 11,
+    color: colors.inkMuted,
+    flex: 1,
+    textAlign: 'center',
+  },
   daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
   dayText: { ...typography.body, color: colors.ink },

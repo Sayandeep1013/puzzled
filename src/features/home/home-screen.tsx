@@ -186,7 +186,11 @@ export function HomeScreen() {
                 label="Daily Puzzle"
                 onPress={() => router.push('/daily')}
               />
-              <QuickLink icon="library" label="My Library" onPress={() => router.push('/library')} />
+              <QuickLink
+                icon="library"
+                label="My Library"
+                onPress={() => router.push('/library')}
+              />
             </View>
           </View>
 
@@ -294,7 +298,10 @@ function PuzzleCard({
   // Continue/replay jumps straight to the last size; a fresh start picks difficulty.
   const resumeSize = latest?.gridSize ?? puzzle.gridSize;
   const href = started
-    ? { pathname: '/game/[puzzleId]' as const, params: { puzzleId: puzzle.id, size: String(resumeSize) } }
+    ? {
+        pathname: '/game/[puzzleId]' as const,
+        params: { puzzleId: puzzle.id, size: String(resumeSize) },
+      }
     : { pathname: '/difficulty/[puzzleId]' as const, params: { puzzleId: puzzle.id } };
 
   return (
@@ -360,7 +367,12 @@ function QuickLink({
   onPress: () => void;
 }) {
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.quickLink}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={styles.quickLink}
+    >
       <PopSurface fill={colors.surface} radius={radii.md}>
         <View style={styles.quickLinkInner}>
           <PopIcon name={icon} size={22} color={colors.grape} />
@@ -374,7 +386,14 @@ function QuickLink({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   safeArea: { flex: 1 },
-  quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch', marginTop: spacing.sm, maxWidth: 320, width: '100%' },
+  quickRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignSelf: 'stretch',
+    marginTop: spacing.sm,
+    maxWidth: 320,
+    width: '100%',
+  },
   quickLink: { flex: 1 },
   quickLinkInner: {
     flexDirection: 'row',

@@ -59,7 +59,9 @@ async function loadAchievements(): Promise<AchievementState[]> {
 
 export function AchievementsScreen() {
   const router = useRouter();
-  const [achievements, setAchievements] = useState<AchievementState[]>(() => deriveAchievements([]));
+  const [achievements, setAchievements] = useState<AchievementState[]>(() =>
+    deriveAchievements([]),
+  );
 
   // Refetch on focus so an achievement earned on the board is reflected
   // immediately on return, matching `home-screen.tsx`'s pattern.

@@ -89,8 +89,8 @@ export function PackScreen({ packId }: { packId: string }) {
                 <View style={styles.heroCopy}>
                   <Text style={styles.tagline}>{pack.tagline}</Text>
                   <Text style={styles.sectionMeta}>
-                    {data.puzzles.length} {data.puzzles.length === 1 ? 'puzzle' : 'puzzles'} ·
-                    all unlocked
+                    {data.puzzles.length} {data.puzzles.length === 1 ? 'puzzle' : 'puzzles'} · all
+                    unlocked
                   </Text>
                 </View>
               </View>
@@ -132,7 +132,10 @@ function PackPuzzleRow({
   // Continue/replay jumps straight to the last size; a fresh start picks difficulty.
   const resumeSize = latest?.gridSize ?? puzzle.gridSize;
   const href = started
-    ? { pathname: '/game/[puzzleId]' as const, params: { puzzleId: puzzle.id, size: String(resumeSize) } }
+    ? {
+        pathname: '/game/[puzzleId]' as const,
+        params: { puzzleId: puzzle.id, size: String(resumeSize) },
+      }
     : { pathname: '/difficulty/[puzzleId]' as const, params: { puzzleId: puzzle.id } };
   const source = resolvePuzzleImageSource(puzzle);
 

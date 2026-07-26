@@ -100,7 +100,9 @@ export function StatisticsScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
-        const rows = await (await getProgressRepository())
+        const rows = await (
+          await getProgressRepository()
+        )
           .listSummaries()
           .catch(() => [] as PuzzleProgressSummary[]);
         if (active) setStats(computeStats(rows));

@@ -126,7 +126,11 @@ export function PuzzlesScreen() {
                 <Text style={styles.sectionTitle}>Recommended</Text>
               </View>
               <Pressable onPress={() => open(recommended)} accessibilityRole="button">
-                <PopSurface fill={colors.tangerine} radius={radii.lg} contentStyle={styles.featureFrame}>
+                <PopSurface
+                  fill={colors.tangerine}
+                  radius={radii.lg}
+                  contentStyle={styles.featureFrame}
+                >
                   <View style={styles.featureBody}>
                     <View style={styles.featureImageWrap}>
                       <Preview puzzle={recommended} />
@@ -269,7 +273,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   newTagText: { ...typography.label, fontSize: 10, color: colors.onFill },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'space-between' },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+  },
   gridItem: { width: '47%' },
   gridFrame: { padding: spacing.xs },
   gridBody: { overflow: 'hidden', borderRadius: radii.sm, backgroundColor: colors.surface },

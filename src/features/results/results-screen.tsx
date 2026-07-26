@@ -89,7 +89,13 @@ export function ResultsScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
-  body: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg, padding: spacing.lg },
+  body: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    padding: spacing.lg,
+  },
   title: { ...typography.hero, color: colors.ink },
   trophyFrame: { width: 180 },
   trophyInner: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg },

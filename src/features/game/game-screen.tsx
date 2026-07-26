@@ -263,7 +263,9 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
     void (async () => {
       try {
-        await (await getWalletRepository()).recordOnce({
+        await (
+          await getWalletRepository()
+        ).recordOnce({
           deltaCoins: earnedCoins,
           deltaHints: 0,
           reason: 'puzzle-complete',
@@ -385,7 +387,9 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
       try {
         let nextWallet: Wallet;
         try {
-          nextWallet = await (await getWalletRepository()).record({
+          nextWallet = await (
+            await getWalletRepository()
+          ).record({
             deltaCoins: 0,
             deltaHints: -1,
             reason: 'hint-spend',
@@ -499,7 +503,9 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const { generated } = playable;
   const locked = countLockedPieces(session);
   const total = expectedPieceCount(gridSize);
-  const trayCount = session.pieces.filter((piece) => isTrayPiece(piece, generated.boardSize.height)).length;
+  const trayCount = session.pieces.filter((piece) =>
+    isTrayPiece(piece, generated.boardSize.height),
+  ).length;
   const hintCount = wallet?.hints ?? 0;
 
   return (
@@ -564,7 +570,12 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
               active={highlightEdges}
               onPress={() => setHighlightEdges((on) => !on)}
             />
-            <ToolButton icon="hint" label="Hint" badge={hintCount} onPress={() => setOverlay('hint')} />
+            <ToolButton
+              icon="hint"
+              label="Hint"
+              badge={hintCount}
+              onPress={() => setOverlay('hint')}
+            />
             <ToolButton icon="eye" label="Preview" onPress={() => setOverlay('preview')} />
           </View>
         </View>
@@ -580,7 +591,11 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                   <PopToggle value={music} onChange={onToggleMusic} accessibilityLabel="Music" />
                 </SettingRow>
                 <SettingRow label="Haptics">
-                  <PopToggle value={haptics} onChange={onToggleHaptics} accessibilityLabel="Haptics" />
+                  <PopToggle
+                    value={haptics}
+                    onChange={onToggleHaptics}
+                    accessibilityLabel="Haptics"
+                  />
                 </SettingRow>
               </View>
               <PopButton label="Resume" tone="grape" onPress={() => setOverlay('none')} />
@@ -628,7 +643,11 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                   setOverlay('none');
                 }}
               />
-              <PopButton label="Preview image" tone="sunshine" onPress={() => setOverlay('preview')} />
+              <PopButton
+                label="Preview image"
+                tone="sunshine"
+                onPress={() => setOverlay('preview')}
+              />
             </View>
           </PopSheet>
         ) : null}
@@ -636,7 +655,11 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         {overlay === 'preview' ? (
           <PopSheet title="Preview" onDismiss={() => setOverlay('none')}>
             <View style={styles.sheetBody}>
-              <PopSurface fill={colors.sunshine} radius={radii.md} contentStyle={styles.previewFrame}>
+              <PopSurface
+                fill={colors.sunshine}
+                radius={radii.md}
+                contentStyle={styles.previewFrame}
+              >
                 <View style={styles.previewImageWrap}>
                   <RNImage
                     source={
@@ -714,7 +737,13 @@ export function isPlayableGridSize(value: number): value is GridSize {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
   safeArea: { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, padding: spacing.lg },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
   bigTitle: { ...typography.title, color: colors.ink },
   meta: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
   content: {

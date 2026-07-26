@@ -2,7 +2,13 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { GridSize } from '@/game-engine';
 
-import type { LedgerEntry, LedgerReason, NewLedgerEntry, Wallet, WalletRepository } from '../repositories';
+import type {
+  LedgerEntry,
+  LedgerReason,
+  NewLedgerEntry,
+  Wallet,
+  WalletRepository,
+} from '../repositories';
 
 interface LedgerRow {
   id: number;
