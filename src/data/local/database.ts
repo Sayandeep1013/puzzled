@@ -1,5 +1,6 @@
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 
+import { SQLiteFavouritesRepository } from './favourites-repository';
 import { SQLiteSettingsRepository } from './settings-repository';
 import { SQLiteProgressRepository } from './sqlite-progress-repository';
 import { SQLiteUserPuzzleRepository } from './user-puzzle-repository';
@@ -22,6 +23,7 @@ function connect(): Promise<SQLiteDatabase> {
         await new SQLiteUserPuzzleRepository(database).initialize();
         await new SQLiteSettingsRepository(database).initialize();
         await new SQLiteWalletRepository(database).initialize();
+        await new SQLiteFavouritesRepository(database).initialize();
         return database;
       })
       .catch((error: unknown) => {
@@ -48,4 +50,8 @@ export async function getSettingsRepository(): Promise<SQLiteSettingsRepository>
 
 export async function getWalletRepository(): Promise<SQLiteWalletRepository> {
   return new SQLiteWalletRepository(await connect());
+}
+
+export async function getFavouritesRepository(): Promise<SQLiteFavouritesRepository> {
+  return new SQLiteFavouritesRepository(await connect());
 }

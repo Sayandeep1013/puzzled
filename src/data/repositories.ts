@@ -105,6 +105,18 @@ export interface WalletRepository {
   history(limit?: number): Promise<LedgerEntry[]>;
 }
 
+/**
+ * Puzzle ids the player has starred. Backed by a single-column table keyed
+ * on `puzzleId`, so membership doubles as the favourite flag — no separate
+ * boolean column to fall out of sync.
+ */
+export interface FavouritesRepository {
+  list(): Promise<string[]>;
+  /** Flips favourite state for `puzzleId` and returns the state AFTER the flip. */
+  toggle(puzzleId: string): Promise<boolean>;
+  isFavourite(puzzleId: string): Promise<boolean>;
+}
+
 const KEY_SEPARATOR = '::';
 
 /** Row identity in the sessions table. Encodes puzzle + size in one column. */
