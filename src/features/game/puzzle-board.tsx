@@ -58,7 +58,13 @@ const BOARD_PADDING = 12;
 const TRAY_HEIGHT = 132;
 const TRAY_PAD = 12;
 const SLOT_GAP = 6;
-const CONFETTI_COLORS = [colors.primary, colors.gold, colors.accent, colors.sage, colors.rose];
+const CONFETTI_COLORS = [
+  colors.grape,
+  colors.sunshine,
+  colors.tangerine,
+  colors.mint,
+  colors.bubblegum,
+];
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
 
@@ -210,7 +216,7 @@ const LoosePiece = memo(function LoosePiece({
   return (
     <Group transform={[{ translateX: position.x }, { translateY: position.y }]}>
       <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.accent} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.tangerine} />
     </Group>
   );
 });
@@ -253,7 +259,7 @@ const TrayPiece = memo(function TrayPiece({
         path={prepared.skPath}
         style="stroke"
         strokeWidth={highlight ? 3 : 1.6}
-        color={highlight ? colors.accent : 'rgba(23,33,33,0.28)'}
+        color={highlight ? colors.tangerine : 'rgba(23,33,33,0.28)'}
       />
     </Group>
   );
@@ -329,7 +335,15 @@ function GlowRing({
   const radius = useDerivedValue(() => 10 + progress.value * 40);
   const opacity = useDerivedValue(() => (1 - progress.value) * 0.85);
   return (
-    <Circle cx={cx} cy={cy} r={radius} style="stroke" strokeWidth={3} color={colors.accent} opacity={opacity} />
+    <Circle
+      cx={cx}
+      cy={cy}
+      r={radius}
+      style="stroke"
+      strokeWidth={3}
+      color={colors.tangerine}
+      opacity={opacity}
+    />
   );
 }
 
@@ -344,7 +358,15 @@ interface Particle {
   color: string;
 }
 
-function ConfettiPiece({ particle, t, height }: { particle: Particle; t: SharedValue<number>; height: number }) {
+function ConfettiPiece({
+  particle,
+  t,
+  height,
+}: {
+  particle: Particle;
+  t: SharedValue<number>;
+  height: number;
+}) {
   const transform = useDerivedValue(() => {
     const span = 1 - particle.delay;
     const tt = Math.min(1, Math.max(0, (t.value - particle.delay) / span));
@@ -352,10 +374,19 @@ function ConfettiPiece({ particle, t, height }: { particle: Particle; t: SharedV
     const x = particle.startX + Math.sin(tt * 6 + particle.i) * particle.drift;
     return [{ translateX: x }, { translateY: y }, { rotate: tt * particle.spin }];
   });
-  const opacity = useDerivedValue(() => (t.value < 0.85 ? 1 : Math.max(0, 1 - (t.value - 0.85) / 0.15)));
+  const opacity = useDerivedValue(() =>
+    t.value < 0.85 ? 1 : Math.max(0, 1 - (t.value - 0.85) / 0.15),
+  );
   return (
     <Group transform={transform} opacity={opacity}>
-      <RoundedRect x={0} y={0} width={particle.size} height={particle.size * 0.5} r={1.5} color={particle.color} />
+      <RoundedRect
+        x={0}
+        y={0}
+        width={particle.size}
+        height={particle.size * 0.5}
+        r={1.5}
+        color={particle.color}
+      />
     </Group>
   );
 }
@@ -513,9 +544,7 @@ export function PuzzleBoard({
   // and hit-test in the same order: the most recently touched piece is on top.
   const loosePieces = useMemo(
     () =>
-      session.pieces
-        .filter((p) => !p.isLocked && isOnBoard(p))
-        .sort((a, b) => a.zIndex - b.zIndex),
+      session.pieces.filter((p) => !p.isLocked && isOnBoard(p)).sort((a, b) => a.zIndex - b.zIndex),
     [session.pieces, isOnBoard],
   );
 
@@ -569,7 +598,17 @@ export function PuzzleBoard({
     const thumbScale = (slotInner * 0.88) / pieceExtent;
     const slotW = slotInner + SLOT_GAP;
 
-    return { vw, vh, boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, thumbScale, slotInner };
+    return {
+      vw,
+      vh,
+      boardZoneH,
+      boardScale,
+      boardOffsetX,
+      boardOffsetY,
+      slotW,
+      thumbScale,
+      slotInner,
+    };
   }, [viewport.width, viewport.height, boardSize.width, boardSize.height, cellSize]);
 
   // Camera pans/zooms the board zone only (1x-3x); the tray strip is pinned
@@ -921,7 +960,14 @@ export function PuzzleBoard({
         <Animated.View style={{ width: viewport.width, height: viewport.height }}>
           <Canvas style={{ width: viewport.width, height: viewport.height }}>
             {/* Tray backdrop */}
-            <Rect x={0} y={boardZoneH} width={vw} height={TRAY_HEIGHT} color={colors.kraft} opacity={0.5} />
+            <Rect
+              x={0}
+              y={boardZoneH}
+              width={vw}
+              height={TRAY_HEIGHT}
+              color={colors.paper}
+              opacity={0.5}
+            />
             <Line
               p1={vec(0, boardZoneH)}
               p2={vec(vw, boardZoneH)}
@@ -1069,7 +1115,13 @@ export function PuzzleBoard({
             ) : null}
 
             {snapFlash ? (
-              <GlowRing key={snapFlash.id} id={snapFlash.id} cx={snapFlash.cx} cy={snapFlash.cy} onDone={clearFlash} />
+              <GlowRing
+                key={snapFlash.id}
+                id={snapFlash.id}
+                cx={snapFlash.cx}
+                cy={snapFlash.cy}
+                onDone={clearFlash}
+              />
             ) : null}
           </Canvas>
 
