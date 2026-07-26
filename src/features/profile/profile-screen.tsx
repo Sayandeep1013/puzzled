@@ -1,11 +1,17 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getProgressRepository, type PuzzleProgressSummary } from '@/data';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PaperBackground, SketchFrame, SketchIcon, type IconName } from '@/shared/ui';
+import { PopIcon, PopSurface, type PopIconName } from '@/shared/ui';
+
+/**
+ * There is no accounts system yet (Phase 2). Every player is shown the same
+ * placeholder identity rather than a fabricated name or email address.
+ */
+const PLACEHOLDER_NAME = 'Player';
 
 export function ProfileScreen() {
   const router = useRouter();
@@ -26,81 +32,60 @@ export function ProfileScreen() {
     }, []),
   );
 
-  const soon = (label: string) => Alert.alert(label, 'Coming soon in the redesign.');
-
-  const links: { icon: IconName; label: string; onPress: () => void }[] = [
+  const links: { icon: PopIconName; label: string; onPress: () => void }[] = [
     { icon: 'trophy', label: 'Achievements', onPress: () => router.push('/achievements') },
     { icon: 'coin', label: 'Shop', onPress: () => router.push('/shop') },
-    { icon: 'chart', label: 'Statistics', onPress: () => soon('Statistics') },
-    { icon: 'gear', label: 'Settings', onPress: () => soon('Settings') },
-    { icon: 'help', label: 'Help & Support', onPress: () => soon('Help & Support') },
+    { icon: 'chart', label: 'Statistics', onPress: () => router.push('/statistics') },
+    { icon: 'gear', label: 'Settings', onPress: () => router.push('/settings') },
   ];
 
   return (
-    <PaperBackground>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.headerRow}>
           <Text style={styles.pageTitle}>Profile</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Edit profile" onPress={() => soon('Edit profile')}>
-            <SketchIcon name="edit" size={22} color={colors.primary} />
-          </Pressable>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.identity}>
-            <SketchFrame fill={colors.rose} radius={radii.pill} seed={64} style={styles.avatar}>
+            <PopSurface fill={colors.bubblegum} radius={radii.pill} style={styles.avatar}>
               <View style={styles.avatarInner}>
-                <SketchIcon name="profile" size={54} color={colors.inkSoft} />
+                <PopIcon name="profile" size={54} color={colors.ink} />
               </View>
-            </SketchFrame>
-            <Text style={styles.name}>Puzzle Master</Text>
-            <Text style={styles.handle}>puzzlemaster@mail.com</Text>
+            </PopSurface>
+            <Text style={styles.name}>{PLACEHOLDER_NAME}</Text>
           </View>
 
-          <SketchFrame fill={colors.surface} radius={radii.lg} seed={7}>
+          <PopSurface fill={colors.surface} radius={radii.lg}>
             <View style={styles.stats}>
-              <Stat label="COMPLETED" value={String(completed)} />
-              <View style={styles.statDivider} />
-              <Stat label="BEST TIME" value="08:16" />
-              <View style={styles.statDivider} />
-              <Stat label="TOTAL TIME" value="24h" />
+              <Text style={styles.statValue}>{completed}</Text>
+              <Text style={styles.statLabel}>PUZZLES COMPLETED</Text>
             </View>
-          </SketchFrame>
+          </PopSurface>
 
           <View style={styles.links}>
             {links.map((link) => (
               <Pressable key={link.label} accessibilityRole="button" onPress={link.onPress}>
-                <SketchFrame fill={colors.surface} radius={radii.md} seed={link.label.length * 8 + 3}>
+                <PopSurface fill={colors.surface} radius={radii.md}>
                   <View style={styles.linkRow}>
-                    <SketchIcon name={link.icon} size={24} color={colors.primary} />
+                    <PopIcon name={link.icon} size={24} color={colors.grape} />
                     <Text style={styles.linkLabel}>{link.label}</Text>
-                    <SketchIcon name="chevron" size={20} color={colors.inkMuted} />
+                    <PopIcon name="chevron" size={20} color={colors.inkMuted} />
                   </View>
-                </SketchFrame>
+                </PopSurface>
               </Pressable>
             ))}
           </View>
         </ScrollView>
       </SafeAreaView>
-    </PaperBackground>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
   headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     marginTop: spacing.sm,
   },
@@ -116,12 +101,9 @@ const styles = StyleSheet.create({
   avatar: { width: 96, height: 96 },
   avatarInner: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.md },
   name: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
-  handle: { ...typography.caption, color: colors.inkMuted },
-  stats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', padding: spacing.lg },
-  stat: { alignItems: 'center', gap: 4, flex: 1 },
-  statValue: { ...typography.title, fontSize: 26, color: colors.ink },
-  statLabel: { ...typography.label, fontSize: 10, color: colors.inkMuted },
-  statDivider: { width: 2, height: 36, backgroundColor: colors.line },
+  stats: { alignItems: 'center', gap: 4, padding: spacing.lg },
+  statValue: { ...typography.title, fontSize: 32, color: colors.ink },
+  statLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted },
   links: { gap: spacing.md },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
   linkLabel: { ...typography.heading, fontSize: 18, color: colors.ink, flex: 1 },
