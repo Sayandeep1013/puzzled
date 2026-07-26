@@ -46,6 +46,7 @@ import { commandsToSkPath } from '@/game-engine/rendering';
 import { colors } from '@/shared/theme';
 
 import { FX, impact, success } from './board-fx';
+import { useBoardCamera } from './use-board-camera';
 
 const BOARD_PADDING = 12;
 const TRAY_HEIGHT = 132;
@@ -193,12 +194,19 @@ const TrayPiece = memo(function TrayPiece({
   );
 });
 
-/** The piece under the finger, drawn at board scale and tracking the finger exactly. */
+/**
+ * The piece under the finger, drawn at board scale and tracking the finger
+ * exactly. `fx`/`fy` are raw canvas coordinates (the piece is rendered outside
+ * the camera-transformed board group so it never gets double-transformed),
+ * but its drawn *size* still follows the live camera zoom so it matches the
+ * board underneath if a second finger pinches mid-drag.
+ */
 function FloatingPiece({
   prepared,
   image,
   imageScale,
   boardScale,
+  camScale,
   fx,
   fy,
 }: {
@@ -206,13 +214,14 @@ function FloatingPiece({
   image: SkImage;
   imageScale: number;
   boardScale: number;
+  camScale: SharedValue<number>;
   fx: SharedValue<number>;
   fy: SharedValue<number>;
 }) {
   const transform = useDerivedValue(() => [
     { translateX: fx.value },
     { translateY: fy.value },
-    { scale: boardScale * FX.liftScale },
+    { scale: boardScale * camScale.value * FX.liftScale },
     { translateX: -prepared.cx },
     { translateY: -prepared.cy },
   ]);
@@ -325,7 +334,12 @@ export function PuzzleBoard({
   const fx = useSharedValue(0);
   const fy = useSharedValue(0);
   const trayScroll = useSharedValue(0);
-  /** 0 idle · 1 dragging a piece · 2 scrolling the tray. Decided instantly in onBegin. */
+  /**
+   * 0 idle · 1 dragging a piece · 2 scrolling the tray · 3 panning the
+   * camera (a one-finger touch on empty board space). Decided instantly in
+   * onBegin: a finger starting on a piece grabs it, on empty board space it
+   * pans the camera, on the tray it scrolls (or grabs a tray piece).
+   */
   const mode = useSharedValue(0);
   /** Index into the current tray render order, or -1 when the grab isn't from the tray. */
   const grabSlot = useSharedValue(-1);
@@ -446,6 +460,26 @@ export function PuzzleBoard({
     return { vw, vh, boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, thumbScale, slotInner };
   }, [viewport.width, viewport.height, boardSize.width, boardSize.height, cellSize]);
 
+  // Camera pans/zooms the board zone only (1x-3x); the tray strip is pinned
+  // and unscaled. At rest (scale 1, translate 0) it is the identity, so it
+  // never perturbs the Task 11 static framing computed above.
+  const camera = useBoardCamera({ viewport: { width: layout.vw, height: layout.boardZoneH } });
+  const {
+    scale: camScale,
+    translateX: camTx,
+    translateY: camTy,
+    pinch: camPinch,
+    doubleTap: camDoubleTap,
+    panBy: camPanBy,
+    ready: camReady,
+  } = camera;
+
+  const cameraTransform = useDerivedValue(() => [
+    { translateX: camTx.value },
+    { translateY: camTy.value },
+    { scale: camScale.value },
+  ]);
+
   const draggingPrepared = draggingId ? preparedById[draggingId] : null;
 
   const complete = session.status === 'completed';
@@ -499,9 +533,15 @@ export function PuzzleBoard({
       if (!prepared) {
         return;
       }
-      // Canvas → board piece-space; the piece is centred on the finger.
-      const boardX = (canvasX - boardOffsetX) / boardScale - BOARD_PADDING;
-      const boardY = (canvasY - boardOffsetY) / boardScale - BOARD_PADDING;
+      // Canvas → board piece-space. The board zone now renders behind the
+      // camera transform, so this must undo the LIVE camera first (JS-thread
+      // read of the camera's shared values — same pattern as the onBegin
+      // worklet below, just off the UI thread) before the static framing
+      // math from Task 11, which is otherwise unchanged.
+      const preCamX = (canvasX - camTx.value) / camScale.value;
+      const preCamY = (canvasY - camTy.value) / camScale.value;
+      const boardX = (preCamX - boardOffsetX) / boardScale - BOARD_PADDING;
+      const boardY = (preCamY - boardOffsetY) / boardScale - BOARD_PADDING;
       const position = { x: boardX - prepared.cx, y: boardY - prepared.cy };
       const solved = prepared.geometry.solvedPosition;
 
@@ -524,14 +564,19 @@ export function PuzzleBoard({
       onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: placeThreshold }));
       impact('medium');
       flashId.current += 1;
+      // The glow ring is drawn at the Canvas root (outside the camera group,
+      // so it stays on top of the tray/floating piece), so its position must
+      // be pushed through the same live camera transform used above.
+      const staticCx = boardOffsetX + (BOARD_PADDING + solved.x + prepared.cx) * boardScale;
+      const staticCy = boardOffsetY + (BOARD_PADDING + solved.y + prepared.cy) * boardScale;
       setSnapFlash({
         id: flashId.current,
-        cx: boardOffsetX + (BOARD_PADDING + solved.x + prepared.cx) * boardScale,
-        cy: boardOffsetY + (BOARD_PADDING + solved.y + prepared.cy) * boardScale,
+        cx: camTx.value + camScale.value * staticCx,
+        cy: camTy.value + camScale.value * staticCy,
       });
     };
 
-    return Gesture.Pan()
+    const pan = Gesture.Pan()
       .maxPointers(1)
       .onBegin((e) => {
         'worklet';
@@ -541,8 +586,14 @@ export function PuzzleBoard({
 
         if (e.y < boardZoneH) {
           // Board zone: hit-test loose pieces, topmost (highest z-index) first.
-          const boardX = (e.x - boardOffsetX) / boardScale - BOARD_PADDING;
-          const boardY = (e.y - boardOffsetY) / boardScale - BOARD_PADDING;
+          // The board now renders behind the camera transform (Group
+          // transform={cameraTransform} wrapping the static board Group), so
+          // the same live camera must be undone here before Task 11's static
+          // board-space math — otherwise grabs drift whenever zoomed/panned.
+          const preCamX = (e.x - camTx.value) / camScale.value;
+          const preCamY = (e.y - camTy.value) / camScale.value;
+          const boardX = (preCamX - boardOffsetX) / boardScale - BOARD_PADDING;
+          const boardY = (preCamY - boardOffsetY) / boardScale - BOARD_PADDING;
           for (let i = looseBoxes.length - 1; i >= 0; i -= 1) {
             const box = looseBoxes[i];
             if (Math.abs(boardX - box.cx) <= box.halfW && Math.abs(boardY - box.cy) <= box.halfH) {
@@ -554,7 +605,12 @@ export function PuzzleBoard({
               break;
             }
           }
-          // Otherwise: empty board space. No drag, no scroll.
+          // Otherwise: empty board space → this one finger pans the camera
+          // instead (mode 3). A finger that started on a piece already took
+          // mode 1 above; the tray branch below handles its own zone.
+          if (mode.value === 0) {
+            mode.value = 3;
+          }
         } else {
           // Tray zone: a valid slot grabs instantly; empty slot space scrolls.
           const local = e.x - trayScroll.value;
@@ -577,6 +633,8 @@ export function PuzzleBoard({
           fy.value = e.y;
         } else if (mode.value === 2) {
           trayScroll.value = Math.min(0, Math.max(minScroll, trayScroll.value + e.changeX));
+        } else if (mode.value === 3) {
+          camPanBy(e.changeX, e.changeY);
         }
       })
       .onFinalize(() => {
@@ -596,6 +654,12 @@ export function PuzzleBoard({
           grabLoose.value = -1;
         }
       });
+
+    // camDoubleTap and pan are exclusive (a touch either starts a piece
+    // grab/tray-scroll/camera-pan via `pan`, or resolves as a double-tap
+    // zoom toggle — never both); camPinch (two fingers) runs simultaneously
+    // alongside that pair since it never conflicts with a one-finger gesture.
+    return Gesture.Simultaneous(Gesture.Exclusive(camDoubleTap, pan), camPinch);
   }, [
     layout,
     trayIds.length,
@@ -612,6 +676,12 @@ export function PuzzleBoard({
     grabLoose,
     mode,
     trayScroll,
+    camScale,
+    camTx,
+    camTy,
+    camPanBy,
+    camPinch,
+    camDoubleTap,
   ]);
 
   const trayTransform = useDerivedValue(() => [
@@ -619,7 +689,10 @@ export function PuzzleBoard({
     { translateY: layout.boardZoneH },
   ]);
 
-  if (!image || viewport.width === 0 || viewport.height === 0) {
+  // Hold the first paint until the image is decoded, the play area is
+  // measured, and the camera has framed itself — otherwise the board flashes
+  // unframed before the camera's identity transform is in place.
+  if (!image || viewport.width === 0 || viewport.height === 0 || !camReady) {
     return <View style={styles.measure} onLayout={onLayout} />;
   }
 
@@ -641,81 +714,85 @@ export function PuzzleBoard({
               strokeWidth={1}
             />
 
-            {/* Board zone */}
-            <Group
-              transform={[
-                { translateX: boardOffsetX },
-                { translateY: boardOffsetY },
-                { scale: boardScale },
-              ]}
-            >
-              <RoundedRect
-                x={BOARD_PADDING - 6}
-                y={BOARD_PADDING - 6}
-                width={boardSize.width + 12}
-                height={boardSize.height + 12}
-                r={18}
-                color={colors.surface}
-              />
-              <Rect
-                x={BOARD_PADDING}
-                y={BOARD_PADDING}
-                width={boardSize.width}
-                height={boardSize.height}
-                color="rgba(185,205,189,0.22)"
-              />
-              <Group transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}>
-                {/* Faint cell grid to guide placement */}
-                {gridLines.map((x, i) => (
-                  <Line
-                    key={`v${i}`}
-                    p1={vec(x, 0)}
-                    p2={vec(x, boardSize.height)}
-                    color="rgba(23,33,33,0.07)"
-                    style="stroke"
-                    strokeWidth={1}
-                  />
-                ))}
-                {gridLines.map((y, i) => (
-                  <Line
-                    key={`h${i}`}
-                    p1={vec(0, y)}
-                    p2={vec(boardSize.width, y)}
-                    color="rgba(23,33,33,0.07)"
-                    style="stroke"
-                    strokeWidth={1}
-                  />
-                ))}
+            {/* Board zone: cameraTransform ∘ staticBoardTransform. At rest
+                (scale 1, translate 0) the camera is the identity, so this is
+                pixel-identical to the Task 11 static framing alone. */}
+            <Group transform={cameraTransform}>
+              <Group
+                transform={[
+                  { translateX: boardOffsetX },
+                  { translateY: boardOffsetY },
+                  { scale: boardScale },
+                ]}
+              >
+                <RoundedRect
+                  x={BOARD_PADDING - 6}
+                  y={BOARD_PADDING - 6}
+                  width={boardSize.width + 12}
+                  height={boardSize.height + 12}
+                  r={18}
+                  color={colors.surface}
+                />
                 <Rect
-                  x={0}
-                  y={0}
+                  x={BOARD_PADDING}
+                  y={BOARD_PADDING}
                   width={boardSize.width}
                   height={boardSize.height}
-                  style="stroke"
-                  strokeWidth={2}
-                  color="rgba(23,33,33,0.14)"
+                  color="rgba(185,205,189,0.22)"
                 />
-
-                {lockedPieces.map((piece) => (
-                  <BoardPiece
-                    key={piece.pieceId}
-                    prepared={preparedById[piece.pieceId]}
-                    image={image}
-                    imageScale={imageScale}
+                <Group transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}>
+                  {/* Faint cell grid to guide placement */}
+                  {gridLines.map((x, i) => (
+                    <Line
+                      key={`v${i}`}
+                      p1={vec(x, 0)}
+                      p2={vec(x, boardSize.height)}
+                      color="rgba(23,33,33,0.07)"
+                      style="stroke"
+                      strokeWidth={1}
+                    />
+                  ))}
+                  {gridLines.map((y, i) => (
+                    <Line
+                      key={`h${i}`}
+                      p1={vec(0, y)}
+                      p2={vec(boardSize.width, y)}
+                      color="rgba(23,33,33,0.07)"
+                      style="stroke"
+                      strokeWidth={1}
+                    />
+                  ))}
+                  <Rect
+                    x={0}
+                    y={0}
+                    width={boardSize.width}
+                    height={boardSize.height}
+                    style="stroke"
+                    strokeWidth={2}
+                    color="rgba(23,33,33,0.14)"
                   />
-                ))}
 
-                {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
-                {loosePieces.map((piece) => (
-                  <LoosePiece
-                    key={piece.pieceId}
-                    prepared={preparedById[piece.pieceId]}
-                    image={image}
-                    imageScale={imageScale}
-                    position={piece.position}
-                    hidden={piece.pieceId === draggingId}
-                  />
-                ))}
+                  {lockedPieces.map((piece) => (
+                    <BoardPiece
+                      key={piece.pieceId}
+                      prepared={preparedById[piece.pieceId]}
+                      image={image}
+                      imageScale={imageScale}
+                    />
+                  ))}
+
+                  {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
+                  {loosePieces.map((piece) => (
+                    <LoosePiece
+                      key={piece.pieceId}
+                      prepared={preparedById[piece.pieceId]}
+                      image={image}
+                      imageScale={imageScale}
+                      position={piece.position}
+                      hidden={piece.pieceId === draggingId}
+                    />
+                  ))}
+                </Group>
               </Group>
             </Group>
 
@@ -743,6 +820,7 @@ export function PuzzleBoard({
                 image={image}
                 imageScale={imageScale}
                 boardScale={boardScale}
+                camScale={camScale}
                 fx={fx}
                 fy={fy}
               />
