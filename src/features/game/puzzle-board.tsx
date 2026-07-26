@@ -24,13 +24,17 @@ import Animated, {
   runOnJS,
   useDerivedValue,
   useSharedValue,
+  withSequence,
+  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { getSettingsRepository } from '@/data';
 import {
   dropPiece,
   isWithinSnapDistance,
+  makePieceId,
   raisePiece,
   snapThresholdForCellSize,
   TAB_SIZE_RATIO,
@@ -46,7 +50,8 @@ import {
 import { commandsToSkPath } from '@/game-engine/rendering';
 import { colors } from '@/shared/theme';
 
-import { FX, impact, success } from './board-fx';
+import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
+import { FX, impact, setHapticsEnabled, success } from './board-fx';
 import { useBoardCamera } from './use-board-camera';
 
 const BOARD_PADDING = 12;
@@ -54,6 +59,8 @@ const TRAY_HEIGHT = 132;
 const TRAY_PAD = 12;
 const SLOT_GAP = 6;
 const CONFETTI_COLORS = [colors.primary, colors.gold, colors.accent, colors.sage, colors.rose];
+/** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
+const TILT_VELOCITY_RANGE = 900;
 
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
@@ -121,6 +128,63 @@ const BoardPiece = memo(function BoardPiece({
     </Group>
   );
 });
+
+/**
+ * A locked piece mid-wobble: one of the just-placed piece's orthogonal
+ * neighbours, briefly rendered through its own shared value instead of
+ * `BoardPiece`'s static transform. Unmounts itself back to `BoardPiece` via
+ * `onDone` once the wobble finishes, so no locked piece carries an animated
+ * transform permanently (perf: only the handful of affected neighbours ever
+ * mount this, and only for `FX.jiggleMs`).
+ */
+function JigglingBoardPiece({
+  prepared,
+  image,
+  imageScale,
+  onDone,
+}: {
+  prepared: PreparedPiece;
+  image: SkImage;
+  imageScale: number;
+  onDone: () => void;
+}) {
+  const offset = useSharedValue(0);
+  // `onDone` is a fresh inline closure on every parent render (it's created
+  // inside a `.map()`); route it through a ref so the animation effect below
+  // depends only on `offset` and fires exactly once per mount instead of
+  // restarting the wobble if the board happens to re-render mid-jiggle.
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
+
+  useEffect(() => {
+    const half = FX.jiggleMs / 2;
+    const finish = () => onDoneRef.current();
+    offset.value = withSequence(
+      withTiming(-FX.jiggleAmplitude, { duration: half * 0.5, easing: Easing.out(Easing.quad) }),
+      withTiming(FX.jiggleAmplitude, { duration: half }),
+      withTiming(0, { duration: half * 0.5 }, (finished) => {
+        if (finished) {
+          runOnJS(finish)();
+        }
+      }),
+    );
+  }, [offset]);
+
+  const { solvedPosition } = prepared.geometry;
+  const transform = useDerivedValue(() => [
+    { translateX: solvedPosition.x },
+    { translateY: solvedPosition.y + offset.value },
+  ]);
+
+  return (
+    <Group transform={transform}>
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={1} color="rgba(23,33,33,0.12)" />
+    </Group>
+  );
+}
 
 /**
  * An unplaced piece resting directly on the board — a miss that stayed where it
@@ -210,6 +274,8 @@ function FloatingPiece({
   camScale,
   fx,
   fy,
+  tiltDeg,
+  scaleBoost,
 }: {
   prepared: PreparedPiece;
   image: SkImage;
@@ -218,11 +284,16 @@ function FloatingPiece({
   camScale: SharedValue<number>;
   fx: SharedValue<number>;
   fy: SharedValue<number>;
+  /** Live drag tilt in degrees, capped at `FX.maxTiltDeg`; springs back to 0 on release. */
+  tiltDeg: SharedValue<number>;
+  /** `FX.liftScale` while held, springing to 1 (`FX.settle`) once released. */
+  scaleBoost: SharedValue<number>;
 }) {
   const transform = useDerivedValue(() => [
     { translateX: fx.value },
     { translateY: fy.value },
-    { scale: boardScale * camScale.value * FX.liftScale },
+    { rotate: (tiltDeg.value * Math.PI) / 180 },
+    { scale: boardScale * camScale.value * scaleBoost.value },
     { translateX: -prepared.cx },
     { translateY: -prepared.cy },
   ]);
@@ -330,10 +401,16 @@ export function PuzzleBoard({
   const [baselineElapsedMs] = useState(() => session.elapsedMs);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [snapFlash, setSnapFlash] = useState<{ id: number; cx: number; cy: number } | null>(null);
+  /** pieceId → wobble token for locked neighbours currently jiggling (Task 13). */
+  const [jiggleTokens, setJiggleTokens] = useState<Record<string, number>>({});
 
   // Finger position of the floating piece, in canvas coordinates.
   const fx = useSharedValue(0);
   const fy = useSharedValue(0);
+  /** Live drag tilt in degrees (`FX.maxTiltDeg` cap); springs to 0 on release. */
+  const tiltDeg = useSharedValue(0);
+  /** `FX.liftScale` while held; springs to 1 via `FX.settle` on release. */
+  const scaleBoost = useSharedValue<number>(FX.liftScale);
   const trayScroll = useSharedValue(0);
   /**
    * 0 idle · 1 dragging a piece · 2 scrolling the tray · 3 panning the
@@ -360,6 +437,32 @@ export function PuzzleBoard({
   useEffect(() => {
     onSessionChangeRef.current = onSessionChange;
   }, [onSessionChange]);
+
+  // Read the persisted Sound/Music/Haptics settings once per mount and wire
+  // them into the board-fx/board-audio modules. The pause-menu toggles
+  // (Task 14) call `setHapticsEnabled`/`setSfxEnabled`/`setMusicEnabled`
+  // directly from then on; this effect only supplies the starting values.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const settings = await (await getSettingsRepository()).get();
+        if (!active) {
+          return;
+        }
+        setHapticsEnabled(settings.haptics);
+        await initBoardAudio(settings);
+      } catch {
+        // Settings/audio are best-effort; the board must stay playable
+        // even if the read fails (defaults are already sound-on/haptics-on).
+      }
+    })();
+    return () => {
+      active = false;
+      // Leaving the board shouldn't leave the ambient loop playing forever.
+      pauseBoardAudio();
+    };
+  }, []);
 
   const cellSize = generated.cellSize.width;
   const boardSize = generated.boardSize;
@@ -488,6 +591,7 @@ export function PuzzleBoard({
     if (complete && !celebratedRef.current) {
       celebratedRef.current = true;
       success();
+      playSfx('complete');
     }
   }, [complete]);
 
@@ -512,9 +616,82 @@ export function PuzzleBoard({
       if (id) {
         setDraggingId(id);
         impact('light');
+        playSfx('pickup');
       }
     },
     [resolveGrabbedId],
+  );
+
+  const clearDragging = useCallback(() => setDraggingId(null), []);
+
+  /**
+   * Bring the floating piece's scale/tilt back to identity via `FX.settle`
+   * before finally clearing `draggingId` — the piece stays mounted (and the
+   * real BoardPiece/LoosePiece it hands off to is already drawn underneath,
+   * at the same spot) for the short settle window instead of popping away
+   * the instant the finger lifts.
+   */
+  const settleFloatingPiece = useCallback(
+    (targetX: number, targetY: number) => {
+      fx.value = withSpring(targetX, FX.settle);
+      fy.value = withSpring(targetY, FX.settle);
+      tiltDeg.value = withSpring(0, FX.settle);
+      // Gate clearing `draggingId` on the scale spring specifically: unlike
+      // tilt (which may already be ~0 and resolve in a single frame), the
+      // lift→1 travel is always a fixed, non-trivial distance, so this
+      // reliably outlives the whole settle motion.
+      scaleBoost.value = withSpring(1, FX.settle, (finished) => {
+        if (finished) {
+          runOnJS(clearDragging)();
+        }
+      });
+    },
+    [fx, fy, tiltDeg, scaleBoost, clearDragging],
+  );
+
+  const clearJiggle = useCallback((pieceId: string, token: number) => {
+    setJiggleTokens((prev) => {
+      if (prev[pieceId] !== token) {
+        // A newer wobble has since started on the same neighbour; leave it running.
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[pieceId];
+      return next;
+    });
+  }, []);
+
+  /** Orthogonal locked neighbours of `pieceId` (by row/column), for the lock-jiggle. */
+  const triggerNeighbourJiggle = useCallback(
+    (pieceId: string) => {
+      const geometry = preparedById[pieceId]?.geometry;
+      if (!geometry) {
+        return;
+      }
+      const { row, column } = geometry;
+      const candidates = [
+        row > 0 ? makePieceId(row - 1, column) : null,
+        row < gridSize - 1 ? makePieceId(row + 1, column) : null,
+        column > 0 ? makePieceId(row, column - 1) : null,
+        column < gridSize - 1 ? makePieceId(row, column + 1) : null,
+      ].filter((id): id is string => id !== null);
+
+      const lockedNeighbourIds = candidates.filter((id) =>
+        sessionRef.current.pieces.some((p) => p.pieceId === id && p.isLocked),
+      );
+      if (lockedNeighbourIds.length === 0) {
+        return;
+      }
+
+      setJiggleTokens((prev) => {
+        const next = { ...prev };
+        for (const id of lockedNeighbourIds) {
+          next[id] = (next[id] ?? 0) + 1;
+        }
+        return next;
+      });
+    },
+    [preparedById, gridSize],
   );
 
   const gesture = useMemo(() => {
@@ -526,12 +703,13 @@ export function PuzzleBoard({
 
     const releasePiece = (source: 0 | 1, index: number, canvasX: number, canvasY: number) => {
       const id = resolveGrabbedId(source, index);
-      setDraggingId(null);
       if (!id) {
+        setDraggingId(null);
         return;
       }
       const prepared = preparedById[id];
       if (!prepared) {
+        setDraggingId(null);
         return;
       }
       // Canvas → board piece-space. The board zone now renders behind the
@@ -558,23 +736,38 @@ export function PuzzleBoard({
         // tray instead (its position never changes, so it's simply back where it was).
         if (canvasY < boardZoneH) {
           onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: 0 }));
+          // The piece already rests exactly at (canvasX, canvasY) — only the
+          // lift scale/tilt need to settle back to identity there.
+          settleFloatingPiece(canvasX, canvasY);
+        } else {
+          // Silently returns to its old tray/board spot (no state change);
+          // nothing to settle towards, so just drop the floating piece.
+          setDraggingId(null);
         }
         return;
       }
 
       onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: placeThreshold }));
       impact('medium');
+      playSfx('snap');
+      triggerNeighbourJiggle(id);
       flashId.current += 1;
       // The glow ring is drawn at the Canvas root (outside the camera group,
       // so it stays on top of the tray/floating piece), so its position must
       // be pushed through the same live camera transform used above.
       const staticCx = boardOffsetX + (BOARD_PADDING + solved.x + prepared.cx) * boardScale;
       const staticCy = boardOffsetY + (BOARD_PADDING + solved.y + prepared.cy) * boardScale;
+      const settledCx = camTx.value + camScale.value * staticCx;
+      const settledCy = camTy.value + camScale.value * staticCy;
       setSnapFlash({
         id: flashId.current,
-        cx: camTx.value + camScale.value * staticCx,
-        cy: camTy.value + camScale.value * staticCy,
+        cx: settledCx,
+        cy: settledCy,
       });
+      // The just-locked BoardPiece already renders at this exact spot, so the
+      // floating piece settling on top of it (shrinking liftScale → 1, tilt →
+      // 0) reads as one piece thudding down rather than a visible duplicate.
+      settleFloatingPiece(settledCx, settledCy);
     };
 
     const pan = Gesture.Pan()
@@ -600,6 +793,9 @@ export function PuzzleBoard({
             if (Math.abs(boardX - box.cx) <= box.halfW && Math.abs(boardY - box.cy) <= box.halfH) {
               mode.value = 1;
               grabLoose.value = i;
+              // Instant grab (Task 11): pop straight to lift scale, no tilt yet.
+              scaleBoost.value = FX.liftScale;
+              tiltDeg.value = 0;
               fx.value = e.x;
               fy.value = e.y;
               runOnJS(beginGrab)(1, i);
@@ -619,6 +815,8 @@ export function PuzzleBoard({
           if (slot >= 0 && slot < count) {
             mode.value = 1;
             grabSlot.value = slot;
+            scaleBoost.value = FX.liftScale;
+            tiltDeg.value = 0;
             fx.value = e.x;
             fy.value = e.y;
             runOnJS(beginGrab)(0, slot);
@@ -632,6 +830,11 @@ export function PuzzleBoard({
         if (mode.value === 1) {
           fx.value = e.x;
           fy.value = e.y;
+          // Live tilt follows pointer velocity directly (no extra spring lag
+          // here — `FX.settle` is reserved for the release-to-identity
+          // motion), capped at FX.maxTiltDeg either way.
+          const rawTilt = e.velocityX * (FX.maxTiltDeg / TILT_VELOCITY_RANGE);
+          tiltDeg.value = Math.max(-FX.maxTiltDeg, Math.min(FX.maxTiltDeg, rawTilt));
         } else if (mode.value === 2) {
           trayScroll.value = Math.min(0, Math.max(minScroll, trayScroll.value + e.changeX));
         } else if (mode.value === 3) {
@@ -671,8 +874,12 @@ export function PuzzleBoard({
     startedAtMs,
     beginGrab,
     resolveGrabbedId,
+    settleFloatingPiece,
+    triggerNeighbourJiggle,
     fx,
     fy,
+    tiltDeg,
+    scaleBoost,
     grabSlot,
     grabLoose,
     mode,
@@ -782,14 +989,28 @@ export function PuzzleBoard({
                       color="rgba(23,33,33,0.14)"
                     />
 
-                    {lockedPieces.map((piece) => (
-                      <BoardPiece
-                        key={piece.pieceId}
-                        prepared={preparedById[piece.pieceId]}
-                        image={image}
-                        imageScale={imageScale}
-                      />
-                    ))}
+                    {lockedPieces.map((piece) => {
+                      const jiggleToken = jiggleTokens[piece.pieceId];
+                      if (jiggleToken) {
+                        return (
+                          <JigglingBoardPiece
+                            key={`${piece.pieceId}:${jiggleToken}`}
+                            prepared={preparedById[piece.pieceId]}
+                            image={image}
+                            imageScale={imageScale}
+                            onDone={() => clearJiggle(piece.pieceId, jiggleToken)}
+                          />
+                        );
+                      }
+                      return (
+                        <BoardPiece
+                          key={piece.pieceId}
+                          prepared={preparedById[piece.pieceId]}
+                          image={image}
+                          imageScale={imageScale}
+                        />
+                      );
+                    })}
 
                     {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
                     {loosePieces.map((piece) => (
@@ -834,6 +1055,8 @@ export function PuzzleBoard({
                 camScale={camScale}
                 fx={fx}
                 fy={fy}
+                tiltDeg={tiltDeg}
+                scaleBoost={scaleBoost}
               />
             ) : null}
 

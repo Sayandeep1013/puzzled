@@ -9,9 +9,22 @@ import { Platform } from 'react-native';
 
 const HAPTICS_ENABLED = Platform.OS === 'ios' || Platform.OS === 'android';
 
+/**
+ * Whether haptics may fire at all, mirroring the player's Haptics setting.
+ * Defaults to on until the board reads the real value from
+ * `getSettingsRepository()` at mount; the pause-menu toggle (Task 14) flips
+ * this live via `setHapticsEnabled`.
+ */
+let hapticsEnabled = true;
+
+/** Gate `impact()`/`success()` on the player's Haptics setting. */
+export function setHapticsEnabled(on: boolean): void {
+  hapticsEnabled = on;
+}
+
 /** A short impact — `light` when a piece is picked up, `medium` when it snaps home. */
 export function impact(kind: 'light' | 'medium'): void {
-  if (!HAPTICS_ENABLED) {
+  if (!HAPTICS_ENABLED || !hapticsEnabled) {
     return;
   }
   const style =
@@ -22,7 +35,7 @@ export function impact(kind: 'light' | 'medium'): void {
 
 /** The success buzz played once when the final piece locks. */
 export function success(): void {
-  if (!HAPTICS_ENABLED) {
+  if (!HAPTICS_ENABLED || !hapticsEnabled) {
     return;
   }
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -40,4 +53,12 @@ export const FX = {
   celebrateMs: 1200,
   /** Confetti particle count cap. */
   confettiCount: 80,
+  /** Max tilt in degrees while dragging, derived from pointer velocity. */
+  maxTiltDeg: 4,
+  /** Spring used when a piece settles after release. */
+  settle: { damping: 14, stiffness: 180 },
+  /** Neighbour wobble duration on lock, ms. */
+  jiggleMs: 120,
+  /** Neighbour wobble peak offset, px. */
+  jiggleAmplitude: 2,
 } as const;
