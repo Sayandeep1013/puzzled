@@ -114,18 +114,23 @@ export function LibraryScreen() {
   );
 
   const onToggleFavourite = useCallback(async (puzzleId: string) => {
-    const isFavourite = await (await getFavouritesRepository()).toggle(puzzleId);
-    // Optimistic local update — a full refetch also happens next time this
-    // screen gains focus, but the Favourites tab should react immediately.
-    setData((prev) => {
-      const favouriteIds = new Set(prev.favouriteIds);
-      if (isFavourite) {
-        favouriteIds.add(puzzleId);
-      } else {
-        favouriteIds.delete(puzzleId);
-      }
-      return { ...prev, favouriteIds };
-    });
+    try {
+      const isFavourite = await (await getFavouritesRepository()).toggle(puzzleId);
+      // Optimistic local update — a full refetch also happens next time this
+      // screen gains focus, but the Favourites tab should react immediately.
+      setData((prev) => {
+        const favouriteIds = new Set(prev.favouriteIds);
+        if (isFavourite) {
+          favouriteIds.add(puzzleId);
+        } else {
+          favouriteIds.delete(puzzleId);
+        }
+        return { ...prev, favouriteIds };
+      });
+    } catch {
+      // Best-effort; a failed toggle never touched storage, so leaving local
+      // state untouched keeps the heart consistent with what's persisted.
+    }
   }, []);
 
   const inProgress = data.rows.filter((r) => r.status !== 'completed' && r.lockedPieces > 0);
