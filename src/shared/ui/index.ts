@@ -7,6 +7,7 @@ export { PopIcon, type PopIconName } from './PopIcon';
 export { PopProgress } from './PopProgress';
 export { PopSheet } from './PopSheet';
 export { PopSurface, type SurfaceElevation } from './PopSurface';
-export { PopTabBar } from './PopTabBar';
+export { PopTabBar, useTabBarSpace } from './PopTabBar';
 export { PopToggle } from './PopToggle';
+export { WordmarkTitle } from './WordmarkTitle';
 export { type ArtName } from '@/shared/art';

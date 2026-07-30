@@ -115,6 +115,13 @@ export function ShopScreen() {
               onBuy={() => onBuy(bundle)}
             />
           ))}
+
+          {/* Three bundles leave most of a tall screen blank. A mascot makes the
+              tail read as deliberate rather than as content that failed to load. */}
+          <View style={styles.footerArt}>
+            <Art name="happy-duck" size={132} />
+            <Text style={styles.footerNote}>More ways to spend coins are coming.</Text>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -191,4 +198,6 @@ const styles = StyleSheet.create({
   rowCopy: { flex: 1, gap: 4 },
   rowTitle: { ...typography.heading, fontSize: 18, color: colors.ink },
   rowMeta: { ...typography.caption, color: colors.inkMuted },
+  footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
+  footerNote: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
 });

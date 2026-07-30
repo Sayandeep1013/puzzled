@@ -2,15 +2,17 @@
  * Reanimated shared values and gesture handlers intentionally mutate `.value` and close over refs.
  */
 import {
+  BlurMask,
   Canvas,
   Circle,
   Group,
   Image,
   Line,
   Path,
-  Rect,
   rect,
   RoundedRect,
+  rrect,
+  Shadow,
   useImage,
   vec,
   type SkImage,
@@ -55,12 +57,20 @@ import { FX, impact, setHapticsEnabled, success } from './board-fx';
 import { useBoardCamera } from './use-board-camera';
 
 const BOARD_PADDING = 12;
+/** Corner radius of the board face, matching `radii.lg` on the surrounding card. */
+const BOARD_RADIUS = 20;
 const TRAY_HEIGHT = 132;
 const TRAY_PAD = 12;
 const SLOT_GAP = 6;
+/** Breathing room between the fitted board and the tray strip. */
+const TRAY_GAP = 14;
 const CONFETTI_COLORS = [colors.berry, colors.honey, colors.apricot, colors.grass, colors.blossom];
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
+/** Travel before a tray drag's direction is judged, px. */
+const TRAY_INTENT_PX = 8;
+/** How much more horizontal than vertical a tray drag must be to scroll instead of lift. */
+const TRAY_INTENT_RATIO = 1.2;
 
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
@@ -86,7 +96,21 @@ function isEdgePiece(edges: PieceEdges): boolean {
   return edges.top === 0 || edges.right === 0 || edges.bottom === 0 || edges.left === 0;
 }
 
-/** Clip the shared source image to a piece silhouette. Scale-agnostic (parent Group scales). */
+/**
+ * Clip the shared source image to a piece silhouette, then emboss it.
+ * Scale-agnostic (parent Group scales), so the bevel stays proportional in the
+ * tray as well as on the board.
+ *
+ * The depth is two offset strokes of the piece's own outline, drawn inside the
+ * clip so only the interior half of each survives: a light rim toward the light
+ * (top-left) and a shaded rim opposite. Because it derives from the silhouette
+ * the engine already computes, a photo imported seconds ago gets exactly the
+ * same depth as bundled art — no per-puzzle assets, which would otherwise mean
+ * one image per piece per grid size and would make gallery imports impossible.
+ *
+ * Every piece type routes through here, so board, tray, loose and floating
+ * pieces all pick the effect up from one place.
+ */
 function PieceFill({
   prepared,
   image,
@@ -97,6 +121,7 @@ function PieceFill({
   imageScale: number;
 }) {
   const { geometry, skPath } = prepared;
+  const bevel = FX.bevel;
   return (
     <Group clip={skPath}>
       <Image
@@ -106,6 +131,30 @@ function PieceFill({
         width={image.width() * imageScale}
         height={image.height() * imageScale}
       />
+
+      <Group transform={[{ translateX: -bevel.offset }, { translateY: -bevel.offset }]}>
+        <Path
+          path={skPath}
+          style="stroke"
+          strokeWidth={bevel.offset * 2}
+          color={bevel.light}
+          opacity={1}
+        >
+          <BlurMask blur={bevel.blur} style="normal" />
+        </Path>
+      </Group>
+
+      <Group transform={[{ translateX: bevel.offset }, { translateY: bevel.offset }]}>
+        <Path
+          path={skPath}
+          style="stroke"
+          strokeWidth={bevel.offset * 2}
+          color={bevel.shade}
+          opacity={1}
+        >
+          <BlurMask blur={bevel.blur} style="normal" />
+        </Path>
+      </Group>
     </Group>
   );
 }
@@ -306,7 +355,12 @@ function FloatingPiece({
   );
 }
 
-/** A one-shot ring that pops outward when a piece locks home (canvas coords). */
+/**
+ * A one-shot ring that fades where a piece locks home (canvas coords).
+ *
+ * Values live in `FX.lockRing`. It used to be a thick orange ring at high
+ * opacity over 420ms, which blinked hard enough to pull the eye off the board.
+ */
 function GlowRing({
   id,
   cx,
@@ -318,24 +372,29 @@ function GlowRing({
   cy: number;
   onDone: (id: number) => void;
 }) {
+  const ring = FX.lockRing;
   const progress = useSharedValue(0);
   useEffect(() => {
-    progress.value = withTiming(1, { duration: 420, easing: Easing.out(Easing.quad) }, (done) => {
-      if (done) {
-        runOnJS(onDone)(id);
-      }
-    });
-  }, [progress, id, onDone]);
-  const radius = useDerivedValue(() => 10 + progress.value * 40);
-  const opacity = useDerivedValue(() => (1 - progress.value) * 0.85);
+    progress.value = withTiming(
+      1,
+      { duration: ring.durationMs, easing: Easing.out(Easing.quad) },
+      (done) => {
+        if (done) {
+          runOnJS(onDone)(id);
+        }
+      },
+    );
+  }, [progress, id, onDone, ring.durationMs]);
+  const radius = useDerivedValue(() => ring.startRadius + progress.value * ring.growBy);
+  const opacity = useDerivedValue(() => (1 - progress.value) * ring.peakOpacity);
   return (
     <Circle
       cx={cx}
       cy={cy}
       r={radius}
       style="stroke"
-      strokeWidth={3}
-      color={colors.apricot}
+      strokeWidth={ring.strokeWidth}
+      color={ring.color}
       opacity={opacity}
     />
   );
@@ -437,6 +496,11 @@ export function PuzzleBoard({
   /** `FX.liftScale` while held; springs to 1 via `FX.settle` on release. */
   const scaleBoost = useSharedValue<number>(FX.liftScale);
   const trayScroll = useSharedValue(0);
+  /**
+   * 0 until a tray drag's direction has been decided, then 1. Guards the
+   * grab→scroll handoff so it can only fire once per gesture.
+   */
+  const intentLocked = useSharedValue(0);
   /**
    * 0 idle · 1 dragging a piece · 2 scrolling the tray · 3 panning the
    * camera (a one-finger touch on empty board space). Decided instantly in
@@ -575,17 +639,33 @@ export function PuzzleBoard({
     [loosePieces, preparedById],
   );
 
-  // ---- Layout: board zone (fits, edges visible) above a fixed tray strip. ----
+  // ---- Layout: fitted board with the tray directly beneath, block centred. ----
   const layout = useMemo(() => {
     const vw = viewport.width;
     const vh = viewport.height;
-    const boardZoneH = Math.max(vh - TRAY_HEIGHT, 1);
     const outerW = boardSize.width + BOARD_PADDING * 2;
     const outerH = boardSize.height + BOARD_PADDING * 2;
-    // Fit the whole board (with margin) so every edge stays on screen.
-    const boardScale = Math.min((vw * 0.96) / outerW, (boardZoneH * 0.94) / outerH);
+
+    // Fit against the space left once the tray is accounted for, so every board
+    // edge stays on screen.
+    const availableH = Math.max(vh - TRAY_HEIGHT - TRAY_GAP, 1);
+    const boardScale = Math.min((vw * 0.96) / outerW, availableH / outerH);
+    const fittedH = outerH * boardScale;
+
+    /**
+     * The board is square while the zone is tall, so width almost always
+     * constrains the fit and vertical slack is unavoidable. Previously the board
+     * was centred in `vh - TRAY_HEIGHT` and the tray pinned to the very bottom,
+     * which put all that slack in one visible gap between the two. Treating
+     * board + tray as one centred block distributes it as an even mat instead.
+     */
+    const blockH = fittedH + TRAY_GAP + TRAY_HEIGHT;
+    const blockTop = Math.max(0, (vh - blockH) / 2);
+
     const boardOffsetX = (vw - outerW * boardScale) / 2;
-    const boardOffsetY = (boardZoneH - outerH * boardScale) / 2;
+    const boardOffsetY = blockTop;
+    /** Where the tray starts — also the board/tray gesture and clip boundary. */
+    const boardZoneH = Math.max(blockTop + fittedH + TRAY_GAP, 1);
 
     const slotInner = TRAY_HEIGHT - TRAY_PAD * 2;
     const pieceExtent = cellSize * (1 + 2 * TAB_SIZE_RATIO);
@@ -818,6 +898,7 @@ export function PuzzleBoard({
         mode.value = 0;
         grabSlot.value = -1;
         grabLoose.value = -1;
+        intentLocked.value = 0;
 
         if (e.y < boardZoneH) {
           // Board zone: hit-test loose pieces, topmost (highest z-index) first.
@@ -851,6 +932,8 @@ export function PuzzleBoard({
           }
         } else {
           // Tray zone: a valid slot grabs instantly; empty slot space scrolls.
+          // A grab here can still convert to a scroll in `onChange` if the
+          // gesture resolves as horizontal.
           const local = e.x - trayScroll.value;
           const slot = Math.floor((local - TRAY_PAD) / slotW);
           if (slot >= 0 && slot < count) {
@@ -868,6 +951,31 @@ export function PuzzleBoard({
       })
       .onChange((e) => {
         'worklet';
+        // Horizontal-intent handoff: a tray grab that turns out to be a sideways
+        // swipe becomes a tray scroll and puts the piece back.
+        //
+        // The tray was always scrollable, but only from empty slot space — and a
+        // full strip leaves none, so it felt static. Resolving intent after the
+        // touch keeps Task 11's instant grab (the piece still lifts the moment
+        // you touch it) rather than reintroducing a dead zone. Nothing has been
+        // committed to the engine yet at this point, so cancelling is purely
+        // visual.
+        if (mode.value === 1 && grabSlot.value >= 0 && intentLocked.value === 0) {
+          const dx = e.translationX;
+          const dy = e.translationY;
+          if (Math.abs(dx) > TRAY_INTENT_PX || Math.abs(dy) > TRAY_INTENT_PX) {
+            intentLocked.value = 1;
+            if (Math.abs(dx) > Math.abs(dy) * TRAY_INTENT_RATIO) {
+              mode.value = 2;
+              grabSlot.value = -1;
+              scaleBoost.value = FX.liftScale;
+              tiltDeg.value = 0;
+              runOnJS(clearDragging)();
+              return;
+            }
+          }
+        }
+
         if (mode.value === 1) {
           fx.value = e.x;
           fy.value = e.y;
@@ -925,6 +1033,8 @@ export function PuzzleBoard({
     grabLoose,
     mode,
     trayScroll,
+    intentLocked,
+    clearDragging,
     camScale,
     camTx,
     camTy,
@@ -953,24 +1063,18 @@ export function PuzzleBoard({
       <GestureDetector gesture={gesture}>
         <Animated.View style={{ width: viewport.width, height: viewport.height }}>
           <Canvas style={{ width: viewport.width, height: viewport.height }}>
-            {/* Tray backdrop. The board shell is cream, so the tray takes the
-                screen's own pale green to read as a separate zone — matching the
-                mockup, where loose pieces sit on the page rather than on the
-                board card. */}
-            <Rect
-              x={0}
+            {/* Tray backdrop, a rounded strip so it reads as its own shelf. The
+                board shell is cream, so the tray takes the screen's own pale
+                green — matching the mockup, where loose pieces sit on the page
+                rather than on the board card. */}
+            <RoundedRect
+              x={TRAY_PAD / 2}
               y={boardZoneH}
-              width={vw}
+              width={Math.max(vw - TRAY_PAD, 1)}
               height={TRAY_HEIGHT}
+              r={BOARD_RADIUS}
               color={backgrounds.game}
-              opacity={0.9}
-            />
-            <Line
-              p1={vec(0, boardZoneH)}
-              p2={vec(vw, boardZoneH)}
-              color="rgba(23,33,33,0.12)"
-              style="stroke"
-              strokeWidth={1}
+              opacity={0.95}
             />
 
             {/* Board zone: cameraTransform ∘ staticBoardTransform. At rest
@@ -993,87 +1097,86 @@ export function PuzzleBoard({
                     { scale: boardScale },
                   ]}
                 >
+                  {/* The board face is a rounded, shadowed card like every other
+                      surface in the app. It used to be a bare `Rect` behind a
+                      cream `RoundedRect` that was invisible against the equally
+                      cream shell, so the board read as a hard square. */}
                   <RoundedRect
-                    x={BOARD_PADDING - 6}
-                    y={BOARD_PADDING - 6}
-                    width={boardSize.width + 12}
-                    height={boardSize.height + 12}
-                    r={18}
-                    color={colors.surface}
-                  />
-                  <Rect
                     x={BOARD_PADDING}
                     y={BOARD_PADDING}
                     width={boardSize.width}
                     height={boardSize.height}
-                    color="rgba(185,205,189,0.22)"
-                  />
-                  <Group transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}>
-                    {/* Faint cell grid to guide placement */}
-                    {gridLines.map((x, i) => (
-                      <Line
-                        key={`v${i}`}
-                        p1={vec(x, 0)}
-                        p2={vec(x, boardSize.height)}
-                        color="rgba(23,33,33,0.07)"
-                        style="stroke"
-                        strokeWidth={1}
-                      />
-                    ))}
-                    {gridLines.map((y, i) => (
-                      <Line
-                        key={`h${i}`}
-                        p1={vec(0, y)}
-                        p2={vec(boardSize.width, y)}
-                        color="rgba(23,33,33,0.07)"
-                        style="stroke"
-                        strokeWidth={1}
-                      />
-                    ))}
-                    <Rect
-                      x={0}
-                      y={0}
-                      width={boardSize.width}
-                      height={boardSize.height}
-                      style="stroke"
-                      strokeWidth={2}
-                      color="rgba(23,33,33,0.14)"
-                    />
-
-                    {lockedPieces.map((piece) => {
-                      const jiggleToken = jiggleTokens[piece.pieceId];
-                      if (jiggleToken) {
+                    r={BOARD_RADIUS}
+                    color="rgba(198,219,186,0.45)"
+                  >
+                    <Shadow dx={0} dy={3} blur={9} color="rgba(58,43,26,0.22)" />
+                  </RoundedRect>
+                  <Group
+                    clip={rrect(
+                      rect(BOARD_PADDING, BOARD_PADDING, boardSize.width, boardSize.height),
+                      BOARD_RADIUS,
+                      BOARD_RADIUS,
+                    )}
+                  >
+                    <Group
+                      transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}
+                    >
+                      {/* Faint cell grid to guide placement */}
+                      {gridLines.map((x, i) => (
+                        <Line
+                          key={`v${i}`}
+                          p1={vec(x, 0)}
+                          p2={vec(x, boardSize.height)}
+                          color="rgba(23,33,33,0.07)"
+                          style="stroke"
+                          strokeWidth={1}
+                        />
+                      ))}
+                      {gridLines.map((y, i) => (
+                        <Line
+                          key={`h${i}`}
+                          p1={vec(0, y)}
+                          p2={vec(boardSize.width, y)}
+                          color="rgba(23,33,33,0.07)"
+                          style="stroke"
+                          strokeWidth={1}
+                        />
+                      ))}
+                      {lockedPieces.map((piece) => {
+                        const jiggleToken = jiggleTokens[piece.pieceId];
+                        if (jiggleToken) {
+                          return (
+                            <JigglingBoardPiece
+                              key={`${piece.pieceId}:${jiggleToken}`}
+                              prepared={preparedById[piece.pieceId]}
+                              image={image}
+                              imageScale={imageScale}
+                              onDone={() => clearJiggle(piece.pieceId, jiggleToken)}
+                            />
+                          );
+                        }
                         return (
-                          <JigglingBoardPiece
-                            key={`${piece.pieceId}:${jiggleToken}`}
+                          <BoardPiece
+                            key={piece.pieceId}
                             prepared={preparedById[piece.pieceId]}
                             image={image}
                             imageScale={imageScale}
-                            onDone={() => clearJiggle(piece.pieceId, jiggleToken)}
                           />
                         );
-                      }
-                      return (
-                        <BoardPiece
+                      })}
+
+                      {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
+                      {loosePieces.map((piece) => (
+                        <LoosePiece
                           key={piece.pieceId}
                           prepared={preparedById[piece.pieceId]}
                           image={image}
                           imageScale={imageScale}
+                          position={piece.position}
+                          hidden={piece.pieceId === draggingId}
                         />
-                      );
-                    })}
-
-                    {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
-                    {loosePieces.map((piece) => (
-                      <LoosePiece
-                        key={piece.pieceId}
-                        prepared={preparedById[piece.pieceId]}
-                        image={image}
-                        imageScale={imageScale}
-                        position={piece.position}
-                        hidden={piece.pieceId === draggingId}
-                      />
-                    ))}
+                      ))}
+                    </Group>
                   </Group>
                 </Group>
               </Group>

@@ -3,10 +3,15 @@ import { useCallback, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { listCatalog, resolvePuzzleImageSource } from '@/data';
+import {
+  getProgressRepository,
+  listCatalog,
+  resolvePuzzleImageSource,
+  type PuzzleProgressSummary,
+} from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopChip, PopIcon, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopChip, PopIcon, PopSurface, useTabBarSpace } from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no category/tag field — just id, title, image,
@@ -25,15 +30,14 @@ const FILTERS: { key: SourceFilter; label: string; tone: string }[] = [
   { key: 'user', label: 'My Photos', tone: colors.blossom },
 ];
 
-/** Tones used to frame grid cards, cycling independently of the filter tones above. */
-const CARD_TONES = [colors.berry, colors.blossom, colors.apricot, colors.grass, colors.sky];
-
 interface CatalogData {
   bundled: PuzzleDefinition[];
   user: PuzzleDefinition[];
+  /** Saved sessions per puzzle, most recently played first. */
+  byPuzzle: Record<string, PuzzleProgressSummary[]>;
 }
 
-const EMPTY: CatalogData = { bundled: [], user: [] };
+const EMPTY: CatalogData = { bundled: [], user: [], byPuzzle: {} };
 
 function imageFor(puzzle: PuzzleDefinition): number | string | null {
   return resolvePuzzleImageSource(puzzle);
@@ -43,13 +47,28 @@ export function PuzzlesScreen() {
   const router = useRouter();
   const [data, setData] = useState<CatalogData>(EMPTY);
   const [filter, setFilter] = useState<SourceFilter>('all');
+  const tabBarSpace = useTabBarSpace();
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      listCatalog().then(({ bundled, user }) => {
-        if (active) setData({ bundled, user });
-      });
+      (async () => {
+        const { bundled, user } = await listCatalog();
+
+        // Progress powers the Continue/Start distinction this screen inherited
+        // from Home, so it is loaded here rather than on the landing screen.
+        const byPuzzle: Record<string, PuzzleProgressSummary[]> = {};
+        try {
+          const rows = await (await getProgressRepository()).listSummaries();
+          for (const row of rows) {
+            (byPuzzle[row.puzzleId] ??= []).push(row);
+          }
+        } catch {
+          // Progress is best-effort; an unreadable database still lists puzzles.
+        }
+
+        if (active) setData({ bundled, user, byPuzzle });
+      })();
       return () => {
         active = false;
       };
@@ -65,13 +84,25 @@ export function PuzzlesScreen() {
   const open = (puzzle: PuzzleDefinition) =>
     router.push({ pathname: '/difficulty/[puzzleId]', params: { puzzleId: puzzle.id } });
 
+  /** Resume straight into the last size played; otherwise pick a difficulty. */
+  const play = (puzzle: PuzzleDefinition) => {
+    const latest = data.byPuzzle[puzzle.id]?.[0];
+    if (latest != null && latest.lockedPieces > 0) {
+      router.push({
+        pathname: '/game/[puzzleId]',
+        params: { puzzleId: puzzle.id, size: String(latest.gridSize) },
+      });
+      return;
+    }
+    open(puzzle);
+  };
+
   const recommended = filtered[0];
-  const rest = filtered.slice(1);
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
           <Text style={styles.pageTitle}>Puzzles</Text>
 
           <Pressable
@@ -151,39 +182,28 @@ export function PuzzlesScreen() {
           ) : null}
 
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>All puzzles</Text>
+            <Text style={styles.sectionTitle}>Ready to play?</Text>
             <Text style={styles.sectionMeta}>
               {filtered.length} {filtered.length === 1 ? 'puzzle' : 'puzzles'}
             </Text>
           </View>
-          <View style={styles.grid}>
-            {rest.map((puzzle, index) => (
-              <Pressable
+          {/* Every filtered puzzle, not `slice(1)`. Excluding the recommended one
+              meant a single-puzzle catalog rendered a header reading "1 puzzle"
+              above an empty grid. The Recommended card is a second presentation
+              of the same puzzle, which is normal. */}
+          <View style={styles.list}>
+            {filtered.map((puzzle) => (
+              <StarterRow
                 key={puzzle.id}
-                onPress={() => open(puzzle)}
-                accessibilityRole="button"
-                style={styles.gridItem}
-              >
-                <PopSurface
-                  fill={CARD_TONES[index % CARD_TONES.length]}
-                  radius={radii.md}
-                  contentStyle={styles.gridFrame}
-                >
-                  <View style={styles.gridBody}>
-                    <View style={styles.gridImageWrap}>
-                      <Preview puzzle={puzzle} />
-                    </View>
-                    <Text style={styles.gridTitle} numberOfLines={1}>
-                      {puzzle.title}
-                    </Text>
-                  </View>
-                </PopSurface>
-              </Pressable>
+                puzzle={puzzle}
+                rows={data.byPuzzle[puzzle.id] ?? []}
+                onPress={() => play(puzzle)}
+              />
             ))}
             {filtered.length === 0 ? (
               <Text style={styles.empty}>
                 {filter === 'user'
-                  ? 'Add photos from Home to see them here.'
+                  ? 'Import a photo from Library to see it here.'
                   : 'No puzzles to show yet.'}
               </Text>
             ) : null}
@@ -191,6 +211,54 @@ export function PuzzlesScreen() {
         </ScrollView>
       </SafeAreaView>
     </View>
+  );
+}
+
+/**
+ * A playable puzzle with its progress — the card Home used to own.
+ *
+ * The old Home version passed a `previewUri` only for imported photos, so
+ * bundled puzzles fell through to decorative coloured blobs even though their
+ * artwork exists. This resolves every puzzle through `resolvePuzzleImageSource`,
+ * the same path the Recommended card already used correctly.
+ */
+function StarterRow({
+  puzzle,
+  rows,
+  onPress,
+}: {
+  puzzle: PuzzleDefinition;
+  rows: PuzzleProgressSummary[];
+  onPress: () => void;
+}) {
+  const latest = rows[0];
+  const done = latest?.status === 'completed';
+  const started = latest != null && latest.lockedPieces > 0;
+
+  return (
+    <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.rowBody}>
+      <View style={styles.rowThumb}>
+        <Preview puzzle={puzzle} />
+      </View>
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {puzzle.title}
+        </Text>
+        <Text style={styles.rowMeta}>
+          {started
+            ? `${latest.gridSize}×${latest.gridSize} · ${latest.lockedPieces}/${latest.totalPieces} placed`
+            : 'Choose 3×3 up to 10×10'}
+          {rows.length > 1 ? ` · ${rows.length} sizes` : ''}
+        </Text>
+      </View>
+      <PopButton
+        label={done ? 'Again' : started ? 'Continue' : 'Start'}
+        tone="grass"
+        size="sm"
+        accessibilityLabel={`${done ? 'Play again' : started ? 'Continue' : 'Start'} ${puzzle.title}`}
+        onPress={onPress}
+      />
+    </PopSurface>
   );
 }
 
@@ -217,13 +285,12 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
     gap: spacing.md,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
   },
-  pageTitle: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
+  pageTitle: { ...typography.title, color: colors.headingGreen, marginTop: spacing.sm },
   // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
   // as a frame around the white row body nested inside it (the
   // `pack-screen.tsx` row / `home-screen.tsx` `PuzzleCard` pattern).
@@ -273,22 +340,23 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   newTagText: { ...typography.label, fontSize: 10, color: colors.onFill },
-  grid: {
+  list: { gap: spacing.md },
+  rowBody: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: spacing.md,
-    justifyContent: 'space-between',
+    padding: spacing.md,
   },
-  gridItem: { width: '47%' },
-  gridFrame: { padding: spacing.xs },
-  gridBody: { overflow: 'hidden', borderRadius: radii.sm, backgroundColor: colors.surface },
-  gridImageWrap: {
-    height: 110,
+  rowThumb: {
+    width: 68,
+    height: 68,
     borderRadius: radii.sm,
     overflow: 'hidden',
-    backgroundColor: colors.honey,
+    backgroundColor: colors.paper,
   },
-  gridTitle: { ...typography.caption, color: colors.ink, padding: spacing.sm },
+  rowCopy: { flex: 1, gap: 2 },
+  rowTitle: { ...typography.heading, fontSize: 17, color: colors.ink },
+  rowMeta: { ...typography.caption, color: colors.inkMuted },
   previewImage: { width: '100%', height: '100%' },
   previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { ...typography.body, color: colors.inkMuted },

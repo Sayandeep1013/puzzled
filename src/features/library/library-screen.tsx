@@ -1,11 +1,22 @@
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   getFavouritesRepository,
   getProgressRepository,
+  getUserPuzzleRepository,
   listCatalog,
   resolvePuzzleImageSource,
   type PuzzleProgressSummary,
@@ -13,7 +24,17 @@ import {
 import { type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
 import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopChip, PopIcon, PopProgress, PopSurface } from '@/shared/ui';
+import { Art, PopChip, PopIcon, PopProgress, PopSurface, useTabBarSpace } from '@/shared/ui';
+
+/** Turn a picked file name into a friendly title. */
+function titleFromFileName(fileName: string | null | undefined): string {
+  if (!fileName) {
+    return 'My puzzle';
+  }
+  const withoutExt = fileName.replace(/\.[^.]+$/, '');
+  const cleaned = withoutExt.replace(/[_-]+/g, ' ').trim();
+  return cleaned.length > 0 ? cleaned.slice(0, 40) : 'My puzzle';
+}
 
 type Tab = 'progress' | 'completed' | 'favourites' | 'photos';
 
@@ -28,7 +49,7 @@ const EMPTY_COPY: Record<Tab, { art: ArtName; text: string; sub: string }> = {
   progress: {
     art: 'puzzle-quad',
     text: 'Nothing in progress',
-    sub: 'Start a puzzle from Home or Puzzles.',
+    sub: 'Start a puzzle from Home or the Puzzles tab.',
   },
   completed: {
     art: 'sticker-book',
@@ -43,7 +64,7 @@ const EMPTY_COPY: Record<Tab, { art: ArtName; text: string; sub: string }> = {
   photos: {
     art: 'album',
     text: 'No photos yet',
-    sub: 'Import a photo from Home to see it here.',
+    sub: 'Tap Add from gallery above to make any photo a jigsaw.',
   },
 };
 
@@ -99,6 +120,8 @@ async function loadLibraryData(): Promise<LibraryData> {
 export function LibraryScreen() {
   const [tab, setTab] = useState<Tab>('progress');
   const [data, setData] = useState<LibraryData>(EMPTY_DATA);
+  const [importing, setImporting] = useState(false);
+  const tabBarSpace = useTabBarSpace();
 
   // Refetch on focus so progress, favourites, and imported photos reflect
   // whatever changed on the board or on Home since this screen last showed.
@@ -133,6 +156,51 @@ export function LibraryScreen() {
       // state untouched keeps the heart consistent with what's persisted.
     }
   }, []);
+
+  /** Moved verbatim from Home so imported photos land on the tab that lists them. */
+  const onImport = useCallback(async () => {
+    if (importing) {
+      return;
+    }
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Photos permission needed',
+          'Allow photo access to turn an image into a puzzle.',
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 1,
+      });
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setImporting(true);
+      await (
+        await getUserPuzzleRepository()
+      ).add({
+        title: titleFromFileName(asset.fileName),
+        sourceUri: asset.uri,
+        pixelSize: { width: asset.width, height: asset.height },
+      });
+      setData(await loadLibraryData());
+    } catch {
+      Alert.alert(
+        'Could not import',
+        'Something went wrong adding that image. Please try another.',
+      );
+    } finally {
+      setImporting(false);
+    }
+  }, [importing]);
 
   const inProgress = data.rows.filter((r) => r.status !== 'completed' && r.lockedPieces > 0);
   const completed = data.rows.filter((r) => r.status === 'completed');
@@ -169,18 +237,46 @@ export function LibraryScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabs}
         >
-          {TABS.map(({ key, label }, index) => (
+          {/* One tone for every tab. Cycling `accentAt` per tab meant the
+              selected chip was blue here and green elsewhere, which read as a
+              bug rather than a system. */}
+          {TABS.map(({ key, label }) => (
             <PopChip
               key={key}
               label={label}
-              tone={accentAt(index)}
+              tone={colors.grass}
               selected={tab === key}
               onPress={() => setTab(key)}
             />
           ))}
         </ScrollView>
 
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
+          {/* Photo import lives here, on the tab that shows the result. It used
+              to sit on Home, whose landing screen had grown into a dashboard —
+              and this tab's own empty copy already pointed at it. */}
+          {tab === 'photos' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add a puzzle from your gallery"
+              onPress={onImport}
+              disabled={importing}
+            >
+              <PopSurface fill={colors.surface} radius={radii.lg}>
+                <View style={styles.importInner}>
+                  {importing ? (
+                    <ActivityIndicator color={colors.grass} />
+                  ) : (
+                    <Art name="plus-circle" size={30} />
+                  )}
+                  <Text style={styles.importText}>
+                    {importing ? 'Adding your photo…' : 'Add from gallery'}
+                  </Text>
+                </View>
+              </PopSurface>
+            </Pressable>
+          ) : null}
+
           {visible.length === 0 ? (
             <EmptyState art={emptyCopy.art} text={emptyCopy.text} sub={emptyCopy.sub} />
           ) : (
@@ -310,10 +406,18 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   pageTitle: {
     ...typography.title,
-    color: colors.ink,
+    color: colors.headingGreen,
     marginTop: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
+  importInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  importText: { ...typography.bodyStrong, color: colors.ink },
   tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   content: {
     padding: spacing.lg,

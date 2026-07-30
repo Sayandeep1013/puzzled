@@ -19,6 +19,10 @@ interface Stats {
   bestTimeMs: number | null;
   /** The `gridSize` with the most saved sessions, or `null` with no sessions. */
   favouriteGridSize: GridSize | null;
+  /** Sum of `totalPieces` across every saved session. */
+  totalPieces: number;
+  /** `piecesPlaced / totalPieces` as a whole percent; 0 with no sessions. */
+  percent: number;
 }
 
 const EMPTY_STATS: Stats = {
@@ -27,6 +31,8 @@ const EMPTY_STATS: Stats = {
   totalTimeMs: 0,
   bestTimeMs: null,
   favouriteGridSize: null,
+  totalPieces: 0,
+  percent: 0,
 };
 
 function computeStats(rows: PuzzleProgressSummary[]): Stats {
@@ -56,7 +62,18 @@ function computeStats(rows: PuzzleProgressSummary[]): Stats {
     }
   }
 
-  return { completed, piecesPlaced, totalTimeMs, bestTimeMs, favouriteGridSize };
+  const totalPieces = rows.reduce((sum, row) => sum + row.totalPieces, 0);
+  const percent = totalPieces > 0 ? Math.round((piecesPlaced / totalPieces) * 100) : 0;
+
+  return {
+    completed,
+    piecesPlaced,
+    totalTimeMs,
+    bestTimeMs,
+    favouriteGridSize,
+    totalPieces,
+    percent,
+  };
 }
 
 /** mm:ss (or h:mm:ss past an hour) — for a single completion time. */
@@ -119,6 +136,22 @@ export function StatisticsScreen() {
         <PopHeader title="Statistics" onBack={() => router.back()} />
 
         <ScrollView contentContainerStyle={styles.content}>
+          {/* Relocated from Home, which had grown into a dashboard. This screen
+              already derived from the same progress rows, so it is where the
+              overall figure belongs. */}
+          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.progressBody}>
+            <View style={styles.progressCopy}>
+              <Text style={styles.progressLabel}>YOUR PROGRESS</Text>
+              <Text style={styles.progressValue}>
+                {stats.piecesPlaced} {stats.piecesPlaced === 1 ? 'piece' : 'pieces'} placed
+              </Text>
+              <Text style={styles.progressHint}>Saved on this device, even offline.</Text>
+            </View>
+            <View style={styles.progressRing}>
+              <Text style={styles.progressPercent}>{stats.percent}%</Text>
+            </View>
+          </PopSurface>
+
           <View style={styles.grid}>
             <StatTile
               fill={accentAt(0)}
@@ -198,6 +231,27 @@ const styles = StyleSheet.create({
     maxWidth: 620,
     alignSelf: 'center',
   },
+  progressBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  progressCopy: { flex: 1, gap: 2 },
+  progressLabel: { ...typography.label, color: colors.inkMuted },
+  progressValue: { ...typography.heading, color: colors.ink },
+  progressHint: { ...typography.caption, color: colors.inkMuted },
+  progressRing: {
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 5,
+    borderColor: colors.grass,
+    borderRadius: radii.pill,
+  },
+  progressPercent: { ...typography.heading, fontSize: 17, color: colors.ink },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

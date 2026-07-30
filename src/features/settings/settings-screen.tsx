@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getSettingsRepository, type AppSettings } from '@/data';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopHeader, PopSurface, PopToggle } from '@/shared/ui';
+import { Art, PopHeader, PopSurface, PopToggle } from '@/shared/ui';
 
 /** Matches `DEFAULT_SETTINGS` in the settings repository — all on until loaded. */
 const DEFAULT_SETTINGS: AppSettings = { sound: true, music: true, haptics: true };
@@ -82,6 +82,11 @@ export function SettingsScreen() {
             </View>
           </PopSurface>
 
+          {/* Three toggles leave a tall blank tail; the mascot closes it off. */}
+          <View style={styles.footerArt}>
+            <Art name="winking-duck" size={120} />
+          </View>
+
           {version ? <Text style={styles.version}>Version {version}</Text> : null}
         </ScrollView>
       </SafeAreaView>
@@ -118,5 +123,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(90, 62, 24, 0.14)',
     marginHorizontal: spacing.sm,
   },
+  footerArt: { alignItems: 'center', paddingTop: spacing.lg },
   version: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
 });

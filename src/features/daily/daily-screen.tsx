@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -77,6 +77,9 @@ async function loadDailyData(key: string): Promise<DailyData> {
 export function DailyScreen() {
   const router = useRouter();
   const [data, setData] = useState<DailyData>(EMPTY);
+  /** Day-of-month the player has tapped; `null` means today. */
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [pool, setPool] = useState<PuzzleDefinition[]>([]);
 
   // Computed once at mount — a UI-layer "now", not something the pure daily
   // helpers (`dateKey`/`pickDailyPuzzle`/`streakFrom`) ever read themselves.
@@ -88,6 +91,11 @@ export function DailyScreen() {
       let active = true;
       loadDailyData(todayKey).then((next) => {
         if (active) setData(next);
+      });
+      // The catalog is also held locally so tapping a past date can resolve that
+      // date's pick without another round trip.
+      listCatalog().then(({ bundled, user }) => {
+        if (active) setPool([...bundled, ...user]);
       });
       return () => {
         active = false;
@@ -118,13 +126,38 @@ export function DailyScreen() {
    */
   const streak = streakFrom(data.playedToday ? [todayKey] : [], todayKey);
 
-  const source = data.puzzle ? resolvePuzzleImageSource(data.puzzle) : null;
+  /**
+   * The date the player is looking at, and its pick.
+   *
+   * `pickDailyPuzzle` is deterministic from a date key, so a past date resolves
+   * to the puzzle that genuinely was that day's pick — real data, not invented
+   * history. Today falls back to the loaded `data.puzzle` so the screen still
+   * works before the catalog arrives.
+   */
+  const viewing = useMemo(() => {
+    const day = selectedDay ?? calendar.today;
+    const isToday = day === calendar.today;
+    const date = new Date(today.getFullYear(), today.getMonth(), day);
+    const key = dateKey(date);
+    const puzzle = isToday ? data.puzzle : pickDailyPuzzle(pool, key);
+    return {
+      day,
+      isToday,
+      key,
+      puzzle: puzzle ?? data.puzzle,
+      label: `${MONTHS[today.getMonth()]} ${day}`,
+    };
+  }, [selectedDay, calendar.today, today, data.puzzle, pool]);
+
+  const source = viewing.puzzle ? resolvePuzzleImageSource(viewing.puzzle) : null;
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader title="Daily Puzzle" onBack={() => router.back()} />
-        <View style={styles.content}>
+        {/* Was a plain View, which is why the page could not scroll and the Play
+            button sat off the bottom of the screen. */}
+        <ScrollView contentContainerStyle={styles.content}>
           <PopSurface fill={colors.surface} radius={radii.lg}>
             <View style={styles.calendar}>
               <Text style={styles.month}>{calendar.label}</Text>
@@ -137,28 +170,53 @@ export function DailyScreen() {
               </View>
               <View style={styles.daysGrid}>
                 {calendar.cells.map((day, i) => {
+                  if (day == null) {
+                    return <View key={i} style={styles.dayCell} />;
+                  }
+
                   const isToday = day === calendar.today;
+                  const isFuture = day > calendar.today;
+                  const isSelected = day === viewing.day;
+
                   return (
                     <View key={i} style={styles.dayCell}>
-                      {day != null ? (
-                        isToday ? (
-                          <View
-                            style={[styles.todayDot, data.playedToday && styles.todayDotPlayed]}
-                          >
-                            {data.playedToday ? (
-                              <Art name="coin-check" size={20} />
-                            ) : (
-                              <Text style={styles.todayText}>{day}</Text>
-                            )}
-                          </View>
+                      <Pressable
+                        // Future days have no pick to show, so they stay inert
+                        // rather than pretending to be tappable.
+                        disabled={isFuture}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected, disabled: isFuture }}
+                        accessibilityLabel={
+                          isFuture
+                            ? `${MONTHS[today.getMonth()]} ${day}, not yet unlocked`
+                            : `${MONTHS[today.getMonth()]} ${day}`
+                        }
+                        onPress={() => setSelectedDay(day)}
+                        style={[
+                          styles.dayHit,
+                          isSelected && styles.daySelected,
+                          isToday && data.playedToday && styles.dayPlayed,
+                        ]}
+                      >
+                        {isToday && data.playedToday ? (
+                          <Art name="coin-check" size={22} />
                         ) : (
-                          <Text style={styles.dayText}>{day}</Text>
-                        )
-                      ) : null}
+                          <Text
+                            style={[
+                              styles.dayText,
+                              isSelected && styles.dayTextSelected,
+                              isFuture && styles.dayTextFuture,
+                            ]}
+                          >
+                            {day}
+                          </Text>
+                        )}
+                      </Pressable>
                     </View>
                   );
                 })}
               </View>
+              <Text style={styles.calendarHint}>Tap any day up to today to see its puzzle.</Text>
             </View>
           </PopSurface>
 
@@ -204,25 +262,28 @@ export function DailyScreen() {
           </PopSurface>
 
           <Text style={styles.prompt}>
-            {data.puzzle
-              ? `Today's pick: ${data.puzzle.title}`
-              : 'Add a puzzle from Home to unlock the daily pick.'}
+            {viewing.puzzle
+              ? `${viewing.isToday ? "Today's" : `${viewing.label}`} pick: ${viewing.puzzle.title}`
+              : 'Import a photo from Library to unlock the daily pick.'}
           </Text>
 
           <PopButton
-            label={data.playedToday ? 'Play again' : 'Play Now'}
+            label={
+              viewing.isToday ? (data.playedToday ? 'Play again' : 'Play Now') : 'Play this puzzle'
+            }
             tone="grass"
-            disabled={!data.puzzle}
+            icon={<Art name="play" size={24} />}
+            disabled={!viewing.puzzle}
             onPress={() => {
-              if (data.puzzle) {
+              if (viewing.puzzle) {
                 router.push({
                   pathname: '/difficulty/[puzzleId]',
-                  params: { puzzleId: data.puzzle.id },
+                  params: { puzzleId: viewing.puzzle.id },
                 });
               }
             }}
           />
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -231,17 +292,18 @@ export function DailyScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
+  // No `flex: 1` on a ScrollView's contentContainer: it would pin the content to
+  // one viewport height and defeat scrolling, which is the bug being fixed.
   content: {
-    flex: 1,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xxl,
     gap: spacing.lg,
     width: '100%',
     maxWidth: 560,
     alignSelf: 'center',
   },
   calendar: { padding: spacing.md, gap: spacing.sm },
-  month: { ...typography.heading, color: colors.ink, textAlign: 'center' },
+  month: { ...typography.heading, color: colors.headingGreen, textAlign: 'center' },
   weekRow: { flexDirection: 'row' },
   weekday: {
     ...typography.label,
@@ -252,17 +314,26 @@ const styles = StyleSheet.create({
   },
   daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  dayText: { ...typography.body, color: colors.ink },
-  todayDot: {
-    width: 34,
-    height: 34,
+  // The tap target is the circle itself, sized past the 44pt minimum once the
+  // cell padding is counted.
+  dayHit: {
+    width: 38,
+    height: 38,
     borderRadius: radii.pill,
-    backgroundColor: colors.berry,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  todayDotPlayed: { backgroundColor: colors.grass },
-  todayText: { ...typography.bodyStrong, color: colors.onFill },
+  daySelected: { backgroundColor: colors.grass },
+  dayPlayed: { backgroundColor: 'transparent' },
+  dayText: { ...typography.body, color: colors.ink },
+  dayTextSelected: { ...typography.bodyStrong, color: colors.onFill },
+  dayTextFuture: { color: colors.locked },
+  calendarHint: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
   streakFrame: { padding: spacing.lg },
   streakBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   streakIconWrap: {

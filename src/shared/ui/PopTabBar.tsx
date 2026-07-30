@@ -30,12 +30,44 @@ const TABS: Record<string, { art: ArtName; label: string; tint: string }> = {
   profile: { art: 'change-avatar', label: 'Profile', tint: colors.berry },
 };
 
+/**
+ * Bar metrics, named so the styles below and `useTabBarSpace` read from the same
+ * numbers. Previously each screen guessed, and every screen guessed zero — so
+ * content scrolled underneath and the last row was unreadable.
+ */
+const ICON_SIZE = 26;
+const LABEL_LINE = 14;
+const ITEM_GAP = 2;
+const BAR_HEIGHT = spacing.sm + ICON_SIZE + ITEM_GAP + LABEL_LINE + spacing.xs;
+
+/**
+ * Vertical space a screen under `(tabs)/` must reserve at the bottom of its
+ * scroll content, because the bar floats over the scene rather than sitting
+ * below it.
+ *
+ * The bar floats for a reason: in normal flow it rendered on the *navigator's*
+ * background, so beneath it sat a strip of `paper` that did not match whichever
+ * background the screen itself used — three stacked colours on Home, which read
+ * as the bar being cut off. Floating lets each screen's own background run to
+ * the bottom edge.
+ *
+ * Lives here because this component owns the metrics: change its padding and
+ * every screen's reservation follows, instead of silently starting to clip.
+ */
+export function useTabBarSpace(): number {
+  const insets = useSafeAreaInsets();
+  return BAR_HEIGHT + Math.max(insets.bottom, spacing.md) + spacing.md;
+}
+
 /** Puzzle Journey bottom navigation, used as the custom `tabBar` for Tabs. */
 export function PopTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+    <View
+      style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}
+      pointerEvents="box-none"
+    >
       <PopSurface radius={radii.xl} elevation="raised" contentStyle={styles.bar}>
         {state.routes.map((route, index) => {
           const meta = TABS[route.name];
@@ -81,7 +113,16 @@ export function PopTabBar({ state, navigation }: TabBarProps) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: spacing.sm },
+  // Absolute so the scene fills the whole screen behind it and each screen's own
+  // background reaches the bottom edge. `pointerEvents: box-none` on the wrapper
+  // keeps the padding around the pill from swallowing taps meant for content.
+  wrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: spacing.md,
+  },
   bar: {
     flexDirection: 'row',
     paddingTop: spacing.sm,

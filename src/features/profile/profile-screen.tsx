@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getProgressRepository, type PuzzleProgressSummary } from '@/data';
 import { colors, radii, spacing, typography } from '@/shared/theme';
 import { type ArtName } from '@/shared/art';
-import { Art, PopIcon, PopSurface } from '@/shared/ui';
+import { Art, PopIcon, PopSurface, useTabBarSpace } from '@/shared/ui';
 
 /**
  * There is no accounts system yet (Phase 2). Every player is shown the same
@@ -17,6 +17,7 @@ const PLACEHOLDER_NAME = 'Player';
 export function ProfileScreen() {
   const router = useRouter();
   const [completed, setCompleted] = useState(0);
+  const tabBarSpace = useTabBarSpace();
 
   useFocusEffect(
     useCallback(() => {
@@ -49,13 +50,12 @@ export function ProfileScreen() {
           <Text style={styles.pageTitle}>Profile</Text>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
           <View style={styles.identity}>
-            <PopSurface fill={colors.blossom} radius={radii.pill} style={styles.avatar}>
-              <View style={styles.avatarInner}>
-                <Art name="change-avatar" size={92} />
-              </View>
-            </PopSurface>
+            {/* No circular surface. `change-avatar` is a sticker that already
+                carries its own white outline, and clipping it to a pill cut the
+                bear's ears off while the fill swamped the art. */}
+            <Art name="change-avatar" size={132} accessibilityLabel="Your avatar" />
             <Text style={styles.name}>{PLACEHOLDER_NAME}</Text>
           </View>
 
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginTop: spacing.sm,
   },
-  pageTitle: { ...typography.title, color: colors.ink },
+  pageTitle: { ...typography.title, color: colors.headingGreen },
   content: {
     padding: spacing.lg,
     gap: spacing.lg,
@@ -103,8 +103,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   identity: { alignItems: 'center', gap: spacing.xs },
-  avatar: { width: 96, height: 96 },
-  avatarInner: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.md },
   name: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
   stats: { alignItems: 'center', gap: 4, padding: spacing.lg },
   statValue: { ...typography.title, fontSize: 32, color: colors.ink },
