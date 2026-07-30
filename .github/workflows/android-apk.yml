@@ -17,8 +17,13 @@ on:
         type: choice
         default: debug
         options: [debug, release]
+  # `design/**` is included because that is where the work happens — this project
+  # keeps each theme direction on its own long-lived design branch and merges to
+  # main only once approved. Without it, nothing could be built until merge, and
+  # `workflow_dispatch` alone is no help: GitHub only offers that trigger for
+  # workflows present on the default branch.
   push:
-    branches: [main]
+    branches: [main, 'design/**']
     paths-ignore: ['**/*.md', 'docs/**']
 
 # One build per branch; a newer push supersedes an in-flight run rather than
