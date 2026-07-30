@@ -32,7 +32,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Puzzled to use photos you pick as puzzles."
+          "photosPermission": "Allow Puzzled to use photos you pick as puzzles.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       [
@@ -44,7 +46,14 @@
         }
       ],
       "expo-sqlite",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "microphonePermission": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
       "expo-asset"
     ],
     "experiments": {
@@ -54,9 +63,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "03062fde-2c89-4351-9e7e-a37a722a49b0"
+        "projectId": "3a809dc5-fa5e-4d46-a93e-8d39fd244ee8"
       }
     },
-    "owner": "sayandeep1013"
+    "owner": "sayandeep1013s-team"
   }
 }
