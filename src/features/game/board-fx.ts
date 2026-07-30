@@ -58,13 +58,14 @@ export const FX = {
   /** Spring used when a piece settles after release. */
   settle: { damping: 14, stiffness: 180 },
   /** Neighbour wobble duration on lock, ms. */
-  jiggleMs: 110,
+  jiggleMs: 90,
   /**
-   * Neighbour wobble peak offset, px. Halved from 2 after device testing: at 2px
-   * every placement shoved its neighbours visibly, which read as the board being
-   * knocked rather than as a soft acknowledgement.
+   * Neighbour wobble peak offset, px. Cut from 2 to 1 and then to 0.6 across two
+   * rounds of device testing — at anything above this every placement visibly
+   * shoved its neighbours, which read as the board being knocked rather than as a
+   * soft acknowledgement.
    */
-  jiggleAmplitude: 1,
+  jiggleAmplitude: 0.6,
 
   /**
    * The one-shot ring drawn where a piece locks home.
@@ -86,11 +87,37 @@ export const FX = {
    * Per-piece emboss. Depth is derived from each piece's silhouette rather than
    * baked into artwork, so bundled puzzles and imported photos light identically
    * and no per-puzzle assets are ever needed.
+   *
+   * Strengthened after device testing: at 0.38/0.32 alpha over a 2px offset the
+   * effect was technically present but too faint to read as depth. Wider rims,
+   * higher contrast, and a tighter blur make the chamfer legible.
    */
   bevel: {
-    light: 'rgba(255, 255, 255, 0.38)',
-    shade: 'rgba(58, 43, 26, 0.32)',
-    offset: 2,
-    blur: 3,
+    light: 'rgba(255, 255, 255, 0.85)',
+    shade: 'rgba(40, 28, 14, 0.6)',
+    offset: 4,
+    blur: 2.5,
+  },
+
+  /**
+   * Corner rounding applied to every piece silhouette, in board units.
+   *
+   * Border pieces have straight outer edges meeting at hard 90° corners, so an
+   * unplaced corner piece looked sharp against a UI where nothing else is. Once
+   * locked it *appeared* rounded only because the board's rounded clip cut it,
+   * which is why the sharpness seemed to disappear on placement.
+   */
+  pieceCornerRadius: 6,
+
+  /**
+   * Outline on a piece resting unlocked on the board.
+   *
+   * Was `colors.apricot` at 2px — a hard orange ring that, with free placement,
+   * appeared on most drops. It still has to say "this one is not locked yet", so
+   * it stays, but as a faint green hairline rather than a warning colour.
+   */
+  looseOutline: {
+    color: 'rgba(101, 158, 18, 0.45)',
+    strokeWidth: 1.25,
   },
 } as const;

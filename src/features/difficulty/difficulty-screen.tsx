@@ -168,5 +168,11 @@ const styles = StyleSheet.create({
   tileTier: { ...typography.label, color: colors.inkMuted },
   // 3.25:1 on grassDeep — the same pairing PopButton uses for its grass tone.
   tileTierActive: { color: colors.onFill },
-  footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  // Bottom padding as well as top: without it the button sat flush against the
+  // gesture bar.
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
 });

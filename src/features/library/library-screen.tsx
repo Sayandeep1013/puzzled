@@ -23,7 +23,7 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
-import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
+import { accentAt, colors, radii, shadow, spacing, typography } from '@/shared/theme';
 import { Art, PopChip, PopIcon, PopProgress, PopSurface, useTabBarSpace } from '@/shared/ui';
 
 /** Turn a picked file name into a friendly title. */
@@ -230,7 +230,28 @@ export function LibraryScreen() {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <Text style={styles.pageTitle}>My Library</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.pageTitle}>My Library</Text>
+          {/* Pinned beside the title rather than only inside the My Photos tab.
+              Buried on one tab it was unfindable — the whole point of the feature
+              is that it is the way puzzles get added. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add a puzzle from your gallery"
+            onPress={onImport}
+            disabled={importing}
+            style={styles.addButton}
+          >
+            {importing ? (
+              <ActivityIndicator color={colors.grass} />
+            ) : (
+              <>
+                <Art name="plus-circle" size={24} />
+                <Text style={styles.addLabel}>Add photo</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
 
         <ScrollView
           horizontal
@@ -252,31 +273,6 @@ export function LibraryScreen() {
         </ScrollView>
 
         <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
-          {/* Photo import lives here, on the tab that shows the result. It used
-              to sit on Home, whose landing screen had grown into a dashboard —
-              and this tab's own empty copy already pointed at it. */}
-          {tab === 'photos' ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add a puzzle from your gallery"
-              onPress={onImport}
-              disabled={importing}
-            >
-              <PopSurface fill={colors.surface} radius={radii.lg}>
-                <View style={styles.importInner}>
-                  {importing ? (
-                    <ActivityIndicator color={colors.grass} />
-                  ) : (
-                    <Art name="plus-circle" size={30} />
-                  )}
-                  <Text style={styles.importText}>
-                    {importing ? 'Adding your photo…' : 'Add from gallery'}
-                  </Text>
-                </View>
-              </PopSurface>
-            </Pressable>
-          ) : null}
-
           {visible.length === 0 ? (
             <EmptyState art={emptyCopy.art} text={emptyCopy.text} sub={emptyCopy.sub} />
           ) : (
@@ -362,7 +358,9 @@ function LibraryRow({
               <PopProgress
                 value={progress.lockedPieces}
                 goal={progress.totalPieces}
-                tone={done ? colors.grass : colors.berry}
+                // Sky for in-progress, grass for done. Berry read as an
+                // off-palette purple against the green-and-cream rows.
+                tone={done ? colors.grass : colors.sky}
                 height={8}
               />
             ) : null}
@@ -410,14 +408,23 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
-  importInner: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
+    justifyContent: 'space-between',
+    paddingRight: spacing.lg,
   },
-  importText: { ...typography.bodyStrong, color: colors.ink },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    boxShadow: shadow.card,
+  },
+  addLabel: { ...typography.caption, color: colors.ink },
   tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   content: {
     padding: spacing.lg,
@@ -426,6 +433,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
+    // Short lists must sit under the tabs, not float in the middle of the screen.
+    justifyContent: 'flex-start',
+    flexGrow: 0,
   },
   // Inset padding on the coloured `PopSurface` face, so a ring of `accent` shows
   // as a frame around the white row body nested inside it (see HomeScreen's

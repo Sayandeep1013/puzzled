@@ -17,6 +17,7 @@ const PLACEHOLDER_NAME = 'Player';
 export function ProfileScreen() {
   const router = useRouter();
   const [completed, setCompleted] = useState(0);
+  const [piecesPlaced, setPiecesPlaced] = useState(0);
   const tabBarSpace = useTabBarSpace();
 
   useFocusEffect(
@@ -28,7 +29,10 @@ export function ProfileScreen() {
         )
           .listSummaries()
           .catch(() => [] as PuzzleProgressSummary[]);
-        if (active) setCompleted(rows.filter((r) => r.status === 'completed').length);
+        if (active) {
+          setCompleted(rows.filter((r) => r.status === 'completed').length);
+          setPiecesPlaced(rows.reduce((sum, row) => sum + row.lockedPieces, 0));
+        }
       })();
       return () => {
         active = false;
@@ -59,10 +63,20 @@ export function ProfileScreen() {
             <Text style={styles.name}>{PLACEHOLDER_NAME}</Text>
           </View>
 
+          {/* Two figures, not one. The pieces-placed count was on Home before it
+              moved to Statistics, and Statistics is two taps away — so the
+              headline number surfaces here, on a tab, where it is findable. */}
           <PopSurface fill={colors.surface} radius={radii.lg}>
-            <View style={styles.stats}>
-              <Text style={styles.statValue}>{completed}</Text>
-              <Text style={styles.statLabel}>PUZZLES COMPLETED</Text>
+            <View style={styles.statRow}>
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{completed}</Text>
+                <Text style={styles.statLabel}>COMPLETED</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.stat}>
+                <Text style={styles.statValue}>{piecesPlaced}</Text>
+                <Text style={styles.statLabel}>PIECES PLACED</Text>
+              </View>
             </View>
           </PopSurface>
 
@@ -104,8 +118,10 @@ const styles = StyleSheet.create({
   },
   identity: { alignItems: 'center', gap: spacing.xs },
   name: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
-  stats: { alignItems: 'center', gap: 4, padding: spacing.lg },
-  statValue: { ...typography.title, fontSize: 32, color: colors.ink },
+  statRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg },
+  stat: { flex: 1, alignItems: 'center', gap: 4 },
+  statDivider: { width: 1, height: 44, backgroundColor: 'rgba(90, 62, 24, 0.14)' },
+  statValue: { ...typography.title, fontSize: 30, color: colors.ink },
   statLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted },
   links: { gap: spacing.md },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },

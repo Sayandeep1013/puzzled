@@ -42,12 +42,35 @@ describe('FX tuning', () => {
       expect(FX.bevel.blur).toBeGreaterThan(0);
     });
 
-    it('uses translucent rims so the artwork still reads through', () => {
+    it('keeps rims strong enough to read as depth but short of opaque', () => {
+      // The first pass used 0.38/0.32, which was technically an emboss but too
+      // faint to see on a device. The floor here is what stops it drifting back;
+      // the ceiling keeps the artwork visible underneath.
       for (const value of [FX.bevel.light, FX.bevel.shade]) {
         const alpha = Number(value.match(/,\s*([\d.]+)\)$/)?.[1]);
-        expect(alpha).toBeGreaterThan(0);
-        expect(alpha).toBeLessThan(0.5);
+        expect(alpha).toBeGreaterThanOrEqual(0.5);
+        expect(alpha).toBeLessThan(1);
       }
+    });
+  });
+
+  describe('piece corners', () => {
+    it('rounds the silhouette so unplaced border pieces are not sharp', () => {
+      expect(FX.pieceCornerRadius).toBeGreaterThan(0);
+    });
+  });
+
+  describe('loose outline', () => {
+    it('is a faint green hairline rather than an orange ring', () => {
+      const match = FX.looseOutline.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      expect(match).not.toBeNull();
+      const [r, g, b] = match!.slice(1, 4).map(Number);
+      expect(g).toBeGreaterThan(r);
+      expect(g).toBeGreaterThan(b);
+
+      const alpha = Number(FX.looseOutline.color.match(/,\s*([\d.]+)\)$/)?.[1]);
+      expect(alpha).toBeLessThanOrEqual(0.5);
+      expect(FX.looseOutline.strokeWidth).toBeLessThanOrEqual(1.5);
     });
   });
 });

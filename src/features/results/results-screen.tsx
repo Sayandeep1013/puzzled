@@ -1,7 +1,9 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { getPuzzleById, resolvePuzzleImageSource } from '@/data';
 import { backgrounds, colors, radii, spacing, typography } from '@/shared/theme';
 import { Art, PopButton, PopSurface } from '@/shared/ui';
 
@@ -26,6 +28,22 @@ export function ResultsScreen({
 }) {
   const router = useRouter();
   const pieces = size * size;
+  /** The finished artwork, which the mockup makes the centrepiece of this screen. */
+  const [image, setImage] = useState<number | string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getPuzzleById(puzzleId)
+      .then((puzzle) => {
+        if (active) setImage(puzzle ? resolvePuzzleImageSource(puzzle) : null);
+      })
+      .catch(() => {
+        // Best-effort: the trophy fallback below still celebrates the win.
+      });
+    return () => {
+      active = false;
+    };
+  }, [puzzleId]);
 
   return (
     <View style={styles.root}>
@@ -36,7 +54,25 @@ export function ResultsScreen({
           <Text style={styles.title}>Amazing!</Text>
           <Text style={styles.subtitle}>You completed the puzzle!</Text>
 
-          <Art name="cup-star" size={150} />
+          {/* The mockup puts the finished picture here, not a generic trophy —
+              the artwork you just assembled is the reward. The trophy remains as
+              a fallback for a puzzle whose image cannot be resolved. */}
+          {image != null ? (
+            <PopSurface
+              fill={colors.surface}
+              radius={radii.lg}
+              elevation="raised"
+              contentStyle={styles.artFrame}
+            >
+              <Image
+                source={typeof image === 'number' ? image : { uri: image }}
+                style={styles.art}
+                resizeMode="cover"
+              />
+            </PopSurface>
+          ) : (
+            <Art name="cup-star" size={150} />
+          )}
 
           <View style={styles.stats}>
             <Stat label="TIME" value={formatClock(time)} />
@@ -108,6 +144,8 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
   },
+  artFrame: { padding: spacing.sm },
+  art: { width: 236, height: 236, borderRadius: radii.md },
   title: { ...typography.hero, color: colors.honey },
   subtitle: { ...typography.heading, color: colors.onFill, textAlign: 'center' },
   mascot: { marginTop: spacing.xs },

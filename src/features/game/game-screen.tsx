@@ -35,7 +35,7 @@ import { Art, PopButton, PopSheet, PopSurface, PopToggle } from '@/shared/ui';
 
 import { setMusicEnabled, setSfxEnabled } from './board-audio';
 import { FX, setHapticsEnabled } from './board-fx';
-import { PuzzleBoard } from './puzzle-board';
+import { BOARD_TRAY_RESERVE, PuzzleBoard } from './puzzle-board';
 
 type OverlayKind = 'none' | 'pause' | 'hint' | 'preview';
 
@@ -92,6 +92,8 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const [music, setMusic] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [highlightEdges, setHighlightEdges] = useState(false);
+  /** Measured width of the board shell, used to cap its height. */
+  const [shellWidth, setShellWidth] = useState(0);
   const [wallet, setWallet] = useState<Wallet | null>(null);
 
   // Tracks whether the component is still mounted, for async work (like the
@@ -554,7 +556,20 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
             </View>
           </View>
 
-          <View style={styles.boardShell}>
+          {/* The board is square, so a shell taller than its own width plus the
+              tray can only add dead cream margin — which is exactly what the
+              wide gap above and below the board was. Measuring the width and
+              capping the height removes it without guessing an aspect ratio. */}
+          <View
+            style={[
+              styles.boardShell,
+              shellWidth > 0 && { maxHeight: shellWidth + BOARD_TRAY_RESERVE },
+            ]}
+            onLayout={(event) => {
+              const { width } = event.nativeEvent.layout;
+              setShellWidth((current) => (Math.abs(current - width) < 1 ? current : width));
+            }}
+          >
             <PuzzleBoard
               key={`${generated.puzzle.id}:${generated.puzzle.revision}:${gridSize}:${generation}`}
               generated={generated}

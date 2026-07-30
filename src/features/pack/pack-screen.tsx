@@ -111,6 +111,13 @@ export function PackScreen({ packId }: { packId: string }) {
                   />
                 ))
               )}
+
+              {/* One bundled puzzle leaves most of the screen blank; the mascot
+                  closes the tail rather than leaving it looking unfinished. */}
+              <View style={styles.footerArt}>
+                <Art name="bear-excited" size={128} />
+                <Text style={styles.footerNote}>More packs are on the way.</Text>
+              </View>
             </>
           )}
         </ScrollView>
@@ -211,6 +218,8 @@ const styles = StyleSheet.create({
   // Both sit directly on the mint ground, not inside a card.
   sectionMeta: { ...typography.caption, color: colors.onFill },
   empty: { ...typography.body, color: colors.onFill, paddingVertical: spacing.lg },
+  footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
+  footerNote: { ...typography.caption, color: colors.onFill, textAlign: 'center' },
   // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
   // as a frame around the white row body nested inside it (the
   // `home-screen.tsx` `PuzzleCard` pattern).

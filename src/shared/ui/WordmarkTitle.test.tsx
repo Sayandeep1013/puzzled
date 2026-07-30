@@ -1,25 +1,53 @@
 import { render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
-import { accentAt } from '@/shared/theme';
-
-import { WordmarkTitle } from './WordmarkTitle';
+import { LETTER_COLORS, WordmarkTitle } from './WordmarkTitle';
 
 describe('WordmarkTitle', () => {
-  it('renders every letter of PUZZLE separately, so each can take its own colour', () => {
+  it('renders every letter separately so each can take its own colour and tilt', () => {
     const { getAllByText } = render(<WordmarkTitle />);
-    // Two Zs and two other distinct letters; asserting the doubled letter proves
-    // letters are individual nodes rather than one string.
-    expect(getAllByText('Z')).toHaveLength(2);
-    expect(getAllByText('P')).toHaveLength(1);
-    expect(getAllByText('E')).toHaveLength(1);
+    // Each letter is drawn twice — a white outline copy behind, the coloured one
+    // in front — so PUZZLE's two Zs yield four nodes and its single P yields two.
+    expect(getAllByText('Z')).toHaveLength(4);
+    expect(getAllByText('P')).toHaveLength(2);
+    expect(getAllByText('E')).toHaveLength(2);
   });
 
-  it('colours letters from the accent ramp in order', () => {
+  it('draws a white outline copy behind each coloured letter', () => {
+    // Without this second layer the logo reads as plain text: React Native has no
+    // text stroke, and one thin shadow is not enough to look like an outline.
     const { getAllByText } = render(<WordmarkTitle />);
-    const [p] = getAllByText('P');
-    const [u] = getAllByText('U');
-    expect(p).toHaveStyle({ color: accentAt(0) });
-    expect(u).toHaveStyle({ color: accentAt(1) });
+    const [outline, coloured] = getAllByText('P');
+    expect(outline).toHaveStyle({ color: '#FFFFFF' });
+    expect(coloured).toHaveStyle({ color: LETTER_COLORS[0] });
+  });
+
+  it('colours letters from the logo sequence, not the palette ramp order', () => {
+    const { getAllByText } = render(<WordmarkTitle />);
+    const [, p] = getAllByText('P');
+    const [, u] = getAllByText('U');
+    expect(p).toHaveStyle({ color: LETTER_COLORS[0] });
+    expect(u).toHaveStyle({ color: LETTER_COLORS[1] });
+  });
+
+  it('arches the word: outer letters tilt outward and drop below the middle', () => {
+    const { getByTestId } = render(<WordmarkTitle />);
+
+    const transformOf = (index: number) => {
+      const flat = StyleSheet.flatten(getByTestId(`wordmark-letter-${index}`).props.style);
+      return flat.transform as [{ translateY: number }, { rotateZ: string }];
+    };
+
+    // PUZZLE is six letters, so 0 and 5 are the ends and 2/3 straddle the middle.
+    const [firstDrop, firstTilt] = transformOf(0);
+    const [lastDrop, lastTilt] = transformOf(5);
+    const [midDrop] = transformOf(2);
+
+    expect(firstTilt.rotateZ).toBe('-13deg');
+    expect(lastTilt.rotateZ).toBe('13deg');
+    // Symmetric ends, both sitting lower than the middle — that is the arch.
+    expect(firstDrop.translateY).toBeCloseTo(lastDrop.translateY);
+    expect(firstDrop.translateY).toBeGreaterThan(midDrop.translateY);
   });
 
   it('renders JOURNEY as one badge word', () => {
@@ -28,14 +56,16 @@ describe('WordmarkTitle', () => {
   });
 
   it('exposes the whole logo as a single header to assistive tech', () => {
-    // Six separately-coloured letters must not be announced one at a time.
+    // Six separately-coloured letters, each drawn twice, must not be announced
+    // one node at a time.
     const { getByLabelText } = render(<WordmarkTitle />);
     expect(getByLabelText('Puzzle Journey')).toBeTruthy();
   });
 
   it('scales both words from one prop', () => {
-    const { getAllByText } = render(<WordmarkTitle scale={2} />);
-    const [p] = getAllByText('P');
-    expect(p).toHaveStyle({ fontSize: 92 });
+    const { getAllByText, getByText } = render(<WordmarkTitle scale={2} />);
+    const [, p] = getAllByText('P');
+    expect(p).toHaveStyle({ fontSize: 104 });
+    expect(getByText('JOURNEY')).toHaveStyle({ fontSize: 48 });
   });
 });

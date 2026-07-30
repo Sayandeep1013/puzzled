@@ -9,10 +9,12 @@ import {
   Image,
   Line,
   Path,
+  PathOp,
   rect,
   RoundedRect,
   rrect,
   Shadow,
+  Skia,
   useImage,
   vec,
   type SkImage,
@@ -64,13 +66,25 @@ const TRAY_PAD = 12;
 const SLOT_GAP = 6;
 /** Breathing room between the fitted board and the tray strip. */
 const TRAY_GAP = 14;
+/**
+ * Vertical space the tray needs below the board.
+ *
+ * Exported so the game screen can cap the board shell's height: the board is
+ * square, so a shell taller than `width + this` can only add dead margin.
+ */
+export const BOARD_TRAY_RESERVE = TRAY_HEIGHT + TRAY_GAP;
 const CONFETTI_COLORS = [colors.berry, colors.honey, colors.apricot, colors.grass, colors.blossom];
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
 /** Travel before a tray drag's direction is judged, px. */
-const TRAY_INTENT_PX = 8;
-/** How much more horizontal than vertical a tray drag must be to scroll instead of lift. */
-const TRAY_INTENT_RATIO = 1.2;
+const TRAY_INTENT_PX = 6;
+/**
+ * How much more horizontal than vertical a tray drag must be to scroll instead of
+ * lift. 1.0 means any drag that is more sideways than vertical scrolls — biased
+ * toward scrolling because lifting is also reachable by simply dragging upward,
+ * which is the natural motion for moving a piece onto the board above.
+ */
+const TRAY_INTENT_RATIO = 1;
 
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
@@ -94,6 +108,37 @@ interface PreparedPiece {
 
 function isEdgePiece(edges: PieceEdges): boolean {
   return edges.top === 0 || edges.right === 0 || edges.bottom === 0 || edges.left === 0;
+}
+
+/**
+ * Soften a piece's hard outer corners by intersecting it with a rounded
+ * rectangle of its own bounds.
+ *
+ * This rounds the *geometry*, not just the stroke, which matters because the
+ * artwork is clipped to this path — a paint-level `CornerPathEffect` would round
+ * the outline while leaving the image sharp underneath.
+ *
+ * Only the four extremes of the bounding box are affected. A piece's interlocking
+ * tabs sit mid-edge, never at a corner, so they are untouched.
+ *
+ * Border pieces are why this is needed: their straight outer edges meet at 90°,
+ * which looked wrong in the tray against a UI with no other sharp corner. Once
+ * placed they *appeared* to round only because the board's own rounded clip cut
+ * them, which is why the sharpness seemed to vanish on placement.
+ */
+function roundPieceCorners(path: SkPath, bounds: PieceLocalPath['bounds']): SkPath {
+  const r = FX.pieceCornerRadius;
+  if (r <= 0) {
+    return path;
+  }
+
+  const mask = Skia.Path.Make();
+  mask.addRRect(rrect(rect(bounds.x, bounds.y, bounds.width, bounds.height), r, r));
+
+  const rounded = path.copy();
+  // `op` mutates the receiver and reports success; on failure keep the original
+  // rather than shipping an empty silhouette.
+  return rounded.op(mask, PathOp.Intersect) ? rounded : path;
 }
 
 /**
@@ -133,25 +178,13 @@ function PieceFill({
       />
 
       <Group transform={[{ translateX: -bevel.offset }, { translateY: -bevel.offset }]}>
-        <Path
-          path={skPath}
-          style="stroke"
-          strokeWidth={bevel.offset * 2}
-          color={bevel.light}
-          opacity={1}
-        >
+        <Path path={skPath} style="stroke" strokeWidth={bevel.offset * 2} color={bevel.light}>
           <BlurMask blur={bevel.blur} style="normal" />
         </Path>
       </Group>
 
       <Group transform={[{ translateX: bevel.offset }, { translateY: bevel.offset }]}>
-        <Path
-          path={skPath}
-          style="stroke"
-          strokeWidth={bevel.offset * 2}
-          color={bevel.shade}
-          opacity={1}
-        >
+        <Path path={skPath} style="stroke" strokeWidth={bevel.offset * 2} color={bevel.shade}>
           <BlurMask blur={bevel.blur} style="normal" />
         </Path>
       </Group>
@@ -259,7 +292,12 @@ const LoosePiece = memo(function LoosePiece({
   return (
     <Group transform={[{ translateX: position.x }, { translateY: position.y }]}>
       <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.apricot} />
+      <Path
+        path={prepared.skPath}
+        style="stroke"
+        strokeWidth={FX.looseOutline.strokeWidth}
+        color={FX.looseOutline.color}
+      />
     </Group>
   );
 });
@@ -302,7 +340,9 @@ const TrayPiece = memo(function TrayPiece({
         path={prepared.skPath}
         style="stroke"
         strokeWidth={highlight ? 3 : 1.6}
-        color={highlight ? colors.apricot : 'rgba(23,33,33,0.28)'}
+        // The Edges helper is an explicit opt-in, so it may be assertive — but in
+        // sky blue rather than orange, so no orange remains anywhere on the board.
+        color={highlight ? colors.sky : 'rgba(23,33,33,0.22)'}
       />
     </Group>
   );
@@ -575,7 +615,7 @@ export function PuzzleBoard({
       map[geometry.id] = {
         geometry,
         localPath,
-        skPath: commandsToSkPath(localPath.commands),
+        skPath: roundPieceCorners(commandsToSkPath(localPath.commands), localPath.bounds),
         isEdge: isEdgePiece(geometry.edges),
         cx: b.x + b.width / 2,
         cy: b.y + b.height / 2,
@@ -900,7 +940,10 @@ export function PuzzleBoard({
         grabLoose.value = -1;
         intentLocked.value = 0;
 
-        if (e.y < boardZoneH) {
+        // Anything outside the drawn tray strip is board, including the margin
+        // below it — that margin previously counted as tray, so a drag there could
+        // grab a slot with no piece visible under the finger.
+        if (e.y < boardZoneH || e.y > boardZoneH + TRAY_HEIGHT) {
           // Board zone: hit-test loose pieces, topmost (highest z-index) first.
           // The board now renders behind the camera transform (Group
           // transform={cameraTransform} wrapping the static board Group), so
@@ -1048,6 +1091,24 @@ export function PuzzleBoard({
     { translateY: layout.boardZoneH },
   ]);
 
+  // ---- Tray scroll indicator geometry ----
+  const trayContentW = trayIds.length * layout.slotW + TRAY_PAD * 2;
+  const trayTrackW = Math.max(layout.vw - TRAY_PAD * 2, 1);
+  /** How far the strip can scroll; 0 when everything already fits. */
+  const trayOverflow = Math.max(0, trayContentW - layout.vw);
+  const trayThumbW = Math.max(
+    24,
+    trayContentW > 0 ? (layout.vw / trayContentW) * trayTrackW : trayTrackW,
+  );
+  const trayThumbX = useDerivedValue(() => {
+    if (trayOverflow <= 0) {
+      return TRAY_PAD;
+    }
+    // `trayScroll` runs 0 → -overflow, so negate to get 0 → 1.
+    const progress = Math.min(1, Math.max(0, -trayScroll.value / trayOverflow));
+    return TRAY_PAD + progress * (trayTrackW - trayThumbW);
+  });
+
   // Hold the first paint until the image is decoded, the play area is
   // measured, and the camera has framed itself — otherwise the board flashes
   // unframed before the camera's identity transform is in place.
@@ -1101,15 +1162,18 @@ export function PuzzleBoard({
                       surface in the app. It used to be a bare `Rect` behind a
                       cream `RoundedRect` that was invisible against the equally
                       cream shell, so the board read as a hard square. */}
+                  {/* Opaque, not translucent: at 0.45 alpha over cream the fill
+                      barely differed from the shell, so the board had no visible
+                      edge for a shadow to sit against. */}
                   <RoundedRect
                     x={BOARD_PADDING}
                     y={BOARD_PADDING}
                     width={boardSize.width}
                     height={boardSize.height}
                     r={BOARD_RADIUS}
-                    color="rgba(198,219,186,0.45)"
+                    color="#DCE9CD"
                   >
-                    <Shadow dx={0} dy={3} blur={9} color="rgba(58,43,26,0.22)" />
+                    <Shadow dx={0} dy={6} blur={14} color="rgba(58,43,26,0.42)" />
                   </RoundedRect>
                   <Group
                     clip={rrect(
@@ -1181,6 +1245,30 @@ export function PuzzleBoard({
                 </Group>
               </Group>
             </Group>
+
+            {/* Scroll indicator. Present only when the strip overflows, so its
+                absence is itself the answer to "can this scroll?" — and its
+                movement confirms a drag is scrolling rather than lifting. */}
+            {trayOverflow > 0 ? (
+              <>
+                <RoundedRect
+                  x={TRAY_PAD}
+                  y={boardZoneH + TRAY_HEIGHT - 7}
+                  width={Math.max(vw - TRAY_PAD * 2, 1)}
+                  height={3}
+                  r={2}
+                  color="rgba(58,43,26,0.12)"
+                />
+                <RoundedRect
+                  x={trayThumbX}
+                  y={boardZoneH + TRAY_HEIGHT - 7}
+                  width={trayThumbW}
+                  height={3}
+                  r={2}
+                  color="rgba(58,43,26,0.4)"
+                />
+              </>
+            ) : null}
 
             {/* Tray zone */}
             <Group transform={trayTransform}>
