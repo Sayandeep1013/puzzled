@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getProgressRepository, type PuzzleProgressSummary } from '@/data';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopIcon, PopSurface, type PopIconName } from '@/shared/ui';
+import { type ArtName } from '@/shared/art';
+import { Art, PopIcon, PopSurface } from '@/shared/ui';
 
 /**
  * There is no accounts system yet (Phase 2). Every player is shown the same
@@ -34,11 +35,11 @@ export function ProfileScreen() {
     }, []),
   );
 
-  const links: { icon: PopIconName; label: string; onPress: () => void }[] = [
-    { icon: 'trophy', label: 'Achievements', onPress: () => router.push('/achievements') },
-    { icon: 'coin', label: 'Shop', onPress: () => router.push('/shop') },
-    { icon: 'chart', label: 'Statistics', onPress: () => router.push('/statistics') },
-    { icon: 'gear', label: 'Settings', onPress: () => router.push('/settings') },
+  const links: { art: ArtName; label: string; onPress: () => void }[] = [
+    { art: 'my-trophies', label: 'Achievements', onPress: () => router.push('/achievements') },
+    { art: 'coin', label: 'Shop', onPress: () => router.push('/shop') },
+    { art: 'bars', label: 'Statistics', onPress: () => router.push('/statistics') },
+    { art: 'gear', label: 'Settings', onPress: () => router.push('/settings') },
   ];
 
   return (
@@ -52,7 +53,7 @@ export function ProfileScreen() {
           <View style={styles.identity}>
             <PopSurface fill={colors.blossom} radius={radii.pill} style={styles.avatar}>
               <View style={styles.avatarInner}>
-                <PopIcon name="profile" size={54} color={colors.ink} />
+                <Art name="change-avatar" size={92} />
               </View>
             </PopSurface>
             <Text style={styles.name}>{PLACEHOLDER_NAME}</Text>
@@ -70,8 +71,10 @@ export function ProfileScreen() {
               <Pressable key={link.label} accessibilityRole="button" onPress={link.onPress}>
                 <PopSurface fill={colors.surface} radius={radii.md}>
                   <View style={styles.linkRow}>
-                    <PopIcon name={link.icon} size={24} color={colors.berry} />
+                    <Art name={link.art} size={28} />
                     <Text style={styles.linkLabel}>{link.label}</Text>
+                    {/* The art set has no chevron; Phosphor stays for neutral
+                        affordances like this, where flat is the right register. */}
                     <PopIcon name="chevron" size={20} color={colors.inkMuted} />
                   </View>
                 </PopSurface>

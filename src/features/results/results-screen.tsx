@@ -2,8 +2,8 @@ import { useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopIcon, PopSurface } from '@/shared/ui';
+import { backgrounds, colors, radii, spacing, typography } from '@/shared/theme';
+import { Art, PopButton, PopSurface } from '@/shared/ui';
 
 function formatClock(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '—';
@@ -31,47 +31,33 @@ export function ResultsScreen({
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.body}>
-          <Text style={styles.title}>Well Done!</Text>
+          {/* The mockup's celebration screen is the one saturated ground in the
+              app, so every text colour here is white rather than ink. */}
+          <Text style={styles.title}>Amazing!</Text>
+          <Text style={styles.subtitle}>You completed the puzzle!</Text>
 
-          <PopSurface fill={colors.honey} radius={30} style={styles.trophyFrame}>
-            <View style={styles.trophyInner}>
-              <PopIcon name="trophy" size={110} color={colors.ink} />
-            </View>
-          </PopSurface>
-
-          {/* Mint is light enough for direct ink text — matches
-              `home-screen.tsx`'s `progressCard` and `daily-screen.tsx`'s
-              `streakFrame`, so no nested white body is needed here. */}
-          <PopSurface fill={colors.grass} radius={radii.md} style={styles.banner}>
-            <Text style={styles.bannerText}>You completed the puzzle!</Text>
-          </PopSurface>
+          <Art name="cup-star" size={150} />
 
           <View style={styles.stats}>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>TIME</Text>
-              <Text style={styles.statValue}>{formatClock(time)}</Text>
-            </View>
+            <Stat label="TIME" value={formatClock(time)} />
             <View style={styles.statDivider} />
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>PIECES</Text>
-              <Text style={styles.statValue}>{pieces}</Text>
-            </View>
+            <Stat label="PIECES" value={String(pieces)} />
             {coins > 0 ? (
               <>
                 <View style={styles.statDivider} />
-                <View style={styles.stat}>
-                  <Text style={styles.statLabel}>COINS</Text>
-                  <Text style={styles.statValue}>+{coins}</Text>
-                </View>
+                <Stat label="COINS" value={`+${coins}`} art="coin" />
               </>
             ) : null}
           </View>
+
+          <Art name="bear-excited" size={128} style={styles.mascot} />
         </View>
 
         <View style={styles.footer}>
           <PopButton
             label="Play Again"
             tone="honey"
+            icon={<Art name="restart" size={24} />}
             onPress={() =>
               router.replace({
                 pathname: '/game/[puzzleId]',
@@ -79,43 +65,63 @@ export function ResultsScreen({
               })
             }
           />
-          <PopButton label="Back Home" tone="grass" onPress={() => router.dismissAll()} />
+          <PopButton
+            label="Back Home"
+            tone="grass"
+            icon={<Art name="quit-home" size={24} />}
+            onPress={() => router.dismissAll()}
+          />
         </View>
       </SafeAreaView>
     </View>
   );
 }
 
+/** One figure in the results row. Cream card so the numerals keep ink contrast. */
+function Stat({
+  label,
+  value,
+  art,
+}: {
+  label: string;
+  value: string;
+  art?: 'coin' | 'star' | 'clock';
+}) {
+  return (
+    <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.statInner}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <View style={styles.statValueRow}>
+        {art ? <Art name={art} size={20} /> : null}
+        <Text style={styles.statValue}>{value}</Text>
+      </View>
+    </PopSurface>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
+  root: { flex: 1, backgroundColor: backgrounds.results },
   safe: { flex: 1 },
   body: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.lg,
+    gap: spacing.md,
     padding: spacing.lg,
   },
-  title: { ...typography.hero, color: colors.ink },
-  trophyFrame: { width: 180 },
-  trophyInner: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
-  banner: { alignSelf: 'center' },
-  bannerText: {
-    ...typography.bodyStrong,
-    color: colors.ink,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
+  title: { ...typography.hero, color: colors.honey },
+  subtitle: { ...typography.heading, color: colors.onFill, textAlign: 'center' },
+  mascot: { marginTop: spacing.xs },
   stats: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xl,
+    gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  stat: { alignItems: 'center', gap: 2 },
-  statLabel: { ...typography.label, color: colors.inkMuted },
-  statValue: { ...typography.title, fontSize: 34, color: colors.ink },
-  statDivider: { width: 2, height: 44, backgroundColor: colors.ink },
+  statInner: { alignItems: 'center', gap: 2, paddingHorizontal: spacing.md, paddingVertical: 10 },
+  statLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted },
+  statValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statValue: { ...typography.title, fontSize: 26, color: colors.ink },
+  statDivider: { width: 6 },
   footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
 });

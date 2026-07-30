@@ -9,14 +9,15 @@ import {
   type AchievementState,
   type PuzzleProgressSummary,
 } from '@/data';
+import { type ArtName } from '@/shared/art';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopHeader, PopIcon, PopProgress, PopSurface, type PopIconName } from '@/shared/ui';
+import { Art, PopHeader, PopProgress, PopSurface } from '@/shared/ui';
 
 /**
  * The data layer emits `tone` as a semantic token name and `icon` as a plain
  * string — deliberately free of any `@/shared/ui` or palette import (see
  * `src/data/local/achievements-repository.ts`). This screen is the render
- * boundary that maps both onto real Chunky Pop values.
+ * boundary that maps both onto real Puzzle Journey values.
  */
 const TONE_COLOR: Record<AchievementState['tone'], string> = {
   grass: colors.grass,
@@ -25,25 +26,17 @@ const TONE_COLOR: Record<AchievementState['tone'], string> = {
   honey: colors.honey,
 };
 
-/** Text/icon colour that stays readable on each tone's fill (mirrors `PopButton`'s contrast table). */
-const ON_TONE: Record<AchievementState['tone'], string> = {
-  grass: colors.ink,
-  berry: colors.onFill,
-  blossom: colors.onFill,
-  honey: colors.ink,
-};
-
-/** Every icon name `deriveAchievements` currently emits, confirmed against `PopIcon`'s map. */
-const ICON: Record<string, PopIconName> = {
-  check: 'check',
-  puzzle: 'puzzle',
-  medal: 'medal',
-  sparkle: 'sparkle',
+/** Every icon name `deriveAchievements` currently emits, mapped onto the art set. */
+const ICON_ART: Record<string, ArtName> = {
+  check: 'shield-star',
+  puzzle: 'my-trophies',
+  medal: 'badge-1st',
+  sparkle: 'cup-star',
 };
 
 /** An icon name the data layer hasn't emitted yet still renders something sane. */
-function resolveIcon(icon: string): PopIconName {
-  return ICON[icon] ?? 'trophy';
+function resolveArt(icon: string): ArtName {
+  return ICON_ART[icon] ?? 'cup';
 }
 
 async function loadAchievements(): Promise<AchievementState[]> {
@@ -93,34 +86,30 @@ export function AchievementsScreen() {
 
 function AchievementRow({ achievement }: { achievement: AchievementState }) {
   const tone = TONE_COLOR[achievement.tone];
-  const onTone = ON_TONE[achievement.tone];
-  const icon = resolveIcon(achievement.icon);
 
   return (
-    <PopSurface fill={tone} radius={radii.md} contentStyle={styles.rowFrame}>
-      <View style={styles.rowBody}>
-        <View style={[styles.badge, { backgroundColor: tone }]}>
-          <PopIcon name={icon} size={26} color={onTone} />
-        </View>
-        <View style={styles.body}>
-          <Text style={styles.title}>{achievement.title}</Text>
-          <Text style={styles.desc}>{achievement.description}</Text>
-          <PopProgress
-            value={achievement.current}
-            goal={achievement.goal}
-            tone={tone}
-            height={10}
-          />
-        </View>
-        <View style={styles.trailing}>
-          {achievement.unlocked ? (
-            <PopIcon name="check" size={22} color={colors.grass} />
-          ) : (
-            <Text style={styles.count}>
-              {achievement.current}/{achievement.goal}
-            </Text>
-          )}
-        </View>
+    // The trophy art carries the achievement's identity, so the row is a plain
+    // cream card. `tone` survives as the progress-bar fill only — which is where
+    // it can be saturated without any text sitting on it.
+    <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.rowBody}>
+      <Art
+        name={resolveArt(achievement.icon)}
+        size={52}
+        style={achievement.unlocked ? undefined : styles.locked}
+      />
+      <View style={styles.body}>
+        <Text style={styles.title}>{achievement.title}</Text>
+        <Text style={styles.desc}>{achievement.description}</Text>
+        <PopProgress value={achievement.current} goal={achievement.goal} tone={tone} height={10} />
+      </View>
+      <View style={styles.trailing}>
+        {achievement.unlocked ? (
+          <Art name="coin-check" size={26} accessibilityLabel="Unlocked" />
+        ) : (
+          <Text style={styles.count}>
+            {achievement.current}/{achievement.goal}
+          </Text>
+        )}
       </View>
     </PopSurface>
   );
@@ -137,25 +126,15 @@ const styles = StyleSheet.create({
     maxWidth: 720,
     alignSelf: 'center',
   },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `tone` shows
-  // as a frame around the white row body nested inside it (the `home-screen.tsx`
-  // `PuzzleCard` pattern) — ink-on-saturated-fill body text fails contrast.
-  rowFrame: { padding: spacing.xs },
   rowBody: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     padding: spacing.md,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
   },
-  badge: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  // A locked trophy is dimmed rather than swapped for a padlock, so the row
+  // still previews the reward you are working toward.
+  locked: { opacity: 0.4 },
   body: { flex: 1, gap: 4 },
   title: { ...typography.heading, fontSize: 18, color: colors.ink },
   desc: { ...typography.caption, color: colors.inkMuted },

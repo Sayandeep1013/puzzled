@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { listCatalog, resolvePuzzleImageSource } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopChip, PopIcon, PopSurface } from '@/shared/ui';
+import { Art, PopChip, PopIcon, PopSurface } from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no category/tag field — just id, title, image,
@@ -83,7 +83,7 @@ export function PuzzlesScreen() {
           >
             <PopSurface fill={colors.honey} radius={radii.md} contentStyle={styles.packFrame}>
               <View style={styles.packBody}>
-                <PopIcon name="packs" size={26} color={colors.ink} />
+                <Art name="collection" size={30} />
                 <View style={styles.packCopy}>
                   <Text style={styles.packTitle}>Starter Pack</Text>
                   <Text style={styles.packMeta}>Every puzzle bundled with Puzzled</Text>
@@ -199,7 +199,7 @@ function Preview({ puzzle }: { puzzle: PuzzleDefinition }) {
   if (source == null) {
     return (
       <View style={styles.previewFallback}>
-        <PopIcon name="puzzle" size={40} color={colors.inkMuted} />
+        <Art name="puzzle-quad" size={44} />
       </View>
     );
   }

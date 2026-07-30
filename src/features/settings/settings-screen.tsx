@@ -111,6 +111,12 @@ const styles = StyleSheet.create({
   rowCopy: { flex: 1, gap: 2 },
   rowLabel: { ...typography.heading, fontSize: 18, color: colors.ink },
   rowDescription: { ...typography.caption, color: colors.inkMuted },
-  divider: { height: 2, backgroundColor: colors.paper, marginHorizontal: spacing.sm },
+  // A translucent warm rule rather than the page colour: the card is cream, so
+  // painting the divider `paper` made it a visible green stripe.
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(90, 62, 24, 0.14)',
+    marginHorizontal: spacing.sm,
+  },
   version: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
 });

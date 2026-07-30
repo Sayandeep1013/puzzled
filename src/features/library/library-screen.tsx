@@ -11,8 +11,9 @@ import {
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
+import { type ArtName } from '@/shared/art';
 import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
-import { PopChip, PopIcon, PopProgress, PopSurface, type PopIconName } from '@/shared/ui';
+import { Art, PopChip, PopIcon, PopProgress, PopSurface } from '@/shared/ui';
 
 type Tab = 'progress' | 'completed' | 'favourites' | 'photos';
 
@@ -23,24 +24,24 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'photos', label: 'My Photos' },
 ];
 
-const EMPTY_COPY: Record<Tab, { icon: PopIconName; text: string; sub: string }> = {
+const EMPTY_COPY: Record<Tab, { art: ArtName; text: string; sub: string }> = {
   progress: {
-    icon: 'library',
+    art: 'puzzle-quad',
     text: 'Nothing in progress',
     sub: 'Start a puzzle from Home or Puzzles.',
   },
   completed: {
-    icon: 'library',
+    art: 'sticker-book',
     text: 'No completed puzzles yet',
     sub: 'Finish a puzzle to see it here.',
   },
   favourites: {
-    icon: 'heart',
+    art: 'reward',
     text: 'No favourites yet',
     sub: 'Tap the heart on a puzzle to save it here.',
   },
   photos: {
-    icon: 'library',
+    art: 'album',
     text: 'No photos yet',
     sub: 'Import a photo from Home to see it here.',
   },
@@ -181,7 +182,7 @@ export function LibraryScreen() {
 
         <ScrollView contentContainerStyle={styles.content}>
           {visible.length === 0 ? (
-            <EmptyState icon={emptyCopy.icon} text={emptyCopy.text} sub={emptyCopy.sub} />
+            <EmptyState art={emptyCopy.art} text={emptyCopy.text} sub={emptyCopy.sub} />
           ) : (
             visible.map((item, index) => (
               <LibraryRow
@@ -249,7 +250,7 @@ function LibraryRow({
                 resizeMode="cover"
               />
             ) : (
-              <PopIcon name="puzzle" size={26} color={colors.inkMuted} />
+              <Art name="puzzle-quad" size={30} />
             )}
           </View>
           <View style={styles.rowCopy}>
@@ -294,10 +295,10 @@ function LibraryRow({
   );
 }
 
-function EmptyState({ icon, text, sub }: { icon: PopIconName; text: string; sub: string }) {
+function EmptyState({ art, text, sub }: { art: ArtName; text: string; sub: string }) {
   return (
     <View style={styles.emptyWrap}>
-      <PopIcon name={icon} size={48} color={colors.inkMuted} />
+      <Art name={art} size={72} />
       <Text style={styles.emptyTitle}>{text}</Text>
       <Text style={styles.emptySub}>{sub}</Text>
     </View>

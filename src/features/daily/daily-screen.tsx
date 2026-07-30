@@ -13,7 +13,7 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopHeader, PopIcon, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
@@ -146,7 +146,7 @@ export function DailyScreen() {
                             style={[styles.todayDot, data.playedToday && styles.todayDotPlayed]}
                           >
                             {data.playedToday ? (
-                              <PopIcon name="check" size={16} color={colors.ink} />
+                              <Art name="coin-check" size={20} />
                             ) : (
                               <Text style={styles.todayText}>{day}</Text>
                             )}
@@ -162,12 +162,15 @@ export function DailyScreen() {
             </View>
           </PopSurface>
 
-          {/* Sunshine is light enough for direct ink text — no white-body frame
-              needed here, matching `home-screen.tsx`'s `progressCard` (mint). */}
+          {/* Honey is light enough for direct ink text (10.08:1) — no white-body
+              frame needed here, matching `home-screen.tsx`'s progress card. */}
           <PopSurface fill={colors.honey} radius={radii.lg} contentStyle={styles.streakFrame}>
             <View style={styles.streakBody}>
               <View style={styles.streakIconWrap}>
-                <PopIcon name="streak" size={26} color={colors.apricot} />
+                {/* The art set has no flame, and a flat Phosphor one would read
+                    as foreign beside the illustrations — the calendar carries
+                    "consecutive days" just as well. */}
+                <Art name="calendar" size={30} />
               </View>
               <View style={styles.streakCopy}>
                 <Text style={styles.streakValue}>
@@ -184,7 +187,7 @@ export function DailyScreen() {
             </View>
           </PopSurface>
 
-          <PopSurface fill={colors.apricot} radius={radii.lg} contentStyle={styles.featureFrame}>
+          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.featureFrame}>
             <View style={styles.featureBody}>
               {source != null ? (
                 <Image
@@ -194,7 +197,7 @@ export function DailyScreen() {
                 />
               ) : (
                 <View style={styles.featureFallback}>
-                  <PopIcon name="calendar" size={48} color={colors.inkMuted} />
+                  <Art name="calendar" size={64} />
                 </View>
               )}
             </View>

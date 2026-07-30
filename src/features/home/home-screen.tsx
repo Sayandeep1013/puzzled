@@ -16,21 +16,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   getProgressRepository,
   getUserPuzzleRepository,
+  getWalletRepository,
   listCatalog,
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopIcon, PopSurface, type PopIconName } from '@/shared/ui';
+import { type ArtName } from '@/shared/art';
+import { accentAt, backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { Art, PopButton, PopSurface } from '@/shared/ui';
 
 interface HomeData {
   bundled: PuzzleDefinition[];
   user: PuzzleDefinition[];
   /** All saved sessions for a puzzle, most recently played first. */
   byPuzzle: Record<string, PuzzleProgressSummary[]>;
+  /** Null rather than a fabricated zero when the wallet cannot be read. */
+  coins: number | null;
 }
 
-const EMPTY: HomeData = { bundled: [], user: [], byPuzzle: {} };
+const EMPTY: HomeData = { bundled: [], user: [], byPuzzle: {}, coins: null };
 
 async function loadHomeData(): Promise<HomeData> {
   const { bundled, user } = await listCatalog();
@@ -46,7 +50,14 @@ async function loadHomeData(): Promise<HomeData> {
     // Progress is best-effort; an unreadable database still lists puzzles.
   }
 
-  return { bundled, user, byPuzzle };
+  let coins: number | null = null;
+  try {
+    coins = (await (await getWalletRepository()).balance()).coins;
+  } catch {
+    // Same contract as the shop: no balance is better than a wrong one.
+  }
+
+  return { bundled, user, byPuzzle, coins };
 }
 
 /** Turn a picked file name into a friendly title. */
@@ -149,25 +160,39 @@ export function HomeScreen() {
 
   return (
     <View style={styles.root}>
+      {/* The mockup's Home sits on an illustrated meadow. Until that art lands
+          (see assets/art-source/README.md) the ground is two solid bands: sky
+          behind the hero, grass behind everything below it. */}
+      <View style={styles.skyBand} pointerEvents="none" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.topBar}>
+          <View style={styles.coinPill}>
+            <Art name="coin" size={26} />
+            <Text style={styles.coinText}>{data.coins ?? '—'}</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Settings"
+            hitSlop={10}
+            onPress={() => router.push('/settings')}
+            style={styles.gearButton}
+          >
+            <Art name="gear" size={26} />
+          </Pressable>
+        </View>
+
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.hero}>
-            <Text style={styles.eyebrow}>YOUR QUIET CORNER</Text>
             <Text style={styles.title}>Puzzle Journey</Text>
-
-            <View style={styles.heroPiece}>
-              <PopSurface fill={colors.honey} radius={26} style={styles.heroPieceFrame}>
-                <View style={styles.heroPieceInner}>
-                  <PopIcon name="puzzle" size={92} color={colors.ink} />
-                </View>
-              </PopSurface>
-            </View>
-
             <Text style={styles.subtitle}>Relax your mind. Enjoy the moment.</Text>
 
+            <Art name="bear" size={188} style={styles.mascot} />
+
             <PopButton
-              label="Play Now"
+              label="Play"
               tone="grass"
+              size="lg"
+              icon={<Art name="play" size={26} />}
               style={styles.playNow}
               disabled={!firstPlayable}
               onPress={() => {
@@ -182,15 +207,11 @@ export function HomeScreen() {
 
             <View style={styles.quickRow}>
               <QuickLink
-                icon="calendar"
+                art="calendar"
                 label="Daily Puzzle"
                 onPress={() => router.push('/daily')}
               />
-              <QuickLink
-                icon="library"
-                label="My Library"
-                onPress={() => router.push('/library')}
-              />
+              <QuickLink art="album" label="My Album" onPress={() => router.push('/library')} />
             </View>
           </View>
 
@@ -357,15 +378,7 @@ function PuzzleCard({
   );
 }
 
-function QuickLink({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: PopIconName;
-  label: string;
-  onPress: () => void;
-}) {
+function QuickLink({ art, label, onPress }: { art: ArtName; label: string; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -375,7 +388,7 @@ function QuickLink({
     >
       <PopSurface fill={colors.surface} radius={radii.md}>
         <View style={styles.quickLinkInner}>
-          <PopIcon name={icon} size={22} color={colors.headingGreen} />
+          <Art name={art} size={30} />
           <Text style={styles.quickLinkLabel}>{label}</Text>
         </View>
       </PopSurface>
@@ -384,8 +397,47 @@ function QuickLink({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
+  root: { flex: 1, backgroundColor: backgrounds.homeGrass },
+  // Absolute rather than a wrapper so the ScrollView still owns the full
+  // height and the band does not scroll away with the hero.
+  skyBand: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '52%',
+    backgroundColor: backgrounds.homeSky,
+  },
   safeArea: { flex: 1 },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  coinPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingLeft: spacing.xs,
+    paddingRight: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    boxShadow: shadow.card,
+  },
+  coinText: { ...typography.heading, fontSize: 18, color: colors.ink },
+  gearButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    boxShadow: shadow.card,
+  },
+  mascot: { marginVertical: spacing.xs },
   quickRow: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -412,23 +464,17 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   hero: { alignItems: 'center', gap: spacing.sm },
-  eyebrow: {
-    ...typography.label,
-    color: colors.apricot,
-    letterSpacing: 1.8,
-  },
   title: {
     ...typography.hero,
-    color: colors.ink,
+    color: colors.headingBlue,
     textAlign: 'center',
   },
-  heroPiece: { marginVertical: spacing.xs },
-  heroPieceFrame: { width: 116 },
-  heroPieceInner: { alignItems: 'center', justifyContent: 'center', padding: spacing.md },
   subtitle: {
     ...typography.body,
     fontSize: 17,
-    color: colors.inkMuted,
+    // Deep blue rather than muted brown: the hero sits on sky, and inkMuted
+    // washes out against it.
+    color: colors.headingBlue,
     textAlign: 'center',
   },
   playNow: { alignSelf: 'stretch', marginTop: spacing.sm, maxWidth: 320, width: '100%' },

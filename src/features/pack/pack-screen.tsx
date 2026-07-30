@@ -10,8 +10,8 @@ import {
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopHeader, PopIcon, PopSurface } from '@/shared/ui';
+import { accentAt, backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no pack/category field (see `puzzles-screen.tsx`'s
@@ -76,7 +76,11 @@ export function PackScreen({ packId }: { packId: string }) {
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <PopHeader title={pack?.title ?? 'Pack'} onBack={() => router.back()} />
+        <PopHeader
+          title={pack?.title ?? 'Pack'}
+          onBack={() => router.back()}
+          titleColor={colors.onFill}
+        />
         <ScrollView contentContainerStyle={styles.content}>
           {pack == null ? (
             <Text style={styles.empty}>This pack doesn&apos;t exist yet.</Text>
@@ -84,7 +88,7 @@ export function PackScreen({ packId }: { packId: string }) {
             <>
               <View style={styles.hero}>
                 <View style={styles.heroIconWrap}>
-                  <PopIcon name="packs" size={30} color={colors.ink} />
+                  <Art name="collection" size={34} />
                 </View>
                 <View style={styles.heroCopy}>
                   <Text style={styles.tagline}>{pack.tagline}</Text>
@@ -150,7 +154,7 @@ function PackPuzzleRow({
               resizeMode="cover"
             />
           ) : (
-            <PopIcon name="puzzle" size={26} color={colors.inkMuted} />
+            <Art name="puzzle-quad" size={30} />
           )}
         </View>
         <View style={styles.rowCopy}>
@@ -176,7 +180,7 @@ function PackPuzzleRow({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
+  root: { flex: 1, backgroundColor: backgrounds.pack },
   safe: { flex: 1 },
   content: {
     paddingHorizontal: spacing.lg,
@@ -196,16 +200,17 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radii.md,
-    backgroundColor: colors.honey,
-    borderWidth: 3,
-    borderColor: colors.ink,
+    backgroundColor: colors.surface,
+    boxShadow: shadow.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroCopy: { flex: 1, gap: 2 },
-  tagline: { ...typography.heading, fontSize: 18, color: colors.ink },
-  sectionMeta: { ...typography.caption, color: colors.inkMuted },
-  empty: { ...typography.body, color: colors.inkMuted, paddingVertical: spacing.lg },
+  // The pack ground is saturated mint, so copy over it goes white.
+  tagline: { ...typography.heading, fontSize: 18, color: colors.onFill },
+  // Both sit directly on the mint ground, not inside a card.
+  sectionMeta: { ...typography.caption, color: colors.onFill },
+  empty: { ...typography.body, color: colors.onFill, paddingVertical: spacing.lg },
   // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
   // as a frame around the white row body nested inside it (the
   // `home-screen.tsx` `PuzzleCard` pattern).

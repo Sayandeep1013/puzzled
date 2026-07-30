@@ -29,8 +29,9 @@ import {
   type PlayablePuzzle,
   type PuzzleDefinition,
 } from '@/game-engine';
-import { border, colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopIcon, PopSheet, PopSurface, PopToggle, type PopIconName } from '@/shared/ui';
+import { backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { type ArtName } from '@/shared/art';
+import { Art, PopButton, PopSheet, PopSurface, PopToggle } from '@/shared/ui';
 
 import { setMusicEnabled, setSfxEnabled } from './board-audio';
 import { FX, setHapticsEnabled } from './board-fx';
@@ -518,8 +519,9 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
               accessibilityLabel="Go back"
               hitSlop={12}
               onPress={() => router.back()}
+              style={styles.roundButton}
             >
-              <PopIcon name="back" size={26} color={colors.ink} />
+              <Art name="back" size={26} />
             </Pressable>
 
             <View style={styles.headerCenter}>
@@ -532,7 +534,12 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
             </View>
 
             <View style={styles.headerRight}>
-              <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.clockInner}>
+              <PopSurface
+                fill={colors.surface}
+                radius={radii.pill}
+                contentStyle={styles.clockInner}
+              >
+                <Art name="clock" size={20} />
                 <Text style={styles.clock}>{formatClock(elapsed)}</Text>
               </PopSurface>
               <Pressable
@@ -540,8 +547,9 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                 accessibilityLabel="Pause"
                 hitSlop={10}
                 onPress={() => setOverlay('pause')}
+                style={styles.roundButton}
               >
-                <PopIcon name="gear" size={26} color={colors.ink} />
+                <Art name="pause" size={26} />
               </Pressable>
             </View>
           </View>
@@ -557,26 +565,27 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
             />
           </View>
 
+          {/* Order matches the mockup's toolbar: Hint, Edges, Preview, Shuffle. */}
           <View style={styles.toolbar}>
             <ToolButton
-              icon="restart"
-              label="Shuffle"
-              disabled={trayCount < 2}
-              onPress={onShuffleTray}
-            />
-            <ToolButton
-              icon="edges"
-              label="Edges"
-              active={highlightEdges}
-              onPress={() => setHighlightEdges((on) => !on)}
-            />
-            <ToolButton
-              icon="hint"
+              art="bulb"
               label="Hint"
               badge={hintCount}
               onPress={() => setOverlay('hint')}
             />
-            <ToolButton icon="eye" label="Preview" onPress={() => setOverlay('preview')} />
+            <ToolButton
+              art="edges"
+              label="Edges"
+              active={highlightEdges}
+              onPress={() => setHighlightEdges((on) => !on)}
+            />
+            <ToolButton art="eye" label="Preview" onPress={() => setOverlay('preview')} />
+            <ToolButton
+              art="shuffle"
+              label="Shuffle"
+              disabled={trayCount < 2}
+              onPress={onShuffleTray}
+            />
           </View>
         </View>
 
@@ -598,10 +607,16 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                   />
                 </SettingRow>
               </View>
-              <PopButton label="Resume" tone="grass" onPress={() => setOverlay('none')} />
+              <PopButton
+                label="Resume"
+                tone="grass"
+                icon={<Art name="resume" size={24} />}
+                onPress={() => setOverlay('none')}
+              />
               <PopButton
                 label="Restart"
                 tone="honey"
+                icon={<Art name="restart" size={24} />}
                 onPress={() => {
                   setOverlay('none');
                   onReset();
@@ -610,6 +625,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
               <PopButton
                 label="Exit Puzzle"
                 tone="surface"
+                icon={<Art name="quit-home" size={24} />}
                 onPress={() => {
                   setOverlay('none');
                   router.back();
@@ -623,7 +639,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
           <PopSheet title="Hint" onDismiss={() => setOverlay('none')}>
             <View style={styles.sheetBody}>
               <View style={styles.hintHero}>
-                <PopIcon name="hint" size={64} color={colors.honey} />
+                <Art name="reveal-piece" size={84} />
               </View>
               <Text style={styles.hintBalance}>
                 {hintCount} {hintCount === 1 ? 'hint' : 'hints'} available
@@ -683,14 +699,14 @@ function SettingRow({ label, children }: { label: string; children: ReactNode })
 }
 
 function ToolButton({
-  icon,
+  art,
   label,
   onPress,
   disabled,
   active,
   badge,
 }: {
-  icon: PopIconName;
+  art: ArtName;
   label: string;
   onPress?: () => void;
   disabled?: boolean;
@@ -698,7 +714,6 @@ function ToolButton({
   /** Live count shown as a small corner badge, e.g. the hint balance. */
   badge?: number;
 }) {
-  const tint = disabled ? colors.inkMuted : active ? colors.apricot : colors.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -706,17 +721,26 @@ function ToolButton({
       accessibilityState={{ selected: active, disabled }}
       onPress={onPress}
       disabled={disabled}
-      style={[styles.tool, disabled && styles.toolDisabled]}
+      style={styles.tool}
     >
-      <View style={styles.toolIconWrap}>
-        <PopIcon name={icon} size={24} color={tint} />
-        {badge != null ? (
-          <View style={styles.toolBadge}>
-            <Text style={styles.toolBadgeText}>{badge}</Text>
-          </View>
-        ) : null}
-      </View>
-      <Text style={[styles.toolLabel, active && { color: colors.apricot }]}>{label}</Text>
+      <PopSurface
+        fill={active ? colors.honey : colors.surface}
+        radius={radii.md}
+        elevation={disabled ? 'pressed' : 'card'}
+        contentStyle={styles.toolInner}
+      >
+        <View style={styles.toolIconWrap}>
+          {/* The art is full-colour, so disabled and active states come from the
+              surface and opacity rather than from tinting the glyph. */}
+          <Art name={art} size={28} style={disabled ? styles.toolArtDisabled : undefined} />
+          {badge != null ? (
+            <View style={styles.toolBadge}>
+              <Text style={styles.toolBadgeText}>{badge}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={[styles.toolLabel, disabled && styles.toolLabelDisabled]}>{label}</Text>
+      </PopSurface>
     </Pressable>
   );
 }
@@ -727,8 +751,19 @@ export function isPlayableGridSize(value: number): value is GridSize {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
+  screen: { flex: 1, backgroundColor: backgrounds.game },
   safeArea: { flex: 1 },
+  // The back and pause art are bare glyphs with no ground of their own, so they
+  // need a surface behind them to read against the board's pale green.
+  roundButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.pill,
+    backgroundColor: colors.surface,
+    boxShadow: shadow.card,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -755,29 +790,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { ...typography.heading, color: colors.ink },
+  headerTitle: { ...typography.heading, color: colors.headingGreen },
   headerMeta: { ...typography.caption, color: colors.inkMuted },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  clockInner: { paddingHorizontal: spacing.md, paddingVertical: 6 },
-  clock: { ...typography.bodyStrong, color: colors.ink },
+  clockInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  clock: { ...typography.heading, fontSize: 17, color: colors.ink },
+  // A cream tray under the board, matching the mockup: the board area is a
+  // card, not an outlined box.
   boardShell: {
     flex: 1,
     minHeight: 220,
     overflow: 'hidden',
-    borderRadius: 24,
+    borderRadius: radii.lg,
     backgroundColor: colors.surface,
-    borderWidth: border.standard,
-    borderColor: colors.ink,
+    boxShadow: shadow.card,
   },
   toolbar: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    gap: spacing.sm,
     paddingVertical: spacing.sm,
   },
-  tool: { alignItems: 'center', gap: 3, paddingHorizontal: spacing.sm },
-  toolDisabled: { opacity: 0.45 },
+  tool: { flex: 1 },
+  toolInner: { alignItems: 'center', gap: 3, paddingVertical: spacing.sm },
   toolIconWrap: { position: 'relative' },
+  toolArtDisabled: { opacity: 0.4 },
   toolBadge: {
     position: 'absolute',
     top: -6,
@@ -788,12 +832,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.cherry,
-    borderWidth: border.thin,
-    borderColor: colors.ink,
+    backgroundColor: colors.apricot,
   },
   toolBadgeText: { ...typography.caption, fontSize: 10, lineHeight: 12, color: colors.onFill },
   toolLabel: { ...typography.caption, fontSize: 11, color: colors.ink },
+  toolLabelDisabled: { color: colors.inkMuted },
   sheetBody: { gap: spacing.md },
   pauseRows: { gap: spacing.sm },
   settingRow: {

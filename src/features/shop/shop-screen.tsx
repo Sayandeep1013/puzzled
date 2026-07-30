@@ -4,14 +4,17 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getWalletRepository, type Wallet } from '@/data';
-import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopHeader, PopIcon, PopSurface } from '@/shared/ui';
+import { type ArtName } from '@/shared/art';
+import { colors, radii, spacing, typography } from '@/shared/theme';
+import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
 
 interface HintBundle {
   key: string;
   hints: number;
   /** Cost in coins — the only currency this shop spends; there is no real-money IAP yet. */
   price: number;
+  /** Bundle art, sized up with the bundle so the tiers read at a glance. */
+  art: ArtName;
 }
 
 /**
@@ -21,22 +24,12 @@ interface HintBundle {
  * instead until the real purchase flow ships.
  */
 const HINT_BUNDLES: HintBundle[] = [
-  { key: 'small', hints: 5, price: 100 },
-  { key: 'medium', hints: 15, price: 250 },
-  { key: 'large', hints: 30, price: 450 },
+  { key: 'small', hints: 5, price: 100, art: 'coins-500' },
+  { key: 'medium', hints: 15, price: 250, art: 'coins-1200' },
+  { key: 'large', hints: 30, price: 450, art: 'gold-chest' },
 ];
 
 const EMPTY_WALLET: Wallet = { coins: 0, hints: 0 };
-
-/** Text/icon colour that stays readable on each accent fill (mirrors `PopButton`'s contrast table). */
-const ON_ACCENT = new Map<string, string>([
-  [colors.berry, colors.onFill],
-  [colors.blossom, colors.onFill],
-  [colors.apricot, colors.onFill],
-  [colors.honey, colors.ink],
-  [colors.grass, colors.ink],
-  [colors.sky, colors.ink],
-]);
 
 /** Best-effort balance read. Returns `null` (never a fabricated zero) on failure. */
 async function fetchWallet(): Promise<Wallet | null> {
@@ -100,7 +93,7 @@ export function ShopScreen() {
           onBack={() => router.back()}
           right={
             <View style={styles.balance}>
-              <PopIcon name="coin" size={18} color={colors.honey} />
+              <Art name="coin" size={22} />
               <Text style={styles.balanceText}>{wallet.coins}</Text>
             </View>
           }
@@ -113,11 +106,10 @@ export function ShopScreen() {
             </Text>
           </View>
 
-          {HINT_BUNDLES.map((bundle, index) => (
+          {HINT_BUNDLES.map((bundle) => (
             <HintBundleRow
               key={bundle.key}
               bundle={bundle}
-              fill={accentAt(index)}
               affordable={wallet.coins >= bundle.price}
               purchasing={purchasing === bundle.key}
               onBuy={() => onBuy(bundle)}
@@ -131,47 +123,38 @@ export function ShopScreen() {
 
 function HintBundleRow({
   bundle,
-  fill,
   affordable,
   purchasing,
   onBuy,
 }: {
   bundle: HintBundle;
-  /** Deterministic per-position accent from `accentAt` — the colour frame around the row. */
-  fill: string;
   affordable: boolean;
   purchasing: boolean;
   onBuy: () => void;
 }) {
-  const onTone = ON_ACCENT.get(fill) ?? colors.ink;
   const disabled = !affordable || purchasing;
 
   return (
-    <PopSurface fill={fill} radius={radii.md} contentStyle={styles.rowFrame}>
-      <View style={styles.rowBody}>
-        <View style={[styles.badge, { backgroundColor: fill }]}>
-          <PopIcon name="hint" size={26} color={onTone} />
-        </View>
-        <View style={styles.rowCopy}>
-          <Text style={styles.rowTitle}>{bundle.hints} hints</Text>
-          <Text style={styles.rowMeta}>
-            {affordable ? 'Spend one to reveal a piece' : 'Not enough coins yet'}
-          </Text>
-        </View>
-        <PopButton
-          label={purchasing ? 'Buying…' : `${bundle.price}`}
-          icon={
-            purchasing ? undefined : (
-              <PopIcon name="coin" size={16} color={disabled ? colors.inkMuted : colors.ink} />
-            )
-          }
-          tone="honey"
-          size="sm"
-          disabled={disabled}
-          accessibilityLabel={`Buy ${bundle.hints} hints for ${bundle.price} coins`}
-          onPress={onBuy}
-        />
+    <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.rowBody}>
+      {/* The bundle art carries the tier, so the row no longer needs a coloured
+          accent frame — which also removes the ink-on-saturated-fill contrast
+          problem that frame existed to work around. */}
+      <Art name={bundle.art} size={60} style={disabled ? styles.artDisabled : undefined} />
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowTitle}>{bundle.hints} hints</Text>
+        <Text style={styles.rowMeta}>
+          {affordable ? 'Spend one to reveal a piece' : 'Not enough coins yet'}
+        </Text>
       </View>
+      <PopButton
+        label={purchasing ? 'Buying…' : `${bundle.price}`}
+        icon={purchasing ? undefined : <Art name="coin" size={18} />}
+        tone="honey"
+        size="sm"
+        disabled={disabled}
+        accessibilityLabel={`Buy ${bundle.hints} hints for ${bundle.price} coins`}
+        onPress={onBuy}
+      />
     </PopSurface>
   );
 }
@@ -180,7 +163,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   safe: { flex: 1 },
   balance: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  balanceText: { ...typography.bodyStrong, color: colors.ink },
+  balanceText: { ...typography.heading, fontSize: 17, color: colors.ink },
   content: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
@@ -196,27 +179,15 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginTop: spacing.sm,
   },
-  sectionTitle: { ...typography.title, fontSize: 22, color: colors.ink },
+  sectionTitle: { ...typography.title, fontSize: 22, color: colors.headingGreen },
   sectionMeta: { ...typography.caption, color: colors.inkMuted },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
-  // as a frame around the white row body nested inside it (the `home-screen.tsx`
-  // `PuzzleCard` pattern) — ink-on-saturated-fill body text fails contrast.
-  rowFrame: { padding: spacing.xs },
   rowBody: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     padding: spacing.md,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
   },
-  badge: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  artDisabled: { opacity: 0.45 },
   rowCopy: { flex: 1, gap: 4 },
   rowTitle: { ...typography.heading, fontSize: 18, color: colors.ink },
   rowMeta: { ...typography.caption, color: colors.inkMuted },

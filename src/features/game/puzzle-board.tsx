@@ -48,7 +48,7 @@ import {
   type Size,
 } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
-import { colors } from '@/shared/theme';
+import { backgrounds, colors } from '@/shared/theme';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
 import { FX, impact, setHapticsEnabled, success } from './board-fx';
@@ -953,14 +953,17 @@ export function PuzzleBoard({
       <GestureDetector gesture={gesture}>
         <Animated.View style={{ width: viewport.width, height: viewport.height }}>
           <Canvas style={{ width: viewport.width, height: viewport.height }}>
-            {/* Tray backdrop */}
+            {/* Tray backdrop. The board shell is cream, so the tray takes the
+                screen's own pale green to read as a separate zone — matching the
+                mockup, where loose pieces sit on the page rather than on the
+                board card. */}
             <Rect
               x={0}
               y={boardZoneH}
               width={vw}
               height={TRAY_HEIGHT}
-              color={colors.paper}
-              opacity={0.5}
+              color={backgrounds.game}
+              opacity={0.9}
             />
             <Line
               p1={vec(0, boardZoneH)}

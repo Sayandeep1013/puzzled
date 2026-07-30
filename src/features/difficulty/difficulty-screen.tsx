@@ -10,14 +10,26 @@ import {
   type GridSize,
   type PuzzleDefinition,
 } from '@/game-engine';
+import { type ArtName } from '@/shared/art';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { PopButton, PopHeader, PopIcon, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
 
 /** Difficulty word for a grid size, mirroring the tiers in the mockup. */
 function tierFor(size: GridSize): string {
   if (size <= 4) return 'Easy';
   if (size <= 7) return 'Medium';
   return 'Hard';
+}
+
+/**
+ * Piece art per tier. The mockup labels its three piece counts with a coloured
+ * jigsaw piece each; the asset set ships green, yellow and brown pieces, so the
+ * tiers map onto them in ascending difficulty.
+ */
+function pieceArtFor(size: GridSize): ArtName {
+  if (size <= 4) return 'puzzle-green';
+  if (size <= 7) return 'puzzle-yellow';
+  return 'puzzle-brown';
 }
 
 export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
@@ -54,9 +66,9 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
         <PopHeader title="Select Difficulty" onBack={() => router.back()} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* Tangerine frames a white body around the preview image, matching
-              `daily-screen.tsx`'s `featureFrame` treatment. */}
-          <PopSurface fill={colors.apricot} radius={radii.lg} contentStyle={styles.previewFrame}>
+          {/* A cream frame around the artwork, matching the mockup's board and
+              level cards — the photo is the hero, the chrome sits around it. */}
+          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.previewFrame}>
             <View style={styles.previewBody}>
               {image != null ? (
                 <Image
@@ -66,7 +78,7 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                 />
               ) : (
                 <View style={styles.previewFallback}>
-                  <PopIcon name="puzzle" size={64} color={colors.inkMuted} />
+                  <Art name="preview-image" size={72} />
                 </View>
               )}
             </View>
@@ -86,20 +98,22 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                   onPress={() => setSelected(size)}
                   style={styles.tile}
                 >
-                  {/* Selected tiles ring in sunshine; the body underneath stays
-                      white either way, so the two-line label is always read
-                      against a plain surface — never a full colour wash. */}
+                  {/* Selected tiles fill grass with white numerals; unselected
+                      stay cream with ink. The mockup distinguishes the two by
+                      fill, not by a ring. */}
                   <PopSurface
-                    fill={active ? colors.honey : colors.surface}
+                    fill={active ? colors.grassDeep : colors.surface}
                     radius={radii.md}
-                    contentStyle={styles.tileFrame}
+                    elevation={active ? 'raised' : 'card'}
+                    contentStyle={styles.tileBody}
                   >
-                    <View style={styles.tileBody}>
-                      <Text style={styles.tileCount}>{expectedPieceCount(size)}</Text>
-                      <Text style={styles.tileTier}>
-                        {tierFor(size)} · {size}×{size}
-                      </Text>
-                    </View>
+                    <Art name={pieceArtFor(size)} size={38} />
+                    <Text style={[styles.tileCount, active && styles.tileCountActive]}>
+                      {expectedPieceCount(size)}
+                    </Text>
+                    <Text style={[styles.tileTier, active && styles.tileTierActive]}>
+                      {tierFor(size)} · {size}×{size}
+                    </Text>
                   </PopSurface>
                 </Pressable>
               );
@@ -126,18 +140,17 @@ const styles = StyleSheet.create({
     maxWidth: 620,
     alignSelf: 'center',
   },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `tangerine`
-  // shows as a frame around the white preview body nested inside it.
-  previewFrame: { padding: spacing.xs },
+  // A cream margin around the artwork rather than a coloured ring.
+  previewFrame: { padding: spacing.sm },
   previewBody: {
     height: 200,
     overflow: 'hidden',
     borderRadius: radii.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.white,
   },
   previewImage: { width: '100%', height: '100%' },
   previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  puzzleTitle: { ...typography.title, color: colors.ink, textAlign: 'center' },
+  puzzleTitle: { ...typography.title, color: colors.headingGreen, textAlign: 'center' },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -145,15 +158,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   tile: { width: '47%' },
-  tileFrame: { padding: spacing.xs },
   tileBody: {
     alignItems: 'center',
     paddingVertical: spacing.md,
     gap: 2,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
   },
-  tileCount: { ...typography.title, fontSize: 32, color: colors.ink },
+  tileCount: { ...typography.title, fontSize: 30, color: colors.ink },
+  tileCountActive: { color: colors.onFill },
   tileTier: { ...typography.label, color: colors.inkMuted },
+  // 3.25:1 on grassDeep — the same pairing PopButton uses for its grass tone.
+  tileTierActive: { color: colors.onFill },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
 });
