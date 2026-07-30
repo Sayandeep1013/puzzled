@@ -1,18 +1,28 @@
 import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing, typography } from '@/shared/theme';
+import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
 
-import { PopIcon } from './PopIcon';
+import { Art } from './Art';
 
 interface PopHeaderProps {
   title: string;
   right?: ReactNode;
   onBack?: () => void;
+  /**
+   * Headings sit in a deep tint of their screen. Pass `onFill` on the saturated
+   * grounds (Results, Pack) where the default green would disappear.
+   */
+  titleColor?: string;
 }
 
-/** Shared top bar: an optional back chevron, a centred title, a right slot. */
-export function PopHeader({ title, right, onBack }: PopHeaderProps) {
+/** Shared top bar: an optional back button, a centred title, a right slot. */
+export function PopHeader({
+  title,
+  right,
+  onBack,
+  titleColor = colors.headingGreen,
+}: PopHeaderProps) {
   return (
     <View style={styles.header}>
       <View style={styles.side}>
@@ -22,12 +32,13 @@ export function PopHeader({ title, right, onBack }: PopHeaderProps) {
             accessibilityLabel="Go back"
             hitSlop={12}
             onPress={onBack}
+            style={styles.backButton}
           >
-            <PopIcon name="back" />
+            <Art name="back" size={26} />
           </Pressable>
         ) : null}
       </View>
-      <Text style={styles.title} numberOfLines={1}>
+      <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
         {title}
       </Text>
       <View style={[styles.side, styles.right]}>{right}</View>
@@ -45,5 +56,16 @@ const styles = StyleSheet.create({
   },
   side: { minWidth: 48, justifyContent: 'center' },
   right: { alignItems: 'flex-end' },
-  title: { ...typography.title, flex: 1, textAlign: 'center', color: colors.ink },
+  // The back arrow art is a bare yellow chevron with no ground of its own, so
+  // it needs a surface behind it to stay legible on the saturated screens.
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    boxShadow: shadow.card,
+  },
+  title: { ...typography.title, flex: 1, textAlign: 'center' },
 });

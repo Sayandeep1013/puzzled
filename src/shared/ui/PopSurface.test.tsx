@@ -15,31 +15,47 @@ describe('PopSurface', () => {
     expect(getByText('hello')).toBeTruthy();
   });
 
-  it('reserves layout space for the offset shadow', () => {
-    const { getByTestId } = render(<PopSurface testID="surface" offset={shadow.hero} />);
+  it('applies the requested fill and radius', () => {
+    const { getByTestId } = render(
+      <PopSurface testID="surface" fill={colors.grass} radius={radii.lg} />,
+    );
     expect(getByTestId('surface')).toHaveStyle({
-      paddingRight: shadow.hero,
-      paddingBottom: shadow.hero,
+      backgroundColor: colors.grass,
+      borderRadius: radii.lg,
     });
   });
 
-  it('draws the shadow in ink with no blur radius', () => {
-    const { getByTestId } = render(<PopSurface testID="surface" />);
-    const shade = getByTestId('surface-shadow');
-    expect(shade).toHaveStyle({ backgroundColor: colors.ink });
-    const flat = StyleSheet.flatten(shade.props.style);
-    expect(flat).not.toHaveProperty('shadowRadius');
+  it('wears a blurred shadow rather than a hard offset one', () => {
+    const { getByTestId } = render(<PopSurface testID="surface" elevation="raised" />);
+    const flat = StyleSheet.flatten(getByTestId('surface').props.style);
+    expect(flat.boxShadow).toBe(shadow.raised);
+    // The Chunky Pop mechanic is gone: no sibling shadow view, and no reserved
+    // layout space for one. If either returns, this direction has regressed.
+    expect(flat).not.toHaveProperty('paddingRight');
     expect(flat).not.toHaveProperty('elevation');
   });
 
-  it('applies the requested fill and radius to the face', () => {
-    const { getByTestId } = render(
-      <PopSurface testID="surface" fill={colors.mint} radius={radii.lg} />,
-    );
+  it('has no outline — this theme draws no borders', () => {
+    const { getByTestId } = render(<PopSurface testID="surface" />);
+    const wrapper = StyleSheet.flatten(getByTestId('surface').props.style);
+    const face = StyleSheet.flatten(getByTestId('surface-face').props.style);
+    for (const style of [wrapper, face]) {
+      expect(style).not.toHaveProperty('borderWidth');
+      expect(style).not.toHaveProperty('borderColor');
+    }
+  });
+
+  it('omits the shadow entirely when nested', () => {
+    const { getByTestId } = render(<PopSurface testID="surface" elevation="none" />);
+    const flat = StyleSheet.flatten(getByTestId('surface').props.style);
+    expect(flat).not.toHaveProperty('boxShadow');
+  });
+
+  it('clips content to the radius so nested images follow the corner', () => {
+    const { getByTestId } = render(<PopSurface testID="surface" radius={radii.md} />);
     expect(getByTestId('surface-face')).toHaveStyle({
-      backgroundColor: colors.mint,
-      borderRadius: radii.lg,
-      borderColor: colors.ink,
+      overflow: 'hidden',
+      borderRadius: radii.md,
     });
   });
 });

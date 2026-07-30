@@ -30,11 +30,11 @@ const EMPTY_WALLET: Wallet = { coins: 0, hints: 0 };
 
 /** Text/icon colour that stays readable on each accent fill (mirrors `PopButton`'s contrast table). */
 const ON_ACCENT = new Map<string, string>([
-  [colors.grape, colors.onFill],
-  [colors.bubblegum, colors.onFill],
-  [colors.tangerine, colors.onFill],
-  [colors.sunshine, colors.ink],
-  [colors.mint, colors.ink],
+  [colors.berry, colors.onFill],
+  [colors.blossom, colors.onFill],
+  [colors.apricot, colors.onFill],
+  [colors.honey, colors.ink],
+  [colors.grass, colors.ink],
   [colors.sky, colors.ink],
 ]);
 
@@ -100,7 +100,7 @@ export function ShopScreen() {
           onBack={() => router.back()}
           right={
             <View style={styles.balance}>
-              <PopIcon name="coin" size={18} color={colors.sunshine} />
+              <PopIcon name="coin" size={18} color={colors.honey} />
               <Text style={styles.balanceText}>{wallet.coins}</Text>
             </View>
           }
@@ -165,7 +165,7 @@ function HintBundleRow({
               <PopIcon name="coin" size={16} color={disabled ? colors.inkMuted : colors.ink} />
             )
           }
-          tone="sunshine"
+          tone="honey"
           size="sm"
           disabled={disabled}
           accessibilityLabel={`Buy ${bundle.hints} hints for ${bundle.price} coins`}

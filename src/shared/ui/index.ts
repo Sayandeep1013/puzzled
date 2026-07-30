@@ -1,10 +1,12 @@
 export { AnimatedArt } from './AnimatedArt';
+export { Art } from './Art';
 export { PopButton, type PopTone } from './PopButton';
 export { PopChip } from './PopChip';
 export { PopHeader } from './PopHeader';
 export { PopIcon, type PopIconName } from './PopIcon';
 export { PopProgress } from './PopProgress';
 export { PopSheet } from './PopSheet';
-export { PopSurface } from './PopSurface';
+export { PopSurface, type SurfaceElevation } from './PopSurface';
 export { PopTabBar } from './PopTabBar';
 export { PopToggle } from './PopToggle';
+export { type ArtName } from '@/shared/art';

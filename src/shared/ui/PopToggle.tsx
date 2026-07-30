@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { border, colors, radii, shadow, springs } from '@/shared/theme';
+import { colors, radii, shadow, springs } from '@/shared/theme';
 
 import { PopSurface } from './PopSurface';
 
@@ -18,7 +18,7 @@ interface PopToggleProps {
   accessibilityLabel: string;
 }
 
-/** A pill-shaped ink-outlined switch: the knob overshoots into place on flip. */
+/** A pill switch: the knob overshoots into place on flip. */
 export function PopToggle({ value, onChange, accessibilityLabel }: PopToggleProps) {
   const on = useSharedValue(value ? 1 : 0);
 
@@ -39,8 +39,10 @@ export function PopToggle({ value, onChange, accessibilityLabel }: PopToggleProp
     >
       <PopSurface
         radius={radii.pill}
-        offset={shadow.pressed}
-        fill={value ? colors.mint : colors.surface}
+        elevation="pressed"
+        // Off reads as an empty groove rather than a card, so it takes the
+        // muted ground colour instead of the cream surface.
+        fill={value ? colors.grass : colors.locked}
         contentStyle={styles.track}
       >
         <Animated.View style={[styles.knob, knobStyle]} />
@@ -60,8 +62,7 @@ const styles = StyleSheet.create({
     width: KNOB_SIZE,
     height: KNOB_SIZE,
     borderRadius: radii.pill,
-    borderWidth: border.standard,
-    borderColor: colors.ink,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.white,
+    boxShadow: shadow.pressed,
   },
 });

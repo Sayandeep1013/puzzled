@@ -42,13 +42,7 @@ const MEDIUM_BOX = 128;
 const HERO_BOX = 224;
 
 /** Mascots and full-scene art, drawn 180pt+. */
-const HERO = new Set([
-  'bear',
-  'bear-excited',
-  'happy-duck',
-  'winking-duck',
-  'change-avatar',
-]);
+const HERO = new Set(['bear', 'bear-excited', 'happy-duck', 'winking-duck', 'change-avatar']);
 
 /** Shop bundles, achievement badges, category art — drawn 80–128pt. */
 const MEDIUM = new Set([
@@ -115,7 +109,7 @@ async function main() {
     console.error(
       'This script needs sharp and svgo, which are intentionally not project\n' +
         'dependencies (the generated PNGs are committed). Install them ad hoc:\n\n' +
-        '  npm i --no-save sharp svgo\n'
+        '  npm i --no-save sharp svgo\n',
     );
     process.exit(1);
   }
@@ -174,7 +168,7 @@ async function main() {
   }
 
   console.log(
-    `\n${files.length} assets -> ${written} PNGs, ${(bytes / 1024 / 1024).toFixed(2)} MB total`
+    `\n${files.length} assets -> ${written} PNGs, ${(bytes / 1024 / 1024).toFixed(2)} MB total`,
   );
   console.log(`\nIf you added or renamed an asset, update the registry in src/shared/art.ts.`);
 }

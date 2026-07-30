@@ -165,7 +165,7 @@ function PackPuzzleRow({
         </View>
         <PopButton
           label={done ? 'Play again' : started ? 'Continue' : 'Start'}
-          tone="grape"
+          tone="grass"
           size="sm"
           accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
           onPress={() => router.push(href)}
@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radii.md,
-    backgroundColor: colors.sunshine,
+    backgroundColor: colors.honey,
     borderWidth: 3,
     borderColor: colors.ink,
     alignItems: 'center',

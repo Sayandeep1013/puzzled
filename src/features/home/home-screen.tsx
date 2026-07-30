@@ -156,7 +156,7 @@ export function HomeScreen() {
             <Text style={styles.title}>Puzzle Journey</Text>
 
             <View style={styles.heroPiece}>
-              <PopSurface fill={colors.sunshine} radius={26} style={styles.heroPieceFrame}>
+              <PopSurface fill={colors.honey} radius={26} style={styles.heroPieceFrame}>
                 <View style={styles.heroPieceInner}>
                   <PopIcon name="puzzle" size={92} color={colors.ink} />
                 </View>
@@ -167,7 +167,7 @@ export function HomeScreen() {
 
             <PopButton
               label="Play Now"
-              tone="grape"
+              tone="grass"
               style={styles.playNow}
               disabled={!firstPlayable}
               onPress={() => {
@@ -194,7 +194,7 @@ export function HomeScreen() {
             </View>
           </View>
 
-          <PopSurface fill={colors.mint} radius={radii.lg} style={styles.progressCard}>
+          <PopSurface fill={colors.grass} radius={radii.lg} style={styles.progressCard}>
             <View style={styles.progressRow}>
               <View style={styles.progressCopy}>
                 <Text style={styles.cardLabel}>YOUR PROGRESS</Text>
@@ -243,7 +243,7 @@ export function HomeScreen() {
               <PopSurface fill={colors.surface} radius={radii.lg}>
                 <View style={styles.importInner}>
                   {importing ? (
-                    <ActivityIndicator color={colors.grape} />
+                    <ActivityIndicator color={colors.grass} />
                   ) : (
                     <Text style={styles.importPlus}>＋</Text>
                   )}
@@ -346,7 +346,7 @@ function PuzzleCard({
           </View>
           <PopButton
             label={done ? 'Play again' : started ? 'Continue' : 'Start'}
-            tone="grape"
+            tone="grass"
             size="sm"
             accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
             onPress={() => router.push(href)}
@@ -375,7 +375,7 @@ function QuickLink({
     >
       <PopSurface fill={colors.surface} radius={radii.md}>
         <View style={styles.quickLinkInner}>
-          <PopIcon name={icon} size={22} color={colors.grape} />
+          <PopIcon name={icon} size={22} color={colors.headingGreen} />
           <Text style={styles.quickLinkLabel}>{label}</Text>
         </View>
       </PopSurface>
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', gap: spacing.sm },
   eyebrow: {
     ...typography.label,
-    color: colors.tangerine,
+    color: colors.apricot,
     letterSpacing: 1.8,
   },
   title: {
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.lg,
   },
-  importPlus: { ...typography.title, color: colors.grape, marginTop: -2 },
+  importPlus: { ...typography.title, color: colors.headingGreen, marginTop: -2 },
   importText: { ...typography.bodyStrong, color: colors.ink },
   emptyHint: {
     ...typography.body,

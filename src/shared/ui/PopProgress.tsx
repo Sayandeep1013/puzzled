@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { border, colors, radii, shadow } from '@/shared/theme';
+import { colors, radii } from '@/shared/theme';
 
 interface PopProgressProps {
   value: number;
@@ -13,8 +13,8 @@ interface PopProgressProps {
 export function PopProgress({
   value,
   goal,
-  tone = colors.mint,
-  height = 18,
+  tone = colors.grass,
+  height = 16,
   testID,
 }: PopProgressProps) {
   // A zero goal is a legitimate state for an achievement with no target yet;
@@ -44,12 +44,11 @@ export function PopProgress({
 }
 
 const styles = StyleSheet.create({
+  // An inset groove rather than an outlined bar: the track is a shade of the
+  // ground, so the fill is the only thing that reads as raised.
   track: {
-    backgroundColor: colors.surface,
-    borderWidth: border.thin,
-    borderColor: colors.ink,
+    backgroundColor: 'rgba(90, 62, 24, 0.14)',
     overflow: 'hidden',
-    marginBottom: shadow.pressed,
   },
   fill: { height: '100%' },
 });

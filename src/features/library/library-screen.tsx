@@ -265,7 +265,7 @@ function LibraryRow({
               <PopProgress
                 value={progress.lockedPieces}
                 goal={progress.totalPieces}
-                tone={done ? colors.mint : colors.grape}
+                tone={done ? colors.grass : colors.berry}
                 height={8}
               />
             ) : null}
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: radii.sm,
     overflow: 'hidden',
-    backgroundColor: colors.sunshine,
+    backgroundColor: colors.honey,
     alignItems: 'center',
     justifyContent: 'center',
   },

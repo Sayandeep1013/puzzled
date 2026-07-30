@@ -1,33 +1,44 @@
 import { type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { border, colors, radii, shadow, spacing, springs, typography } from '@/shared/theme';
+import { colors, radii, shadow, spacing, springs, typography } from '@/shared/theme';
 
 export type PopTone =
-  'grape' | 'bubblegum' | 'tangerine' | 'sunshine' | 'mint' | 'sky' | 'cherry' | 'surface';
+  'grass' | 'leaf' | 'sky' | 'berry' | 'blossom' | 'honey' | 'apricot' | 'cherry' | 'surface';
 
-const FILL: Record<PopTone, string> = {
-  grape: colors.grape,
-  bubblegum: colors.bubblegum,
-  tangerine: colors.tangerine,
-  sunshine: colors.sunshine,
-  mint: colors.mint,
-  sky: colors.sky,
+/**
+ * Button faces, paired with the label colour that clears WCAG AA large-text
+ * (3.0:1) on them. Exported so the contrast test checks the real table rather
+ * than a copy of it.
+ *
+ * This palette is bright enough that white text fails on almost all of it — the
+ * mockup's own white-on-green measures 2.21:1. Tones that want white therefore
+ * use their `*Deep` variant; everything else takes ink on the bright value.
+ * Verified ratios are in the trailing comments.
+ */
+export const TONE_FILL: Record<PopTone, string> = {
+  grass: colors.grassDeep,
+  leaf: colors.leaf,
+  sky: colors.skyDeep,
+  berry: colors.berry,
+  blossom: colors.blossom,
+  honey: colors.honey,
+  apricot: colors.apricot,
   cherry: colors.cherry,
   surface: colors.surface,
 };
 
-/** Sunshine and mint are light enough that white text fails contrast on them. */
-const LABEL: Record<PopTone, string> = {
-  grape: colors.onFill,
-  bubblegum: colors.onFill,
-  tangerine: colors.onFill,
-  sunshine: colors.ink,
-  mint: colors.ink,
-  sky: colors.ink,
-  cherry: colors.onFill,
-  surface: colors.ink,
+export const TONE_LABEL: Record<PopTone, string> = {
+  grass: colors.onFill, // 3.25
+  leaf: colors.ink, // 6.63
+  sky: colors.onFill, // 3.21
+  berry: colors.onFill, // 3.60
+  blossom: colors.ink, // 6.11
+  honey: colors.ink, // 10.08
+  apricot: colors.ink, // 6.45
+  cherry: colors.onFill, // 3.64
+  surface: colors.ink, // 12.47
 };
 
 const SIZE = {
@@ -57,7 +68,7 @@ interface PopButtonProps {
   tone?: PopTone;
   size?: keyof typeof SIZE;
   disabled?: boolean;
-  /** Rendered before the label — pass a `PopIcon`. */
+  /** Rendered before the label — pass an `Art` or a `PopIcon`. */
   icon?: ReactNode;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
@@ -66,7 +77,7 @@ interface PopButtonProps {
 export function PopButton({
   label,
   onPress,
-  tone = 'grape',
+  tone = 'grass',
   size = 'md',
   disabled = false,
   icon,
@@ -75,12 +86,15 @@ export function PopButton({
 }: PopButtonProps) {
   const press = useSharedValue(0);
   const metrics = SIZE[size];
-  const travel = shadow.default - shadow.pressed;
 
-  // Only the face moves. The shadow stays put, so the gap between them shrinks
-  // from `shadow.default` to `shadow.pressed` — the button presses into the page.
+  // Chunky Pop translated the face into a hard sibling shadow. With a blurred
+  // shadow there is nothing to translate into, so the press reads as the button
+  // squashing down into the page.
+  //
+  // Only the transform is animated. `boxShadow` is not a Reanimated-animatable
+  // prop, so it stays a static style rather than being driven off `press`.
   const faceStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: press.value * travel }, { translateY: press.value * travel }],
+    transform: [{ scale: 1 - press.value * 0.04 }, { translateY: press.value * 2 }],
   }));
 
   return (
@@ -96,24 +110,13 @@ export function PopButton({
       onPressOut={() => {
         press.value = withSpring(0, springs.pop);
       }}
-      style={[
-        { paddingRight: shadow.default, paddingBottom: shadow.default },
-        disabled && styles.disabled,
-        style,
-      ]}
+      style={[disabled && styles.disabled, style]}
     >
-      <View
-        pointerEvents="none"
-        style={[
-          styles.shade,
-          { left: shadow.default, top: shadow.default, borderRadius: metrics.radius },
-        ]}
-      />
       <Animated.View
         style={[
           styles.face,
           {
-            backgroundColor: FILL[tone],
+            backgroundColor: TONE_FILL[tone],
             borderRadius: metrics.radius,
             paddingVertical: metrics.paddingVertical,
             paddingHorizontal: metrics.paddingHorizontal,
@@ -122,7 +125,7 @@ export function PopButton({
         ]}
       >
         {icon}
-        <Text style={[styles.label, { color: LABEL[tone], fontSize: metrics.fontSize }]}>
+        <Text style={[styles.label, { color: TONE_LABEL[tone], fontSize: metrics.fontSize }]}>
           {label}
         </Text>
       </Animated.View>
@@ -131,14 +134,12 @@ export function PopButton({
 }
 
 const styles = StyleSheet.create({
-  shade: { position: 'absolute', right: 0, bottom: 0, backgroundColor: colors.ink },
   face: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    borderWidth: border.standard,
-    borderColor: colors.ink,
+    boxShadow: shadow.button,
   },
   label: { fontFamily: typography.heading.fontFamily },
   disabled: { opacity: 0.45 },

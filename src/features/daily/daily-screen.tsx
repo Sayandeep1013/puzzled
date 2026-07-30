@@ -164,10 +164,10 @@ export function DailyScreen() {
 
           {/* Sunshine is light enough for direct ink text — no white-body frame
               needed here, matching `home-screen.tsx`'s `progressCard` (mint). */}
-          <PopSurface fill={colors.sunshine} radius={radii.lg} contentStyle={styles.streakFrame}>
+          <PopSurface fill={colors.honey} radius={radii.lg} contentStyle={styles.streakFrame}>
             <View style={styles.streakBody}>
               <View style={styles.streakIconWrap}>
-                <PopIcon name="streak" size={26} color={colors.tangerine} />
+                <PopIcon name="streak" size={26} color={colors.apricot} />
               </View>
               <View style={styles.streakCopy}>
                 <Text style={styles.streakValue}>
@@ -184,7 +184,7 @@ export function DailyScreen() {
             </View>
           </PopSurface>
 
-          <PopSurface fill={colors.tangerine} radius={radii.lg} contentStyle={styles.featureFrame}>
+          <PopSurface fill={colors.apricot} radius={radii.lg} contentStyle={styles.featureFrame}>
             <View style={styles.featureBody}>
               {source != null ? (
                 <Image
@@ -208,7 +208,7 @@ export function DailyScreen() {
 
           <PopButton
             label={data.playedToday ? 'Play again' : 'Play Now'}
-            tone="grape"
+            tone="grass"
             disabled={!data.puzzle}
             onPress={() => {
               if (data.puzzle) {
@@ -254,11 +254,11 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radii.pill,
-    backgroundColor: colors.grape,
+    backgroundColor: colors.berry,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  todayDotPlayed: { backgroundColor: colors.mint },
+  todayDotPlayed: { backgroundColor: colors.grass },
   todayText: { ...typography.bodyStrong, color: colors.onFill },
   streakFrame: { padding: spacing.lg },
   streakBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },

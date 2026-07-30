@@ -20,13 +20,13 @@ import { PopChip, PopIcon, PopSurface } from '@/shared/ui';
 type SourceFilter = 'all' | 'bundled' | 'user';
 
 const FILTERS: { key: SourceFilter; label: string; tone: string }[] = [
-  { key: 'all', label: 'All', tone: colors.grape },
-  { key: 'bundled', label: 'Starters', tone: colors.tangerine },
-  { key: 'user', label: 'My Photos', tone: colors.bubblegum },
+  { key: 'all', label: 'All', tone: colors.grass },
+  { key: 'bundled', label: 'Starters', tone: colors.apricot },
+  { key: 'user', label: 'My Photos', tone: colors.blossom },
 ];
 
 /** Tones used to frame grid cards, cycling independently of the filter tones above. */
-const CARD_TONES = [colors.grape, colors.bubblegum, colors.tangerine, colors.mint, colors.sky];
+const CARD_TONES = [colors.berry, colors.blossom, colors.apricot, colors.grass, colors.sky];
 
 interface CatalogData {
   bundled: PuzzleDefinition[];
@@ -81,7 +81,7 @@ export function PuzzlesScreen() {
             accessibilityRole="button"
             accessibilityLabel="Browse the Starter Pack"
           >
-            <PopSurface fill={colors.sunshine} radius={radii.md} contentStyle={styles.packFrame}>
+            <PopSurface fill={colors.honey} radius={radii.md} contentStyle={styles.packFrame}>
               <View style={styles.packBody}>
                 <PopIcon name="packs" size={26} color={colors.ink} />
                 <View style={styles.packCopy}>
@@ -127,7 +127,7 @@ export function PuzzlesScreen() {
               </View>
               <Pressable onPress={() => open(recommended)} accessibilityRole="button">
                 <PopSurface
-                  fill={colors.tangerine}
+                  fill={colors.apricot}
                   radius={radii.lg}
                   contentStyle={styles.featureFrame}
                 >
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { ...typography.heading, color: colors.ink },
   sectionMeta: { ...typography.caption, color: colors.inkMuted },
-  seeAll: { ...typography.caption, color: colors.grape },
+  seeAll: { ...typography.caption, color: colors.headingGreen },
   chipRow: { gap: spacing.sm, paddingVertical: spacing.xs, paddingRight: spacing.md },
   // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
   // as a frame around the white card body nested inside it (see HomeScreen's
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: radii.md,
     overflow: 'hidden',
-    backgroundColor: colors.sunshine,
+    backgroundColor: colors.honey,
   },
   featureCopy: { padding: spacing.md, gap: 2 },
   featureTitle: { ...typography.heading, color: colors.ink },
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     height: 110,
     borderRadius: radii.sm,
     overflow: 'hidden',
-    backgroundColor: colors.sunshine,
+    backgroundColor: colors.honey,
   },
   gridTitle: { ...typography.caption, color: colors.ink, padding: spacing.sm },
   previewImage: { width: '100%', height: '100%' },

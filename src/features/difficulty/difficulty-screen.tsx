@@ -56,7 +56,7 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
         <ScrollView contentContainerStyle={styles.content}>
           {/* Tangerine frames a white body around the preview image, matching
               `daily-screen.tsx`'s `featureFrame` treatment. */}
-          <PopSurface fill={colors.tangerine} radius={radii.lg} contentStyle={styles.previewFrame}>
+          <PopSurface fill={colors.apricot} radius={radii.lg} contentStyle={styles.previewFrame}>
             <View style={styles.previewBody}>
               {image != null ? (
                 <Image
@@ -90,7 +90,7 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                       white either way, so the two-line label is always read
                       against a plain surface — never a full colour wash. */}
                   <PopSurface
-                    fill={active ? colors.sunshine : colors.surface}
+                    fill={active ? colors.honey : colors.surface}
                     radius={radii.md}
                     contentStyle={styles.tileFrame}
                   >
@@ -108,7 +108,7 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
         </ScrollView>
 
         <View style={styles.footer}>
-          <PopButton label="Start Puzzle" tone="grape" onPress={start} disabled={!puzzle} />
+          <PopButton label="Start Puzzle" tone="grass" onPress={start} disabled={!puzzle} />
         </View>
       </SafeAreaView>
     </View>

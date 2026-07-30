@@ -13,7 +13,7 @@ export interface AchievementDefinition {
   description: string;
   goal: number;
   icon: string;
-  tone: 'mint' | 'grape' | 'bubblegum' | 'sunshine';
+  tone: 'grass' | 'berry' | 'blossom' | 'honey';
 }
 
 export interface AchievementState extends AchievementDefinition {
@@ -32,7 +32,7 @@ const DEFINITIONS: readonly Measured[] = [
     description: 'Complete your first puzzle',
     goal: 1,
     icon: 'check',
-    tone: 'mint',
+    tone: 'grass',
     measure: (completed) => completed.length,
   },
   {
@@ -41,7 +41,7 @@ const DEFINITIONS: readonly Measured[] = [
     description: 'Complete 50 puzzles',
     goal: 50,
     icon: 'puzzle',
-    tone: 'grape',
+    tone: 'berry',
     measure: (completed) => completed.length,
   },
   {
@@ -50,7 +50,7 @@ const DEFINITIONS: readonly Measured[] = [
     description: 'Complete 10 boards of 8×8 or larger',
     goal: 10,
     icon: 'medal',
-    tone: 'bubblegum',
+    tone: 'blossom',
     measure: (completed) => completed.filter((s) => s.gridSize >= 8).length,
   },
   {
@@ -59,7 +59,7 @@ const DEFINITIONS: readonly Measured[] = [
     description: 'Finish a puzzle in under 10 minutes',
     goal: 1,
     icon: 'sparkle',
-    tone: 'sunshine',
+    tone: 'honey',
     measure: (completed) => completed.filter((s) => s.elapsedMs < 10 * 60 * 1000).length,
   },
 ] as const;

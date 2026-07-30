@@ -1,6 +1,15 @@
 import * as tokens from './tokens';
 
-export { accentAt, accentRamp, border, radii, shadow, spacing, springs } from './tokens';
+export {
+  accentAt,
+  accentRamp,
+  backgrounds,
+  border,
+  radii,
+  shadow,
+  spacing,
+  springs,
+} from './tokens';
 
 /**
  * Weight is encoded in the family name for custom fonts. Never pair these with
@@ -15,10 +24,10 @@ export const fonts = {
 } as const;
 
 export const typography = {
-  hero: { fontFamily: fonts.displayBold, fontSize: 44, letterSpacing: -1 },
-  title: { fontFamily: fonts.displayBold, fontSize: 30, letterSpacing: -0.5 },
-  heading: { fontFamily: fonts.display, fontSize: 22 },
-  label: { fontFamily: fonts.bodyBlack, fontSize: 13, letterSpacing: 1.2 },
+  hero: { fontFamily: fonts.displayBold, fontSize: 40, letterSpacing: -0.5 },
+  title: { fontFamily: fonts.displayBold, fontSize: 28, letterSpacing: -0.3 },
+  heading: { fontFamily: fonts.display, fontSize: 21 },
+  label: { fontFamily: fonts.bodyBlack, fontSize: 13, letterSpacing: 0.6 },
   body: { fontFamily: fonts.body, fontSize: 16, lineHeight: 23 },
   bodyStrong: { fontFamily: fonts.bodyBold, fontSize: 15 },
   caption: { fontFamily: fonts.bodyBold, fontSize: 13 },
@@ -26,6 +35,6 @@ export const typography = {
 
 /**
  * Screens import `colors` from here (never from `./tokens` directly) for a
- * single, stable entry point onto the Chunky Pop palette.
+ * single, stable entry point onto the Puzzle Journey palette.
  */
 export const colors = tokens.colors;

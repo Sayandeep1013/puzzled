@@ -58,13 +58,7 @@ const BOARD_PADDING = 12;
 const TRAY_HEIGHT = 132;
 const TRAY_PAD = 12;
 const SLOT_GAP = 6;
-const CONFETTI_COLORS = [
-  colors.grape,
-  colors.sunshine,
-  colors.tangerine,
-  colors.mint,
-  colors.bubblegum,
-];
+const CONFETTI_COLORS = [colors.berry, colors.honey, colors.apricot, colors.grass, colors.blossom];
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
 
@@ -216,7 +210,7 @@ const LoosePiece = memo(function LoosePiece({
   return (
     <Group transform={[{ translateX: position.x }, { translateY: position.y }]}>
       <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.tangerine} />
+      <Path path={prepared.skPath} style="stroke" strokeWidth={2} color={colors.apricot} />
     </Group>
   );
 });
@@ -259,7 +253,7 @@ const TrayPiece = memo(function TrayPiece({
         path={prepared.skPath}
         style="stroke"
         strokeWidth={highlight ? 3 : 1.6}
-        color={highlight ? colors.tangerine : 'rgba(23,33,33,0.28)'}
+        color={highlight ? colors.apricot : 'rgba(23,33,33,0.28)'}
       />
     </Group>
   );
@@ -341,7 +335,7 @@ function GlowRing({
       r={radius}
       style="stroke"
       strokeWidth={3}
-      color={colors.tangerine}
+      color={colors.apricot}
       opacity={opacity}
     />
   );

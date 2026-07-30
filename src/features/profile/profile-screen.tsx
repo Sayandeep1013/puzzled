@@ -50,7 +50,7 @@ export function ProfileScreen() {
 
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.identity}>
-            <PopSurface fill={colors.bubblegum} radius={radii.pill} style={styles.avatar}>
+            <PopSurface fill={colors.blossom} radius={radii.pill} style={styles.avatar}>
               <View style={styles.avatarInner}>
                 <PopIcon name="profile" size={54} color={colors.ink} />
               </View>
@@ -70,7 +70,7 @@ export function ProfileScreen() {
               <Pressable key={link.label} accessibilityRole="button" onPress={link.onPress}>
                 <PopSurface fill={colors.surface} radius={radii.md}>
                   <View style={styles.linkRow}>
-                    <PopIcon name={link.icon} size={24} color={colors.grape} />
+                    <PopIcon name={link.icon} size={24} color={colors.berry} />
                     <Text style={styles.linkLabel}>{link.label}</Text>
                     <PopIcon name="chevron" size={20} color={colors.inkMuted} />
                   </View>

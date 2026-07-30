@@ -3,36 +3,46 @@ import { type ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { accentAt, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { type ArtName } from '@/shared/art';
+import { colors, radii, spacing, typography } from '@/shared/theme';
 
-import { PopIcon, type PopIconName } from './PopIcon';
+import { Art } from './Art';
 import { PopSurface } from './PopSurface';
 
 // `Tabs.tabBar` receives BottomTabBarProps; derive it without a subpath import
 // (expo-router does not re-export the type from its top-level entry point).
 type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
 
-const TABS: Record<string, { icon: PopIconName; label: string }> = {
-  index: { icon: 'home', label: 'Home' },
-  puzzles: { icon: 'explore', label: 'Puzzles' },
-  library: { icon: 'library', label: 'Library' },
-  profile: { icon: 'profile', label: 'Profile' },
+/**
+ * Tab identity, art, and the tint its label takes when focused.
+ *
+ * The route names are unchanged from Chunky Pop — this is a re-skin, so
+ * Puzzles/Library keep their names rather than becoming the mockup's
+ * Collection/Rewards, which would have meant new screens.
+ *
+ * `change-avatar` (the bear head) rather than `profile` (a generic orange
+ * silhouette) for the Profile tab, matching the mockup and the rest of the set.
+ */
+const TABS: Record<string, { art: ArtName; label: string; tint: string }> = {
+  index: { art: 'home', label: 'Home', tint: colors.headingGreen },
+  puzzles: { art: 'category', label: 'Puzzles', tint: colors.sky },
+  library: { art: 'album', label: 'Library', tint: colors.apricot },
+  profile: { art: 'change-avatar', label: 'Profile', tint: colors.berry },
 };
 
-/** Chunky Pop bottom navigation used as the custom `tabBar` for expo-router Tabs. */
+/** Puzzle Journey bottom navigation, used as the custom `tabBar` for Tabs. */
 export function PopTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ paddingBottom: Math.max(insets.bottom, spacing.sm) }}>
-      <PopSurface radius={radii.lg} offset={shadow.default} contentStyle={styles.bar}>
+    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+      <PopSurface radius={radii.xl} elevation="raised" contentStyle={styles.bar}>
         {state.routes.map((route, index) => {
           const meta = TABS[route.name];
           if (!meta) {
             return null;
           }
           const focused = state.index === index;
-          const accent = accentAt(index);
 
           const onPress = () => {
             const event = navigation.emit({
@@ -54,14 +64,12 @@ export function PopTabBar({ state, navigation }: TabBarProps) {
               onPress={onPress}
               style={styles.item}
             >
-              {focused ? <View style={[styles.pill, { backgroundColor: `${accent}33` }]} /> : null}
-              <PopIcon
-                name={meta.icon}
-                size={22}
-                color={focused ? accent : colors.inkMuted}
-                weight={focused ? 'fill' : 'regular'}
-              />
-              <Text style={[styles.label, { color: focused ? accent : colors.inkMuted }]}>
+              {/* The art is full-colour, so focus cannot be shown by tinting
+                  it. A soft pill behind the icon carries the state instead, and
+                  unfocused tabs dim their art rather than recolouring it. */}
+              {focused ? <View style={styles.pill} /> : null}
+              <Art name={meta.art} size={26} style={focused ? undefined : styles.dimmed} />
+              <Text style={[styles.label, { color: focused ? meta.tint : colors.inkMuted }]}>
                 {meta.label}
               </Text>
             </Pressable>
@@ -73,6 +81,7 @@ export function PopTabBar({ state, navigation }: TabBarProps) {
 }
 
 const styles = StyleSheet.create({
+  wrap: { paddingHorizontal: spacing.sm },
   bar: {
     flexDirection: 'row',
     paddingTop: spacing.sm,
@@ -85,14 +94,16 @@ const styles = StyleSheet.create({
   },
   pill: {
     position: 'absolute',
-    top: -4,
-    width: 40,
-    height: 40,
+    top: -2,
+    width: 44,
+    height: 34,
     borderRadius: radii.pill,
+    backgroundColor: 'rgba(123, 193, 22, 0.18)',
   },
+  dimmed: { opacity: 0.45 },
   label: {
     ...typography.caption,
     fontSize: 11,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 });

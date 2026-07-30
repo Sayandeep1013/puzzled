@@ -598,10 +598,10 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                   />
                 </SettingRow>
               </View>
-              <PopButton label="Resume" tone="grape" onPress={() => setOverlay('none')} />
+              <PopButton label="Resume" tone="grass" onPress={() => setOverlay('none')} />
               <PopButton
                 label="Restart"
-                tone="sunshine"
+                tone="honey"
                 onPress={() => {
                   setOverlay('none');
                   onReset();
@@ -623,14 +623,14 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
           <PopSheet title="Hint" onDismiss={() => setOverlay('none')}>
             <View style={styles.sheetBody}>
               <View style={styles.hintHero}>
-                <PopIcon name="hint" size={64} color={colors.sunshine} />
+                <PopIcon name="hint" size={64} color={colors.honey} />
               </View>
               <Text style={styles.hintBalance}>
                 {hintCount} {hintCount === 1 ? 'hint' : 'hints'} available
               </Text>
               <PopButton
                 label="Show me one — 1 hint"
-                tone="grape"
+                tone="grass"
                 disabled={hintCount <= 0}
                 onPress={onSpendHint}
               />
@@ -643,11 +643,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                   setOverlay('none');
                 }}
               />
-              <PopButton
-                label="Preview image"
-                tone="sunshine"
-                onPress={() => setOverlay('preview')}
-              />
+              <PopButton label="Preview image" tone="honey" onPress={() => setOverlay('preview')} />
             </View>
           </PopSheet>
         ) : null}
@@ -655,11 +651,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         {overlay === 'preview' ? (
           <PopSheet title="Preview" onDismiss={() => setOverlay('none')}>
             <View style={styles.sheetBody}>
-              <PopSurface
-                fill={colors.sunshine}
-                radius={radii.md}
-                contentStyle={styles.previewFrame}
-              >
+              <PopSurface fill={colors.honey} radius={radii.md} contentStyle={styles.previewFrame}>
                 <View style={styles.previewImageWrap}>
                   <RNImage
                     source={
@@ -672,7 +664,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                   />
                 </View>
               </PopSurface>
-              <PopButton label="Close" tone="grape" onPress={() => setOverlay('none')} />
+              <PopButton label="Close" tone="grass" onPress={() => setOverlay('none')} />
             </View>
           </PopSheet>
         ) : null}
@@ -706,7 +698,7 @@ function ToolButton({
   /** Live count shown as a small corner badge, e.g. the hint balance. */
   badge?: number;
 }) {
-  const tint = disabled ? colors.inkMuted : active ? colors.tangerine : colors.ink;
+  const tint = disabled ? colors.inkMuted : active ? colors.apricot : colors.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -724,7 +716,7 @@ function ToolButton({
           </View>
         ) : null}
       </View>
-      <Text style={[styles.toolLabel, active && { color: colors.tangerine }]}>{label}</Text>
+      <Text style={[styles.toolLabel, active && { color: colors.apricot }]}>{label}</Text>
     </Pressable>
   );
 }

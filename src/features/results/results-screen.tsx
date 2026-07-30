@@ -33,7 +33,7 @@ export function ResultsScreen({
         <View style={styles.body}>
           <Text style={styles.title}>Well Done!</Text>
 
-          <PopSurface fill={colors.sunshine} radius={30} style={styles.trophyFrame}>
+          <PopSurface fill={colors.honey} radius={30} style={styles.trophyFrame}>
             <View style={styles.trophyInner}>
               <PopIcon name="trophy" size={110} color={colors.ink} />
             </View>
@@ -42,7 +42,7 @@ export function ResultsScreen({
           {/* Mint is light enough for direct ink text — matches
               `home-screen.tsx`'s `progressCard` and `daily-screen.tsx`'s
               `streakFrame`, so no nested white body is needed here. */}
-          <PopSurface fill={colors.mint} radius={radii.md} style={styles.banner}>
+          <PopSurface fill={colors.grass} radius={radii.md} style={styles.banner}>
             <Text style={styles.bannerText}>You completed the puzzle!</Text>
           </PopSurface>
 
@@ -71,7 +71,7 @@ export function ResultsScreen({
         <View style={styles.footer}>
           <PopButton
             label="Play Again"
-            tone="sunshine"
+            tone="honey"
             onPress={() =>
               router.replace({
                 pathname: '/game/[puzzleId]',
@@ -79,7 +79,7 @@ export function ResultsScreen({
               })
             }
           />
-          <PopButton label="Back Home" tone="grape" onPress={() => router.dismissAll()} />
+          <PopButton label="Back Home" tone="grass" onPress={() => router.dismissAll()} />
         </View>
       </SafeAreaView>
     </View>

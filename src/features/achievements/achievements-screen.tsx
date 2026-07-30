@@ -19,18 +19,18 @@ import { PopHeader, PopIcon, PopProgress, PopSurface, type PopIconName } from '@
  * boundary that maps both onto real Chunky Pop values.
  */
 const TONE_COLOR: Record<AchievementState['tone'], string> = {
-  mint: colors.mint,
-  grape: colors.grape,
-  bubblegum: colors.bubblegum,
-  sunshine: colors.sunshine,
+  grass: colors.grass,
+  berry: colors.berry,
+  blossom: colors.blossom,
+  honey: colors.honey,
 };
 
 /** Text/icon colour that stays readable on each tone's fill (mirrors `PopButton`'s contrast table). */
 const ON_TONE: Record<AchievementState['tone'], string> = {
-  mint: colors.ink,
-  grape: colors.onFill,
-  bubblegum: colors.onFill,
-  sunshine: colors.ink,
+  grass: colors.ink,
+  berry: colors.onFill,
+  blossom: colors.onFill,
+  honey: colors.ink,
 };
 
 /** Every icon name `deriveAchievements` currently emits, confirmed against `PopIcon`'s map. */
@@ -114,7 +114,7 @@ function AchievementRow({ achievement }: { achievement: AchievementState }) {
         </View>
         <View style={styles.trailing}>
           {achievement.unlocked ? (
-            <PopIcon name="check" size={22} color={colors.mint} />
+            <PopIcon name="check" size={22} color={colors.grass} />
           ) : (
             <Text style={styles.count}>
               {achievement.current}/{achievement.goal}

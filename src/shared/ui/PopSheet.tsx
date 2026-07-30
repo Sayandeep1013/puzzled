@@ -2,7 +2,7 @@ import { type ReactNode, useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { colors, radii, shadow, spacing, springs, typography } from '@/shared/theme';
+import { colors, radii, spacing, springs, typography } from '@/shared/theme';
 
 import { PopSurface } from './PopSurface';
 
@@ -36,8 +36,13 @@ export function PopSheet({ children, onDismiss, title }: PopSheetProps) {
         onPress={onDismiss}
       />
       <View style={styles.center} pointerEvents="box-none">
-        <Animated.View style={cardStyle}>
-          <PopSurface radius={radii.lg} offset={shadow.hero} contentStyle={styles.content}>
+        <Animated.View style={[styles.card, cardStyle]}>
+          <PopSurface
+            radius={radii.xl}
+            elevation="raised"
+            style={styles.sheet}
+            contentStyle={styles.content}
+          >
             {title ? <Text style={styles.title}>{title}</Text> : null}
             {children}
           </PopSurface>
@@ -48,8 +53,20 @@ export function PopSheet({ children, onDismiss, title }: PopSheetProps) {
 }
 
 const styles = StyleSheet.create({
-  scrim: { backgroundColor: 'rgba(20,20,20,0.55)' },
+  // Warm brown scrim rather than neutral black — a grey veil over this palette
+  // reads as the screen having gone flat.
+  scrim: { backgroundColor: 'rgba(58, 43, 26, 0.5)' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
-  content: { padding: spacing.lg, maxWidth: 360, width: '100%' },
-  title: { ...typography.title, color: colors.ink, textAlign: 'center', marginBottom: spacing.md },
+  // The width constraint belongs on the animated wrapper and the surface box,
+  // not on the inner face: `width: '100%'` on the face would resolve against a
+  // wrapper that is itself sizing to its content.
+  card: { width: '100%', maxWidth: 360 },
+  sheet: { width: '100%' },
+  content: { padding: spacing.lg },
+  title: {
+    ...typography.title,
+    color: colors.headingGreen,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
 });

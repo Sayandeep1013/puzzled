@@ -1,16 +1,17 @@
 import { type ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { border, colors, radii, shadow } from '@/shared/theme';
+import { colors, radii, shadow } from '@/shared/theme';
+
+export type SurfaceElevation = 'card' | 'raised' | 'pressed' | 'none';
 
 interface PopSurfaceProps {
   children?: ReactNode;
   /** Face colour. */
   fill?: string;
   radius?: number;
-  /** Hard shadow distance in points. Blur is always zero. */
-  offset?: number;
-  borderWidth?: number;
+  /** Which shadow token to wear. `none` is for surfaces nested inside another. */
+  elevation?: SurfaceElevation;
   /** Style for the outer wrapper — use for margins, width, flex. */
   style?: StyleProp<ViewStyle>;
   /** Style for the face — use for padding, alignment. */
@@ -19,38 +20,38 @@ interface PopSurfaceProps {
 }
 
 /**
- * The Chunky Pop card primitive: an ink-outlined face sitting on a hard,
- * unblurred ink shadow.
+ * The Puzzle Journey card primitive: a soft-shadowed, un-outlined rounded face.
  *
- * The shadow is a sibling view rather than a platform shadow because Android's
- * `elevation` always blurs and iOS's `shadowRadius: 0` has no Android
- * equivalent. The wrapper pads right and bottom by `offset` so the shadow is
- * inside this component's layout box and never overlaps a sibling.
+ * Unlike the Chunky Pop version this replaces, there is no sibling shadow view
+ * and no border. `boxShadow` (RN 0.86) draws a real blurred shadow on both
+ * platforms, so the shadow no longer occupies layout space — which is why this
+ * component no longer pads its wrapper.
+ *
+ * The shadow and the fill live on the wrapper while `overflow: hidden` lives on
+ * the inner face. Putting both on one node risks the clip eating the shadow,
+ * and costs nothing to separate.
  */
 export function PopSurface({
   children,
   fill = colors.surface,
   radius = radii.md,
-  offset = shadow.default,
-  borderWidth = border.standard,
+  elevation = 'card',
   style,
   contentStyle,
   testID,
 }: PopSurfaceProps) {
   return (
-    <View testID={testID} style={[{ paddingRight: offset, paddingBottom: offset }, style]}>
-      <View
-        testID={testID ? `${testID}-shadow` : undefined}
-        pointerEvents="none"
-        style={[styles.shade, { left: offset, top: offset, borderRadius: radius }]}
-      />
+    <View
+      testID={testID}
+      style={[
+        { backgroundColor: fill, borderRadius: radius },
+        elevation !== 'none' && { boxShadow: shadow[elevation] },
+        style,
+      ]}
+    >
       <View
         testID={testID ? `${testID}-face` : undefined}
-        style={[
-          styles.face,
-          { backgroundColor: fill, borderRadius: radius, borderWidth },
-          contentStyle,
-        ]}
+        style={[styles.face, { borderRadius: radius }, contentStyle]}
       >
         {children}
       </View>
@@ -59,14 +60,5 @@ export function PopSurface({
 }
 
 const styles = StyleSheet.create({
-  shade: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.ink,
-  },
-  face: {
-    borderColor: colors.ink,
-    overflow: 'hidden',
-  },
+  face: { overflow: 'hidden' },
 });
