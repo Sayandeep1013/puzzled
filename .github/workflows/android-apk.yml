@@ -36,6 +36,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Needed to publish the APK as a release below.
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -105,3 +108,24 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
           retention-days: 14
+
+      # Also publish as a prerelease. Actions *artifacts* need authentication to
+      # download even from a public repo, which makes them awkward to fetch from a
+      # script or to hand to a tester. Release assets on a public repo are plain
+      # anonymous HTTPS, so `curl`/`adb install` can pull a build directly.
+      #
+      # Marked prerelease and named by run number so these never look like real
+      # versioned releases of the app.
+      - name: Publish APK as a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ci-${{ github.run_number }}
+        run: |
+          cp "${{ steps.apk.outputs.path }}" "puzzled-${TAG}.apk"
+          gh release create "$TAG" "puzzled-${TAG}.apk" \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            --title "CI build ${{ github.run_number }} (${{ github.ref_name }})" \
+            --notes "Debug-signed APK from ${{ github.sha }}.
+          Uninstall any existing build first — the debug key differs from the EAS one:
+          \`adb uninstall com.puzzled.app\`"
