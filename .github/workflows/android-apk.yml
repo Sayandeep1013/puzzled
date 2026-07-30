@@ -15,8 +15,8 @@ on:
       variant:
         description: Gradle variant to assemble
         type: choice
-        default: debug
-        options: [debug, release]
+        default: release
+        options: [release, debug]
   # `design/**` is included because that is where the work happens — this project
   # keeps each theme direction on its own long-lived design branch and merges to
   # main only once approved. Without it, nothing could be built until merge, and
@@ -85,9 +85,21 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/**/*.gradle*') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      # Release, not debug. `assembleDebug` produces a *development* build: it does
+      # not embed the JS bundle and it boots expo-dev-client's launcher, so the APK
+      # only runs while a Metro server is reachable — standalone it just sits
+      # retrying `ws://localhost:8081`. Release embeds the Hermes bundle and skips
+      # the dev launcher.
+      #
+      # This needs no secrets: Expo's Android template signs `release` with the
+      # debug signing config until a real keystore is configured
+      # (docs/android-release-signing.md).
+      #
+      # `inputs.variant` is empty on a push trigger, so the fallback here is what
+      # actually decides — it must be Release, not Debug.
       - name: Assemble APK
         working-directory: android
-        run: ./gradlew assemble${{ inputs.variant == 'release' && 'Release' || 'Debug' }} --no-daemon
+        run: ./gradlew assemble${{ inputs.variant == 'debug' && 'Debug' || 'Release' }} --no-daemon
 
       # Gradle's output path differs per variant, so resolve it rather than
       # hardcoding one and silently uploading nothing.

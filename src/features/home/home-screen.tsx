@@ -12,9 +12,9 @@ import { Art, PopButton, PopSurface, WordmarkTitle, useTabBarSpace } from '@/sha
 const HOME_BACKGROUND = require('../../../assets/backgrounds/home.png');
 
 /**
- * Bear size, in points. Mirrors `BEAR_WIDTH_FRACTION` in
- * `scripts/build-splash.mjs` (62% of a ~411pt screen), so the splash bear and this
- * one are the same size and the launch does not visibly re-draw the mascot.
+ * Bear size, in points. Kept equal to `imageWidth` on the splash screen in
+ * `app.json`, so the mascot is the same size before and after the app loads and
+ * does not visibly re-draw on launch.
  */
 const MASCOT_SIZE = 254;
 
@@ -94,11 +94,7 @@ export function HomeScreen() {
           <WordmarkTitle />
 
           {/* The mascot absorbs the slack between logo and actions, so the
-              layout holds on both short and tall screens.
-              `MASCOT_SIZE` is kept in step with `scripts/build-splash.mjs`, which
-              composites the same bear onto the same background at the same place —
-              that is what makes the splash hand over to this screen without the
-              bear appearing to jump. */}
+              layout holds on both short and tall screens. */}
           <View style={styles.mascotWrap}>
             <Art name="bear" size={MASCOT_SIZE} />
           </View>

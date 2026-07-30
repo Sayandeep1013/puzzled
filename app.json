@@ -41,9 +41,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#8AE3F5",
-          "image": "./assets/images/splash.png",
-          "resizeMode": "cover",
-          "enableFullScreenImage": true
+          "image": "./assets/images/splash-bear.png",
+          "imageWidth": 254
         }
       ],
       "expo-sqlite",
