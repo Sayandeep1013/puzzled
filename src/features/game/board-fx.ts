@@ -84,19 +84,36 @@ export const FX = {
   },
 
   /**
-   * Per-piece emboss. Depth is derived from each piece's silhouette rather than
-   * baked into artwork, so bundled puzzles and imported photos light identically
-   * and no per-puzzle assets are ever needed.
+   * Piece depth, and it is **shadow**, not light.
    *
-   * Strengthened after device testing: at 0.38/0.32 alpha over a 2px offset the
-   * effect was technically present but too faint to read as depth. Wider rims,
-   * higher contrast, and a tighter blur make the chamfer legible.
+   * The first attempt rimmed every piece in bright white, which does read as 3D
+   * but as a glow rather than as a physical tile. Studying the mockup at 8x, its
+   * pieces have no light rim at all: they cast a soft shadow down and slightly
+   * right, and carry a thin *darker* edge where the artwork ends.
+   *
+   * The mockup also treats the two piece states differently, which the first
+   * attempt did not:
+   *
+   * - **Loose, tray and lifted pieces** are objects resting above a surface, so
+   *   they get the drop shadow and the dark edge.
+   * - **Locked pieces** are part of the finished picture, so they get only a
+   *   hairline seam. Embossing them made the assembled image look tiled.
+   *
+   * Still fully procedural — the shadow follows the silhouette the engine already
+   * computes, so an imported photo behaves exactly like bundled art and no
+   * per-puzzle assets are needed.
    */
-  bevel: {
-    light: 'rgba(255, 255, 255, 0.85)',
-    shade: 'rgba(40, 28, 14, 0.6)',
-    offset: 4,
-    blur: 2.5,
+  depth: {
+    /** Drop shadow under a raised piece. */
+    shadowColor: 'rgba(46, 32, 16, 0.5)',
+    shadowDy: 3,
+    shadowBlur: 5,
+    /** Thin darker edge at the silhouette boundary, in place of a white rim. */
+    edgeColor: 'rgba(52, 38, 20, 0.34)',
+    edgeWidth: 1.5,
+    /** Barely-there seam between locked pieces, so the picture reads continuous. */
+    seamColor: 'rgba(23, 33, 33, 0.1)',
+    seamWidth: 1,
   },
 
   /**
@@ -110,14 +127,22 @@ export const FX = {
   pieceCornerRadius: 6,
 
   /**
-   * Outline on a piece resting unlocked on the board.
+   * Tray geometry.
    *
-   * Was `colors.apricot` at 2px — a hard orange ring that, with free placement,
-   * appeared on most drops. It still has to say "this one is not locked yet", so
-   * it stays, but as a faint green hairline rather than a warning colour.
+   * Two rows, four columns visible. One row of larger pieces left a fourth piece
+   * permanently sliced by the screen edge and wasted the space below the strip,
+   * which pushed the toolbar unnaturally high.
+   *
+   * Columns fill top-to-bottom then rightward, so scrolling right reveals whole
+   * new columns rather than shuffling the existing ones.
    */
-  looseOutline: {
-    color: 'rgba(101, 158, 18, 0.45)',
-    strokeWidth: 1.25,
+  tray: {
+    rows: 2,
+    /** Columns fully visible at once — the piece size follows from this. */
+    visibleColumns: 4,
+    /** Gap between the piece grid and the scroll slider, so they never touch. */
+    sliderGap: 12,
+    /** Height of the slider's track and pill. */
+    sliderHeight: 10,
   },
 } as const;

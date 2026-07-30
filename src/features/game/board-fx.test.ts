@@ -34,23 +34,29 @@ describe('FX tuning', () => {
     });
   });
 
-  describe('bevel', () => {
-    it('lights from the top-left and shades the opposite corner', () => {
-      // A single offset drives both rims in opposite directions, so one positive
-      // number is all that keeps the emboss physically consistent.
-      expect(FX.bevel.offset).toBeGreaterThan(0);
-      expect(FX.bevel.blur).toBeGreaterThan(0);
+  describe('depth', () => {
+    const luminance = (rgba: string) => {
+      const [r, g, b] = rgba.match(/\d+/g)!.slice(0, 3).map(Number);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+
+    it('casts a shadow downward rather than rimming pieces in light', () => {
+      // The first attempt rimmed pieces in near-white, which read as a glow. The
+      // mockup has no light rim at all — it drops a shadow beneath each piece.
+      expect(FX.depth.shadowDy).toBeGreaterThan(0);
+      expect(FX.depth.shadowBlur).toBeGreaterThan(0);
+      // Dark, not light: the guard that stops a white rim coming back.
+      expect(luminance(FX.depth.shadowColor)).toBeLessThan(128);
+      expect(luminance(FX.depth.edgeColor)).toBeLessThan(128);
     });
 
-    it('keeps rims strong enough to read as depth but short of opaque', () => {
-      // The first pass used 0.38/0.32, which was technically an emboss but too
-      // faint to see on a device. The floor here is what stops it drifting back;
-      // the ceiling keeps the artwork visible underneath.
-      for (const value of [FX.bevel.light, FX.bevel.shade]) {
-        const alpha = Number(value.match(/,\s*([\d.]+)\)$/)?.[1]);
-        expect(alpha).toBeGreaterThanOrEqual(0.5);
-        expect(alpha).toBeLessThan(1);
-      }
+    it('gives locked pieces a fainter seam than raised pieces get an edge', () => {
+      // Locked pieces are part of the finished picture; embossing them made the
+      // assembled image look tiled.
+      const edgeAlpha = Number(FX.depth.edgeColor.match(/,\s*([\d.]+)\)$/)?.[1]);
+      const seamAlpha = Number(FX.depth.seamColor.match(/,\s*([\d.]+)\)$/)?.[1]);
+      expect(seamAlpha).toBeLessThan(edgeAlpha);
+      expect(FX.depth.seamWidth).toBeLessThanOrEqual(FX.depth.edgeWidth);
     });
   });
 
@@ -60,17 +66,19 @@ describe('FX tuning', () => {
     });
   });
 
-  describe('loose outline', () => {
-    it('is a faint green hairline rather than an orange ring', () => {
-      const match = FX.looseOutline.color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-      expect(match).not.toBeNull();
-      const [r, g, b] = match!.slice(1, 4).map(Number);
-      expect(g).toBeGreaterThan(r);
-      expect(g).toBeGreaterThan(b);
+  describe('tray', () => {
+    it('uses multiple rows, so the strip fills the space under the board', () => {
+      expect(FX.tray.rows).toBeGreaterThan(1);
+    });
 
-      const alpha = Number(FX.looseOutline.color.match(/,\s*([\d.]+)\)$/)?.[1]);
-      expect(alpha).toBeLessThanOrEqual(0.5);
-      expect(FX.looseOutline.strokeWidth).toBeLessThanOrEqual(1.5);
+    it('fits whole columns, so no piece is left sliced by the screen edge', () => {
+      expect(FX.tray.visibleColumns).toBeGreaterThanOrEqual(4);
+      expect(Number.isInteger(FX.tray.visibleColumns)).toBe(true);
+    });
+
+    it('keeps the slider clear of the piece grid', () => {
+      expect(FX.tray.sliderGap).toBeGreaterThan(0);
+      expect(FX.tray.sliderHeight).toBeGreaterThan(0);
     });
   });
 });

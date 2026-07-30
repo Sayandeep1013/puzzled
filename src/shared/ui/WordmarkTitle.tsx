@@ -37,12 +37,12 @@ export const LETTER_COLORS = [
 /** Degrees the outermost letters tilt; the middle stays upright. */
 const MAX_TILT = 13;
 /** Points the outermost letters drop below the centre, forming the arch. */
-const ARCH_DROP = 15;
+const ARCH_DROP = 17;
 
 export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
   const letters = [...TOP];
   const lastIndex = letters.length - 1;
-  const fontSize = 52 * scale;
+  const fontSize = 62 * scale;
 
   return (
     <View
@@ -77,8 +77,11 @@ export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
         })}
       </View>
 
-      <View style={[styles.badge, { marginTop: -6 * scale }]}>
-        <Text style={[styles.badgeText, { fontSize: 24 * scale }]}>{BOTTOM}</Text>
+      {/* Positive margin, not negative: PUZZLE and JOURNEY were cramped together.
+          The arch already drops the outer letters, so the gap is measured from
+          the lowest of them. */}
+      <View testID="wordmark-badge" style={[styles.badge, { marginTop: 10 * scale }]}>
+        <Text style={[styles.badgeText, { fontSize: 27 * scale }]}>{BOTTOM}</Text>
       </View>
     </View>
   );
@@ -91,7 +94,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-end' },
   letter: {
     fontFamily: typography.hero.fontFamily,
-    letterSpacing: 0.5,
+    // Wider: the letters previously sat almost touching, which read as a word
+    // rather than as a logo.
+    letterSpacing: 2,
     // A warm drop shadow under the colour gives the letters weight.
     textShadowColor: 'rgba(58, 43, 26, 0.35)',
     textShadowOffset: { width: 0, height: 3 },
@@ -107,8 +112,8 @@ const styles = StyleSheet.create({
     textShadowRadius: 12,
   },
   badge: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.xxl,
+    paddingVertical: 8,
     borderRadius: radii.pill,
     backgroundColor: colors.sky,
     // The mockup rings its badge in white, which separates it from the sky.
@@ -121,7 +126,7 @@ const styles = StyleSheet.create({
   badgeText: {
     fontFamily: typography.hero.fontFamily,
     color: colors.onFill,
-    letterSpacing: 4,
+    letterSpacing: 6,
     textShadowColor: 'rgba(0, 73, 143, 0.45)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 2,

@@ -2,7 +2,6 @@
  * Reanimated shared values and gesture handlers intentionally mutate `.value` and close over refs.
  */
 import {
-  BlurMask,
   Canvas,
   Circle,
   Group,
@@ -61,11 +60,23 @@ import { useBoardCamera } from './use-board-camera';
 const BOARD_PADDING = 12;
 /** Corner radius of the board face, matching `radii.lg` on the surrounding card. */
 const BOARD_RADIUS = 20;
-const TRAY_HEIGHT = 132;
 const TRAY_PAD = 12;
 const SLOT_GAP = 6;
 /** Breathing room between the fitted board and the tray strip. */
 const TRAY_GAP = 14;
+/**
+ * Slot edge, derived so exactly `visibleColumns` fit the narrowest phone width
+ * this app targets. Pieces are smaller than before on purpose: at the old size a
+ * fourth piece was always half off-screen.
+ */
+const TRAY_SLOT = 92;
+/** Tray strip height: two rows of slots, then a gap, then the slider. */
+const TRAY_HEIGHT =
+  TRAY_PAD * 2 +
+  FX.tray.rows * TRAY_SLOT +
+  (FX.tray.rows - 1) * SLOT_GAP +
+  FX.tray.sliderGap +
+  FX.tray.sliderHeight;
 /**
  * Vertical space the tray needs below the board.
  *
@@ -76,15 +87,6 @@ export const BOARD_TRAY_RESERVE = TRAY_HEIGHT + TRAY_GAP;
 const CONFETTI_COLORS = [colors.berry, colors.honey, colors.apricot, colors.grass, colors.blossom];
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
-/** Travel before a tray drag's direction is judged, px. */
-const TRAY_INTENT_PX = 6;
-/**
- * How much more horizontal than vertical a tray drag must be to scroll instead of
- * lift. 1.0 means any drag that is more sideways than vertical scrolls — biased
- * toward scrolling because lifting is also reachable by simply dragging upward,
- * which is the natural motion for moving a piece onto the board above.
- */
-const TRAY_INTENT_RATIO = 1;
 
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
@@ -142,51 +144,73 @@ function roundPieceCorners(path: SkPath, bounds: PieceLocalPath['bounds']): SkPa
 }
 
 /**
- * Clip the shared source image to a piece silhouette, then emboss it.
- * Scale-agnostic (parent Group scales), so the bevel stays proportional in the
- * tray as well as on the board.
+ * Clip the shared source image to a piece silhouette and give it depth.
+ * Scale-agnostic (parent Group scales), so it stays proportional in the tray as
+ * well as on the board.
  *
- * The depth is two offset strokes of the piece's own outline, drawn inside the
- * clip so only the interior half of each survives: a light rim toward the light
- * (top-left) and a shaded rim opposite. Because it derives from the silhouette
- * the engine already computes, a photo imported seconds ago gets exactly the
- * same depth as bundled art — no per-puzzle assets, which would otherwise mean
- * one image per piece per grid size and would make gallery imports impossible.
+ * Depth is a **drop shadow plus a darker edge**, never a light rim. An earlier
+ * version rimmed each piece in near-white, which does read as 3D but as a glow
+ * rather than a physical tile; the mockup at 8x has no light rim anywhere.
  *
- * Every piece type routes through here, so board, tray, loose and floating
- * pieces all pick the effect up from one place.
+ * `raised` splits the two states the mockup treats differently: tray, loose and
+ * lifted pieces are objects above a surface and cast a shadow, while locked
+ * pieces belong to the finished picture and take only a hairline seam.
+ *
+ * Because it derives from the silhouette the engine already computes, a photo
+ * imported seconds ago behaves exactly like bundled art — no per-puzzle assets,
+ * which would otherwise mean one image per piece per grid size and would make
+ * gallery imports impossible.
+ *
+ * Every piece type routes through here, so the treatment lives in one place.
  */
 function PieceFill({
   prepared,
   image,
   imageScale,
+  raised = false,
 }: {
   prepared: PreparedPiece;
   image: SkImage;
   imageScale: number;
+  /**
+   * True for pieces resting above a surface — tray, loose, and the lifted piece.
+   * False for locked pieces, which are part of the finished picture and take only
+   * a hairline seam.
+   */
+  raised?: boolean;
 }) {
   const { geometry, skPath } = prepared;
-  const bevel = FX.bevel;
-  return (
-    <Group clip={skPath}>
-      <Image
-        image={image}
-        x={-geometry.sourceRect.x * imageScale}
-        y={-geometry.sourceRect.y * imageScale}
-        width={image.width() * imageScale}
-        height={image.height() * imageScale}
-      />
+  const depth = FX.depth;
 
-      <Group transform={[{ translateX: -bevel.offset }, { translateY: -bevel.offset }]}>
-        <Path path={skPath} style="stroke" strokeWidth={bevel.offset * 2} color={bevel.light}>
-          <BlurMask blur={bevel.blur} style="normal" />
+  return (
+    <Group>
+      {/* Drop shadow, drawn from the silhouette *behind* the artwork. The fill is
+          hidden by the image on top; only the blurred, offset spill is visible. */}
+      {raised ? (
+        <Path path={skPath} color={depth.shadowColor}>
+          <Shadow dx={0} dy={depth.shadowDy} blur={depth.shadowBlur} color={depth.shadowColor} />
         </Path>
+      ) : null}
+
+      <Group clip={skPath}>
+        <Image
+          image={image}
+          x={-geometry.sourceRect.x * imageScale}
+          y={-geometry.sourceRect.y * imageScale}
+          width={image.width() * imageScale}
+          height={image.height() * imageScale}
+        />
       </Group>
 
-      <Group transform={[{ translateX: bevel.offset }, { translateY: bevel.offset }]}>
-        <Path path={skPath} style="stroke" strokeWidth={bevel.offset * 2} color={bevel.shade}>
-          <BlurMask blur={bevel.blur} style="normal" />
-        </Path>
+      {/* A darker edge, not a lighter one. Clipped to the silhouette so it reads
+          as the artwork's own boundary rather than an outline drawn around it. */}
+      <Group clip={skPath}>
+        <Path
+          path={skPath}
+          style="stroke"
+          strokeWidth={raised ? depth.edgeWidth * 2 : depth.seamWidth * 2}
+          color={raised ? depth.edgeColor : depth.seamColor}
+        />
       </Group>
     </Group>
   );
@@ -205,8 +229,9 @@ const BoardPiece = memo(function BoardPiece({
   const { solvedPosition } = prepared.geometry;
   return (
     <Group transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}>
+      {/* Not raised: a locked piece belongs to the picture, so `PieceFill` gives it
+          only a hairline seam. The extra outline that used to sit here is gone. */}
       <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={1} color="rgba(23,33,33,0.12)" />
     </Group>
   );
 });
@@ -263,15 +288,17 @@ function JigglingBoardPiece({
   return (
     <Group transform={transform}>
       <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={1} color="rgba(23,33,33,0.12)" />
     </Group>
   );
 }
 
 /**
  * An unplaced piece resting directly on the board — a miss that stayed where it
- * landed instead of returning to the tray. Same silhouette as `BoardPiece`, but
- * outlined with the tray's accent stroke to read as unlocked.
+ * landed instead of returning to the tray.
+ *
+ * Raised rather than outlined: its drop shadow is what says "not locked yet". The
+ * coloured ring it used to carry was the persistent orange the board was covered
+ * in, since with free placement most drops miss.
  */
 const LoosePiece = memo(function LoosePiece({
   prepared,
@@ -291,13 +318,7 @@ const LoosePiece = memo(function LoosePiece({
   }
   return (
     <Group transform={[{ translateX: position.x }, { translateY: position.y }]}>
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path
-        path={prepared.skPath}
-        style="stroke"
-        strokeWidth={FX.looseOutline.strokeWidth}
-        color={FX.looseOutline.color}
-      />
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} raised />
     </Group>
   );
 });
@@ -335,15 +356,13 @@ const TrayPiece = memo(function TrayPiece({
         { translateY: -prepared.cy },
       ]}
     >
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path
-        path={prepared.skPath}
-        style="stroke"
-        strokeWidth={highlight ? 3 : 1.6}
-        // The Edges helper is an explicit opt-in, so it may be assertive — but in
-        // sky blue rather than orange, so no orange remains anywhere on the board.
-        color={highlight ? colors.sky : 'rgba(23,33,33,0.22)'}
-      />
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} raised />
+      {/* The Edges helper is an explicit opt-in, so it alone may draw a coloured
+          ring — in sky blue, so no orange remains anywhere on the board. Pieces
+          otherwise rely on the drop shadow from `PieceFill`. */}
+      {highlight ? (
+        <Path path={prepared.skPath} style="stroke" strokeWidth={3} color={colors.sky} />
+      ) : null}
     </Group>
   );
 });
@@ -389,8 +408,10 @@ function FloatingPiece({
 
   return (
     <Group transform={transform}>
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={2.4} color="rgba(232,110,69,0.95)" />
+      {/* Raised, and nothing more. The 2.4px orange ring that used to be hardcoded
+          here is the orange that survived the palette migration — a raw `rgba()`
+          that a search for `colors.apricot` could never find. */}
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} raised />
     </Group>
   );
 }
@@ -536,11 +557,6 @@ export function PuzzleBoard({
   /** `FX.liftScale` while held; springs to 1 via `FX.settle` on release. */
   const scaleBoost = useSharedValue<number>(FX.liftScale);
   const trayScroll = useSharedValue(0);
-  /**
-   * 0 until a tray drag's direction has been decided, then 1. Guards the
-   * grab→scroll handoff so it can only fire once per gesture.
-   */
-  const intentLocked = useSharedValue(0);
   /**
    * 0 idle · 1 dragging a piece · 2 scrolling the tray · 3 panning the
    * camera (a one-finger touch on empty board space). Decided instantly in
@@ -707,9 +723,11 @@ export function PuzzleBoard({
     /** Where the tray starts — also the board/tray gesture and clip boundary. */
     const boardZoneH = Math.max(blockTop + fittedH + TRAY_GAP, 1);
 
-    const slotInner = TRAY_HEIGHT - TRAY_PAD * 2;
+    // Slots are a fixed size so exactly `visibleColumns` fit; the piece scales to
+    // the slot rather than the slot growing with the tray height.
+    const slotInner = TRAY_SLOT;
     const pieceExtent = cellSize * (1 + 2 * TAB_SIZE_RATIO);
-    const thumbScale = (slotInner * 0.88) / pieceExtent;
+    const thumbScale = (slotInner * 0.86) / pieceExtent;
     const slotW = slotInner + SLOT_GAP;
 
     return {
@@ -858,8 +876,23 @@ export function PuzzleBoard({
   const gesture = useMemo(() => {
     const { boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, vw } = layout;
     const count = trayIds.length;
-    const contentW = count * slotW + TRAY_PAD * 2;
+    // Column-major over `rows`, matching how the tray renders.
+    const columns = Math.ceil(count / FX.tray.rows);
+    const contentW = columns * slotW + TRAY_PAD * 2;
     const minScroll = Math.min(0, vw - contentW);
+    /** Distance the slider pill can travel, used to scale slider drags. */
+    const trackW = Math.max(vw - TRAY_PAD * 2, 1);
+    const thumbW = Math.max(56, contentW > 0 ? (vw / contentW) * trackW : trackW);
+    const trackTravel = Math.max(0, trackW - thumbW);
+    /** Canvas y at which the slider band starts. */
+    const sliderTop =
+      boardZoneH +
+      TRAY_PAD +
+      FX.tray.rows * TRAY_SLOT +
+      (FX.tray.rows - 1) * SLOT_GAP +
+      FX.tray.sliderGap -
+      // A few points of slop above the pill, so it is comfortable to grab.
+      6;
     const looseBoxes = looseHitTestData;
 
     const releasePiece = (source: 0 | 1, index: number, canvasX: number, canvasY: number) => {
@@ -938,7 +971,6 @@ export function PuzzleBoard({
         mode.value = 0;
         grabSlot.value = -1;
         grabLoose.value = -1;
-        intentLocked.value = 0;
 
         // Anything outside the drawn tray strip is board, including the margin
         // below it — that margin previously counted as tray, so a drag there could
@@ -973,12 +1005,19 @@ export function PuzzleBoard({
           if (mode.value === 0) {
             mode.value = 3;
           }
+        } else if (e.y >= sliderTop) {
+          // Slider band: drag the pill to scroll. A dedicated control, because
+          // scrolling by dragging a piece sideways was confusing — you had to grab
+          // a piece you did not want in order to move the strip.
+          mode.value = 4;
         } else {
-          // Tray zone: a valid slot grabs instantly; empty slot space scrolls.
-          // A grab here can still convert to a scroll in `onChange` if the
-          // gesture resolves as horizontal.
-          const local = e.x - trayScroll.value;
-          const slot = Math.floor((local - TRAY_PAD) / slotW);
+          // Tray grid: a valid slot grabs instantly, empty slot space scrolls.
+          // Column-major, matching how the pieces are laid out.
+          const localX = e.x - trayScroll.value;
+          const column = Math.floor((localX - TRAY_PAD) / slotW);
+          const row = Math.floor((e.y - boardZoneH - TRAY_PAD) / (TRAY_SLOT + SLOT_GAP));
+          const slot =
+            row >= 0 && row < FX.tray.rows && column >= 0 ? column * FX.tray.rows + row : -1;
           if (slot >= 0 && slot < count) {
             mode.value = 1;
             grabSlot.value = slot;
@@ -994,31 +1033,6 @@ export function PuzzleBoard({
       })
       .onChange((e) => {
         'worklet';
-        // Horizontal-intent handoff: a tray grab that turns out to be a sideways
-        // swipe becomes a tray scroll and puts the piece back.
-        //
-        // The tray was always scrollable, but only from empty slot space — and a
-        // full strip leaves none, so it felt static. Resolving intent after the
-        // touch keeps Task 11's instant grab (the piece still lifts the moment
-        // you touch it) rather than reintroducing a dead zone. Nothing has been
-        // committed to the engine yet at this point, so cancelling is purely
-        // visual.
-        if (mode.value === 1 && grabSlot.value >= 0 && intentLocked.value === 0) {
-          const dx = e.translationX;
-          const dy = e.translationY;
-          if (Math.abs(dx) > TRAY_INTENT_PX || Math.abs(dy) > TRAY_INTENT_PX) {
-            intentLocked.value = 1;
-            if (Math.abs(dx) > Math.abs(dy) * TRAY_INTENT_RATIO) {
-              mode.value = 2;
-              grabSlot.value = -1;
-              scaleBoost.value = FX.liftScale;
-              tiltDeg.value = 0;
-              runOnJS(clearDragging)();
-              return;
-            }
-          }
-        }
-
         if (mode.value === 1) {
           fx.value = e.x;
           fy.value = e.y;
@@ -1029,6 +1043,16 @@ export function PuzzleBoard({
           tiltDeg.value = Math.max(-FX.maxTiltDeg, Math.min(FX.maxTiltDeg, rawTilt));
         } else if (mode.value === 2) {
           trayScroll.value = Math.min(0, Math.max(minScroll, trayScroll.value + e.changeX));
+        } else if (mode.value === 4) {
+          // Slider drag: the thumb travels the track while the strip travels its
+          // overflow, so finger movement is scaled by the ratio between them.
+          if (trackTravel > 0) {
+            const perPixel = -minScroll / trackTravel;
+            trayScroll.value = Math.min(
+              0,
+              Math.max(minScroll, trayScroll.value - e.changeX * perPixel),
+            );
+          }
         } else if (mode.value === 3) {
           camPanBy(e.changeX, e.changeY);
         }
@@ -1076,8 +1100,6 @@ export function PuzzleBoard({
     grabLoose,
     mode,
     trayScroll,
-    intentLocked,
-    clearDragging,
     camScale,
     camTx,
     camTy,
@@ -1091,15 +1113,25 @@ export function PuzzleBoard({
     { translateY: layout.boardZoneH },
   ]);
 
-  // ---- Tray scroll indicator geometry ----
-  const trayContentW = trayIds.length * layout.slotW + TRAY_PAD * 2;
+  // ---- Tray slider geometry ----
+  /** Columns needed for every tray piece, filling top-to-bottom then rightward. */
+  const trayColumns = Math.ceil(trayIds.length / FX.tray.rows);
+  const trayContentW = trayColumns * layout.slotW + TRAY_PAD * 2;
   const trayTrackW = Math.max(layout.vw - TRAY_PAD * 2, 1);
   /** How far the strip can scroll; 0 when everything already fits. */
   const trayOverflow = Math.max(0, trayContentW - layout.vw);
+  /** Wide enough to be an obvious drag target, not a hairline indicator. */
   const trayThumbW = Math.max(
-    24,
+    56,
     trayContentW > 0 ? (layout.vw / trayContentW) * trayTrackW : trayTrackW,
   );
+  /** Top of the slider band, sitting `sliderGap` below the piece rows. */
+  const sliderY =
+    layout.boardZoneH +
+    TRAY_PAD +
+    FX.tray.rows * TRAY_SLOT +
+    (FX.tray.rows - 1) * SLOT_GAP +
+    FX.tray.sliderGap;
   const trayThumbX = useDerivedValue(() => {
     if (trayOverflow <= 0) {
       return TRAY_PAD;
@@ -1246,45 +1278,53 @@ export function PuzzleBoard({
               </Group>
             </Group>
 
-            {/* Scroll indicator. Present only when the strip overflows, so its
-                absence is itself the answer to "can this scroll?" — and its
-                movement confirms a drag is scrolling rather than lifting. */}
+            {/* Draggable slider, separated from the piece grid by `sliderGap` so
+                the two never touch. A white pill on a sunken track, matching the
+                app's other controls — drag it left and right to scroll the tray.
+                Shown only when the strip actually overflows. */}
             {trayOverflow > 0 ? (
               <>
                 <RoundedRect
                   x={TRAY_PAD}
-                  y={boardZoneH + TRAY_HEIGHT - 7}
+                  y={sliderY}
                   width={Math.max(vw - TRAY_PAD * 2, 1)}
-                  height={3}
-                  r={2}
-                  color="rgba(58,43,26,0.12)"
+                  height={FX.tray.sliderHeight}
+                  r={FX.tray.sliderHeight / 2}
+                  color="rgba(58,43,26,0.16)"
                 />
                 <RoundedRect
                   x={trayThumbX}
-                  y={boardZoneH + TRAY_HEIGHT - 7}
+                  y={sliderY}
                   width={trayThumbW}
-                  height={3}
-                  r={2}
-                  color="rgba(58,43,26,0.4)"
-                />
+                  height={FX.tray.sliderHeight}
+                  r={FX.tray.sliderHeight / 2}
+                  color={colors.white}
+                >
+                  <Shadow dx={0} dy={1} blur={3} color="rgba(58,43,26,0.35)" />
+                </RoundedRect>
               </>
             ) : null}
 
-            {/* Tray zone */}
+            {/* Tray zone. Pieces fill top-to-bottom then rightward, so scrolling
+                reveals whole new columns instead of reshuffling visible ones. */}
             <Group transform={trayTransform}>
-              {trayPieces.map((piece, index) => (
-                <TrayPiece
-                  key={piece.pieceId}
-                  prepared={preparedById[piece.pieceId]}
-                  image={image}
-                  imageScale={imageScale}
-                  slotCenterX={TRAY_PAD + index * slotW + slotW / 2}
-                  slotCenterY={TRAY_HEIGHT / 2}
-                  scale={thumbScale}
-                  highlight={highlightEdges && preparedById[piece.pieceId].isEdge}
-                  hidden={piece.pieceId === draggingId}
-                />
-              ))}
+              {trayPieces.map((piece, index) => {
+                const column = Math.floor(index / FX.tray.rows);
+                const row = index % FX.tray.rows;
+                return (
+                  <TrayPiece
+                    key={piece.pieceId}
+                    prepared={preparedById[piece.pieceId]}
+                    image={image}
+                    imageScale={imageScale}
+                    slotCenterX={TRAY_PAD + column * slotW + slotW / 2}
+                    slotCenterY={TRAY_PAD + row * (TRAY_SLOT + SLOT_GAP) + TRAY_SLOT / 2}
+                    scale={thumbScale}
+                    highlight={highlightEdges && preparedById[piece.pieceId].isEdge}
+                    hidden={piece.pieceId === draggingId}
+                  />
+                );
+              })}
             </Group>
 
             {/* Floating piece (above everything) */}

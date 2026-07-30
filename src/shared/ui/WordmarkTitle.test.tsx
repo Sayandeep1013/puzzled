@@ -65,7 +65,15 @@ describe('WordmarkTitle', () => {
   it('scales both words from one prop', () => {
     const { getAllByText, getByText } = render(<WordmarkTitle scale={2} />);
     const [, p] = getAllByText('P');
-    expect(p).toHaveStyle({ fontSize: 104 });
-    expect(getByText('JOURNEY')).toHaveStyle({ fontSize: 48 });
+    expect(p).toHaveStyle({ fontSize: 124 });
+    expect(getByText('JOURNEY')).toHaveStyle({ fontSize: 54 });
+  });
+
+  it('separates PUZZLE and JOURNEY instead of overlapping them', () => {
+    // The badge used to carry a negative top margin, which pulled the two words
+    // together and made the logo look cramped.
+    const { getByTestId } = render(<WordmarkTitle />);
+    const badge = StyleSheet.flatten(getByTestId('wordmark-badge').props.style);
+    expect(badge.marginTop).toBeGreaterThan(0);
   });
 });
