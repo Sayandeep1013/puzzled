@@ -113,29 +113,54 @@ function isEdgePiece(edges: PieceEdges): boolean {
 }
 
 /**
- * Soften a piece's hard outer corners by intersecting it with a rounded
- * rectangle of its own bounds.
+ * Round only a corner piece's single outward corner, matching the board's own
+ * rounded frame.
  *
- * This rounds the *geometry*, not just the stroke, which matters because the
- * artwork is clipped to this path — a paint-level `CornerPathEffect` would round
- * the outline while leaving the image sharp underneath.
+ * The first attempt intersected every piece with a rounded rect of its bounds,
+ * which rounded all four bbox corners of every piece. That was wrong: for an
+ * interior piece those corners are interlocking joints, so softening them opened
+ * visible notches where four pieces meet. Only the four true corner pieces have a
+ * corner on the board's outer boundary, and only that one corner should soften.
  *
- * Only the four extremes of the bounding box are affected. A piece's interlocking
- * tabs sit mid-edge, never at a corner, so they are untouched.
+ * The mask is built corner by corner with `arcToTangent` rather than as a rounded
+ * rect, because a rounded rect cannot round one corner and leave three square.
  *
- * Border pieces are why this is needed: their straight outer edges meet at 90°,
- * which looked wrong in the tray against a UI with no other sharp corner. Once
- * placed they *appeared* to round only because the board's own rounded clip cut
- * them, which is why the sharpness seemed to vanish on placement.
+ * This rounds the *geometry*, not the stroke, which matters because the artwork is
+ * clipped to this path — a paint-level corner effect would round the outline and
+ * leave the image square underneath.
  */
-function roundPieceCorners(path: SkPath, bounds: PieceLocalPath['bounds']): SkPath {
+function roundPieceCorners(
+  path: SkPath,
+  bounds: PieceLocalPath['bounds'],
+  edges: PieceEdges,
+): SkPath {
   const r = FX.pieceCornerRadius;
-  if (r <= 0) {
+  // A flat edge (0) means that side sits on the board's boundary, so a corner is
+  // outward only where two flat edges meet.
+  const topLeft = edges.top === 0 && edges.left === 0;
+  const topRight = edges.top === 0 && edges.right === 0;
+  const bottomRight = edges.bottom === 0 && edges.right === 0;
+  const bottomLeft = edges.bottom === 0 && edges.left === 0;
+
+  if (r <= 0 || !(topLeft || topRight || bottomRight || bottomLeft)) {
     return path;
   }
 
+  const { x, y, width, height } = bounds;
+  const right = x + width;
+  const bottom = y + height;
+
   const mask = Skia.Path.Make();
-  mask.addRRect(rrect(rect(bounds.x, bounds.y, bounds.width, bounds.height), r, r));
+  mask.moveTo(x + (topLeft ? r : 0), y);
+  mask.lineTo(right - (topRight ? r : 0), y);
+  if (topRight) mask.arcToTangent(right, y, right, y + r, r);
+  mask.lineTo(right, bottom - (bottomRight ? r : 0));
+  if (bottomRight) mask.arcToTangent(right, bottom, right - r, bottom, r);
+  mask.lineTo(x + (bottomLeft ? r : 0), bottom);
+  if (bottomLeft) mask.arcToTangent(x, bottom, x, bottom - r, r);
+  mask.lineTo(x, y + (topLeft ? r : 0));
+  if (topLeft) mask.arcToTangent(x, y, x + r, y, r);
+  mask.close();
 
   const rounded = path.copy();
   // `op` mutates the receiver and reports success; on failure keep the original
@@ -408,10 +433,11 @@ function FloatingPiece({
 
   return (
     <Group transform={transform}>
-      {/* Raised, and nothing more. The 2.4px orange ring that used to be hardcoded
-          here is the orange that survived the palette migration — a raw `rgba()`
-          that a search for `colors.apricot` could never find. */}
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} raised />
+      {/* No shadow while dragging. `raised` would add a blurred Skia filter that
+          re-renders every frame under the finger, which is the most expensive
+          thing on screen at exactly the moment latency is most noticeable. The
+          lift scale and tilt already communicate that the piece is held. */}
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
     </Group>
   );
 }
@@ -631,7 +657,11 @@ export function PuzzleBoard({
       map[geometry.id] = {
         geometry,
         localPath,
-        skPath: roundPieceCorners(commandsToSkPath(localPath.commands), localPath.bounds),
+        skPath: roundPieceCorners(
+          commandsToSkPath(localPath.commands),
+          localPath.bounds,
+          geometry.edges,
+        ),
         isEdge: isEdgePiece(geometry.edges),
         cx: b.x + b.width / 2,
         cy: b.y + b.height / 2,
@@ -1140,6 +1170,7 @@ export function PuzzleBoard({
     const progress = Math.min(1, Math.max(0, -trayScroll.value / trayOverflow));
     return TRAY_PAD + progress * (trayTrackW - trayThumbW);
   });
+  const trayThumbTransform = useDerivedValue(() => [{ translateX: trayThumbX.value }]);
 
   // Hold the first paint until the image is decoded, the play area is
   // measured, and the camera has framed itself — otherwise the board flashes
@@ -1194,9 +1225,20 @@ export function PuzzleBoard({
                       surface in the app. It used to be a bare `Rect` behind a
                       cream `RoundedRect` that was invisible against the equally
                       cream shell, so the board read as a hard square. */}
-                  {/* Opaque, not translucent: at 0.45 alpha over cream the fill
-                      barely differed from the shell, so the board had no visible
-                      edge for a shadow to sit against. */}
+                  {/* A cream mat around the artwork, then the play area inset
+                      inside it — the treatment the mockup uses, where the board is
+                      a framed picture rather than a bare rectangle. The mat casts
+                      the shadow; the inner face just needs to differ from it. */}
+                  <RoundedRect
+                    x={0}
+                    y={0}
+                    width={boardSize.width + BOARD_PADDING * 2}
+                    height={boardSize.height + BOARD_PADDING * 2}
+                    r={BOARD_RADIUS + BOARD_PADDING * 0.6}
+                    color={colors.surface}
+                  >
+                    <Shadow dx={0} dy={6} blur={14} color="rgba(58,43,26,0.4)" />
+                  </RoundedRect>
                   <RoundedRect
                     x={BOARD_PADDING}
                     y={BOARD_PADDING}
@@ -1204,9 +1246,8 @@ export function PuzzleBoard({
                     height={boardSize.height}
                     r={BOARD_RADIUS}
                     color="#DCE9CD"
-                  >
-                    <Shadow dx={0} dy={6} blur={14} color="rgba(58,43,26,0.42)" />
-                  </RoundedRect>
+                  />
+
                   <Group
                     clip={rrect(
                       rect(BOARD_PADDING, BOARD_PADDING, boardSize.width, boardSize.height),
@@ -1292,6 +1333,10 @@ export function PuzzleBoard({
                   r={FX.tray.sliderHeight / 2}
                   color="rgba(58,43,26,0.16)"
                 />
+                {/* The pill: white, ringed in the app's green so it reads as a
+                    control rather than a bare highlight, with three grip lines so
+                    it looks draggable. A plain white capsule gave no hint that it
+                    was the thing to grab. */}
                 <RoundedRect
                   x={trayThumbX}
                   y={sliderY}
@@ -1302,6 +1347,30 @@ export function PuzzleBoard({
                 >
                   <Shadow dx={0} dy={1} blur={3} color="rgba(58,43,26,0.35)" />
                 </RoundedRect>
+                <RoundedRect
+                  x={trayThumbX}
+                  y={sliderY}
+                  width={trayThumbW}
+                  height={FX.tray.sliderHeight}
+                  r={FX.tray.sliderHeight / 2}
+                  style="stroke"
+                  strokeWidth={1.5}
+                  color={colors.grass}
+                />
+                {/* Grip lines ride the thumb via a translated group, so only one
+                    animated value is involved rather than six derived points. */}
+                <Group transform={trayThumbTransform}>
+                  {[-5, 0, 5].map((offset) => (
+                    <Line
+                      key={offset}
+                      p1={vec(trayThumbW / 2 + offset, sliderY + 3)}
+                      p2={vec(trayThumbW / 2 + offset, sliderY + FX.tray.sliderHeight - 3)}
+                      color={colors.grass}
+                      style="stroke"
+                      strokeWidth={1.5}
+                    />
+                  ))}
+                </Group>
               </>
             ) : null}
 
