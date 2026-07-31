@@ -89,23 +89,15 @@ export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
 
 const styles = StyleSheet.create({
   /**
-   * The lockup sits on a soft bordered panel, as the mockup has it — the arched letters
-   * and the JOURNEY pill both sit *on* the panel rather than it replacing either.
+   * The lockup sits directly on whatever is behind it — no panel.
    *
-   * Translucent white rather than opaque: the meadow behind should still read through,
-   * and over a photographic background the letters had nothing holding them together.
+   * It used to carry a translucent white rounded panel with a white border, on the
+   * theory that the letters needed something holding them together over a photographic
+   * background. On the meadow it read as a frosted box pasted over the art, and the
+   * hard border cut the sky in half. The letters do not need it: each is already drawn
+   * twice, with a wide white outline copy behind that separates it from any ground.
    */
-  wrap: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-    borderRadius: radii.xl,
-    backgroundColor: 'rgba(255, 255, 255, 0.42)',
-    borderWidth: 3,
-    borderColor: 'rgba(255, 255, 255, 0.85)',
-    boxShadow: shadow.card,
-  },
+  wrap: { alignItems: 'center' },
   // `flex-end` so the arch's dropped outer letters hang below a shared top edge
   // rather than each letter centring on its own box.
   row: { flexDirection: 'row', alignItems: 'flex-end' },
