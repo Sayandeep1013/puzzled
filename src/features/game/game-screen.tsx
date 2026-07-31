@@ -21,7 +21,7 @@ import {
   dropPiece,
   expectedPieceCount,
   findGeometry,
-  isSessionCompatible,
+  isSessionRestorable,
   isSupportedGridSize,
   type GameSession,
   type GridSize,
@@ -149,7 +149,18 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
       let restored: GameSession | null = null;
       try {
         const saved = await (await getProgressRepository()).getSession(puzzle.id, gridSize);
-        if (saved && isSessionCompatible(saved, built.generated.puzzle, built.generated.pieces)) {
+        // A *completed* session is never restored onto the board. Restoring one put
+        // the player straight back on a solved puzzle, and because the completion
+        // effect fires on `session.status === 'completed'`, it immediately handed off
+        // to the results screen again — so "Play Again" bounced results → game →
+        // results and the puzzle could not be replayed at all. Every other entry
+        // point into a finished puzzle (Puzzles' "Again", a pack's or Daily's "Play
+        // again") went through this same restore and was equally stuck.
+        //
+        // This is also what made the re-credit hazard reachable: a restored completed
+        // session re-ran the completion effect on a fresh mount, where the
+        // `handedOff` ref could not prevent it.
+        if (saved && isSessionRestorable(saved, built.generated.puzzle, built.generated.pieces)) {
           restored = saved;
         }
       } catch {
@@ -248,10 +259,10 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   // On completion, hand off to the results screen once — but only after a short
   // beat so the board's celebration (confetti + success haptic) is actually seen.
   // `handedOff` prevents a same-mount double navigation/credit (e.g. a spurious
-  // re-render while `complete` is still true), but it is a per-mount ref and
-  // resets on remount — it CANNOT prevent a re-credit across "Play Again"
-  // (results screen → router.replace back into a fresh GameScreen mount, which
-  // restores the same completed session and fires this effect again). The
+  // re-render while `complete` is still true). It is a per-mount ref, so it could
+  // not have stopped a re-credit across "Play Again" — but that path is now closed
+  // at the source: a completed session is never restored onto the board, so a fresh
+  // mount always starts from an unfinished one and this effect cannot re-fire. The
   // coin credit's actual correctness comes from `recordOnce` below, keyed on
   // the (puzzle, size) identity, so a given board pays out exactly once for
   // its lifetime no matter how many times it is remounted or replayed.

@@ -5,6 +5,8 @@ import {
   createInitialSession,
   dropPiece,
   isSessionComplete,
+  isSessionCompatible,
+  isSessionRestorable,
   isWithinSnapDistance,
   raisePiece,
   snapThresholdForCellSize,
@@ -153,5 +155,35 @@ describe('game session primitives', () => {
     expect(session.status).toBe('completed');
     expect(session.completedAt).toBe('2026-07-20T00:10:00.000Z');
     expect(countLockedPieces(session)).toBe(64);
+  });
+
+  describe('isSessionRestorable', () => {
+    const fresh = () =>
+      createInitialSession({
+        sessionId: 'session-1',
+        puzzle,
+        pieces: generated.pieces,
+        initialPositions,
+        now: '2026-07-20T00:00:00.000Z',
+      });
+
+    it('restores an unfinished session for the same board', () => {
+      const session = fresh();
+      expect(isSessionRestorable(session, puzzle, generated.pieces)).toBe(true);
+    });
+
+    it('refuses a completed session even though it is compatible', () => {
+      // The whole bug: a solved session matches the board it was solved on, so the
+      // compatibility check passed and the player was dropped onto a finished
+      // puzzle, which handed straight back to results. "Play Again" was unusable.
+      const solved = { ...fresh(), status: 'completed' as const };
+      expect(isSessionCompatible(solved, puzzle, generated.pieces)).toBe(true);
+      expect(isSessionRestorable(solved, puzzle, generated.pieces)).toBe(false);
+    });
+
+    it('still refuses a session built for a different board', () => {
+      const session = { ...fresh(), puzzleRevision: 99 };
+      expect(isSessionRestorable(session, puzzle, generated.pieces)).toBe(false);
+    });
   });
 });

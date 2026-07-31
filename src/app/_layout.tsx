@@ -65,6 +65,8 @@ export default function RootLayout() {
           <Stack.Screen name="achievements" />
           <Stack.Screen name="statistics" />
           <Stack.Screen name="settings" />
+          {/* Dev-only depth comparison; nothing links to it. `puzzled://depth-lab`. */}
+          <Stack.Screen name="depth-lab" />
         </Stack>
         {/* Last child, so it overlays the navigator: the app mounts and warms up
             behind it rather than after it. */}
