@@ -256,6 +256,7 @@ export function LibraryScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          style={styles.tabsRow}
           contentContainerStyle={styles.tabs}
         >
           {/* One tone for every tab. Cycling `accentAt` per tab meant the
@@ -272,7 +273,10 @@ export function LibraryScreen() {
           ))}
         </ScrollView>
 
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}
+        >
           {visible.length === 0 ? (
             <EmptyState art={emptyCopy.art} text={emptyCopy.text} sub={emptyCopy.sub} />
           ) : (
@@ -425,7 +429,20 @@ const styles = StyleSheet.create({
     boxShadow: shadow.card,
   },
   addLabel: { ...typography.caption, color: colors.ink },
+  /**
+   * The tab strip must hug its chips.
+   *
+   * A horizontal `ScrollView` has no intrinsic height, so as a flex child of this
+   * column it stretched to fill everything left under the title — the chips drew at
+   * the top of that over-tall box and the list below it started halfway down the
+   * screen, which is why a single in-progress puzzle floated in the middle and long
+   * lists ran off the bottom. `content` already carried `flexGrow: 0` and a comment
+   * asking for exactly this; the strip above it was what actually took the space.
+   */
+  tabsRow: { flexGrow: 0 },
   tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  /** Takes the rest of the column, so the list scrolls within it rather than being cut off. */
+  list: { flex: 1 },
   content: {
     padding: spacing.lg,
     paddingTop: 0,
@@ -433,7 +450,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
-    // Short lists must sit under the tabs, not float in the middle of the screen.
+    // Short lists sit under the tabs rather than centring in `list`'s height.
     justifyContent: 'flex-start',
     flexGrow: 0,
   },
