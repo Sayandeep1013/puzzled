@@ -24,6 +24,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
   Easing,
   runOnJS,
   useDerivedValue,
@@ -570,6 +571,21 @@ function GlowRing({
         }
       },
     );
+    /*
+     * Cancel on unmount, or the animation outlives the ring that owns it.
+     *
+     * This ring is keyed by `snapFlash.id`, so placing a second piece within the
+     * 600ms fade unmounts the first mid-flight — and an uncancelled `withTiming`
+     * keeps driving a shared value belonging to a component that is gone, then fires
+     * a completion worklet that calls back into JS. Rapid placement is the normal
+     * case, not an edge one.
+     *
+     * Hygiene, and deliberately not claimed as the fix for the `isObject()` crash:
+     * that was not reproducible often enough to attribute anything to it (see
+     * docs/superpowers/specs/2026-07-31-worklets-crash-investigation.md). It is
+     * correct on its own terms regardless.
+     */
+    return () => cancelAnimation(progress);
   }, [progress, id, onDone, ring.durationMs]);
   const radius = useDerivedValue(() => ring.startRadius + progress.value * ring.growBy);
   const opacity = useDerivedValue(() => (1 - progress.value) * ring.peakOpacity);
