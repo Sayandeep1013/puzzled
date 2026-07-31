@@ -52,7 +52,8 @@ import { backgrounds, colors } from '@/shared/theme';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
 import { FX, impact, setHapticsEnabled, success } from './board-fx';
-import { bakePieceOverlay, overlayCacheKey, type BakedOverlay } from './piece-overlay';
+import { clusterCacheKey, clusterLockedPieces } from './cluster-geometry';
+import { bakeOverlay, overlayCacheKey, type BakedOverlay } from './piece-overlay';
 import {
   BOARD_SHADOW,
   clampTrayScroll,
@@ -285,22 +286,109 @@ function PieceFill({
   );
 }
 
-/** A piece locked into the board at its solved position. */
-const BoardPiece = memo(function BoardPiece({
-  prepared,
+/** One connected group of locked pieces, with its union path and baked depth. */
+interface ClusterDepth {
+  /** `clusterCacheKey` of the membership — the cluster's identity. */
+  key: string;
+  memberIds: string[];
+  /** Union of the members' silhouettes, already at their solved positions. */
+  path: SkPath;
+  overlay: BakedOverlay | null;
+}
+
+/**
+ * A connected group of locked pieces, drawn as one sheet of card.
+ *
+ * Depth belongs to the assembly, not to each piece in it. Per-piece bevels gave every
+ * internal seam *two* light fibre-core rims facing each other, which read as a gap
+ * where a real puzzle has no cut edge at all, and made an assembled row look like
+ * loose tiles rather than one board.
+ *
+ * The four passes are ordered so each is only responsible for one thing:
+ *
+ * 1. The cluster's drop shadow, from the union path. The fill under it is covered by
+ *    the artwork; only the offset spill shows, which is what makes the assembly read
+ *    as resting *on* the board.
+ * 2. Each member's artwork, clipped to its own silhouette. This is the one pass that
+ *    cannot be merged — every piece samples a different region of the photo.
+ * 3. Faint hairline joints, clipped to the union. Real puzzles show their seams;
+ *    without these the assembled area stops reading as pieces.
+ * 4. The baked bevel, on the union's outline only.
+ */
+const LockedCluster = memo(function LockedCluster({
+  cluster,
+  preparedById,
   image,
   imageScale,
 }: {
-  prepared: PreparedPiece;
+  cluster: ClusterDepth;
+  preparedById: Record<string, PreparedPiece>;
   image: SkImage;
   imageScale: number;
 }) {
-  const { solvedPosition } = prepared.geometry;
+  const { overlay } = cluster;
+
   return (
-    <Group transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}>
-      {/* Not raised: a locked piece belongs to the picture, so `PieceFill` gives it
-          only a hairline seam. The extra outline that used to sit here is gone. */}
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
+    <Group>
+      <Path path={cluster.path} color={FX.depth.clusterShadowColor}>
+        <Shadow
+          dx={0}
+          dy={FX.depth.clusterShadowDy}
+          blur={FX.depth.clusterShadowBlur}
+          color={FX.depth.clusterShadowColor}
+        />
+      </Path>
+
+      {cluster.memberIds.map((id) => {
+        const prepared = preparedById[id];
+        const { solvedPosition } = prepared.geometry;
+        return (
+          <Group
+            key={id}
+            transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}
+          >
+            <Group clip={prepared.skPath}>
+              <Image
+                image={image}
+                x={-prepared.geometry.sourceRect.x * imageScale}
+                y={-prepared.geometry.sourceRect.y * imageScale}
+                width={image.width() * imageScale}
+                height={image.height() * imageScale}
+              />
+            </Group>
+          </Group>
+        );
+      })}
+
+      <Group clip={cluster.path}>
+        {cluster.memberIds.map((id) => {
+          const prepared = preparedById[id];
+          const { solvedPosition } = prepared.geometry;
+          return (
+            <Group
+              key={id}
+              transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}
+            >
+              <Path
+                path={prepared.skPath}
+                style="stroke"
+                strokeWidth={FX.depth.jointWidth}
+                color={FX.depth.jointColor}
+              />
+            </Group>
+          );
+        })}
+      </Group>
+
+      {overlay ? (
+        <Image
+          image={overlay.image}
+          x={overlay.rect.x}
+          y={overlay.rect.y}
+          width={overlay.rect.width}
+          height={overlay.rect.height}
+        />
+      ) : null}
     </Group>
   );
 });
@@ -666,7 +754,10 @@ export function PuzzleBoard({
       const key = `${overlayCacheKey(geometry.edges, cellSize)}r${cornerRadius.toFixed(2)}`;
       let overlay = overlays.get(key);
       if (overlay === undefined) {
-        overlay = bakePieceOverlay(skPath, b);
+        // Scaled from the piece's own smaller bound: this overlay is only ever drawn
+        // on a piece that stands alone — in the tray, loose on the board, or under
+        // the finger. A locked piece takes its depth from its cluster instead.
+        overlay = bakeOverlay(skPath, b, Math.min(b.width, b.height));
         overlays.set(key, overlay);
       }
 
@@ -686,6 +777,128 @@ export function PuzzleBoard({
   // Locked pieces live on the board at their solved position; unlocked pieces are
   // either loose on the board (a miss that stayed put) or waiting in the tray.
   const lockedPieces = useMemo(() => session.pieces.filter((p) => p.isLocked), [session.pieces]);
+
+  /**
+   * Union paths and baked bevels for the locked clusters, keyed by membership.
+   *
+   * A cluster's shape changes only when a piece is placed, never per frame, so both
+   * the union and the bake are held here across renders. A frame then costs one
+   * overlay draw per cluster — *fewer* than the one-per-piece it replaces, and
+   * strictly fewer as the player makes progress and clusters merge.
+   */
+  const clusterCache = useRef(new Map<string, ClusterDepth>());
+  /**
+   * Bakes whose cluster no longer exists, waiting to be freed *after* the frame that
+   * replaced them.
+   *
+   * Freeing them where they are evicted would free them during render, while the tree
+   * still on screen is the old one that draws them — the same shape of mistake as
+   * reaching for a Skia object from a `runOnJS` closure, and it would land mid-game
+   * on the placement that merged two clusters. The passive effect below runs after
+   * the new frame is painted, by which point nothing references them.
+   */
+  const clusterDisposals = useRef<BakedOverlay[]>([]);
+
+  const clusters = useMemo(() => {
+    const cache = clusterCache.current;
+    const groups = clusterLockedPieces(
+      lockedPieces.map((piece) => {
+        const { row, column } = preparedById[piece.pieceId].geometry;
+        return { pieceId: piece.pieceId, row, column };
+      }),
+      gridSize,
+    );
+
+    const live = groups.map((memberIds) => {
+      const key = clusterCacheKey(memberIds);
+      const cached = cache.get(key);
+      if (cached) {
+        return cached;
+      }
+
+      /*
+       * Unioned from scratch each time the membership changes.
+       *
+       * The obvious worry is a near-complete 10x10 board unioning ~100 paths on
+       * every placement, and the cheap answer would be to union only the new piece
+       * into the cluster's previous path. It is not obviously the bottleneck: the
+       * bake below runs a blur and a lighting filter over the same region and is
+       * the larger cost by far, so the incremental union would save the smaller
+       * half. Measured on device first — see the design doc's risk list.
+       */
+      const path = Skia.Path.Make();
+      for (const id of memberIds) {
+        const prepared = preparedById[id];
+        const { x, y } = prepared.geometry.solvedPosition;
+        const placed = prepared.skPath.copy().offset(x, y);
+        // `op` mutates the receiver and reports success. On failure add the outline
+        // anyway: a slightly wrong boundary beats a member vanishing from the sheet.
+        if (!path.op(placed, PathOp.Union)) {
+          path.addPath(placed);
+        }
+      }
+
+      /*
+       * The bevel scales from the *cell*, not from the cluster's bounds.
+       *
+       * Bounds would be the natural reference — it is what a single piece uses — but
+       * a cluster's bounds grow as the player plays, so the bevel would widen with
+       * every placement until a finished board was rimmed by a band a third of its
+       * width. The cell is what the depth should stay proportional to.
+       */
+      const entry: ClusterDepth = {
+        key,
+        memberIds,
+        path,
+        overlay: bakeOverlay(path, path.computeTightBounds(), cellSize),
+      };
+      cache.set(key, entry);
+      return entry;
+    });
+
+    /*
+     * Drop the shapes that no longer exist.
+     *
+     * Every placement gives its cluster a new membership and so a new key, and the
+     * old entry is dead the moment that happens. Without this the map would keep one
+     * baked image per placement — at 10x10 that is a hundred surfaces of up to
+     * ~870 square, held for the whole game.
+     */
+    const liveKeys = new Set(live.map((entry) => entry.key));
+    for (const [key, entry] of cache) {
+      if (!liveKeys.has(key)) {
+        if (entry.overlay) {
+          clusterDisposals.current.push(entry.overlay);
+        }
+        cache.delete(key);
+      }
+    }
+
+    return live;
+  }, [lockedPieces, preparedById, gridSize, cellSize]);
+
+  // Passive, so it runs after the frame that stopped drawing these. Drained in place
+  // rather than replaced, so the unmount cleanup below keeps holding the live array.
+  useEffect(() => {
+    for (const overlay of clusterDisposals.current.splice(0)) {
+      overlay.image.dispose();
+    }
+  });
+
+  // Leaving the board must not strand the last set of bakes.
+  useEffect(() => {
+    const cache = clusterCache.current;
+    const pending = clusterDisposals.current;
+    return () => {
+      for (const entry of cache.values()) {
+        entry.overlay?.image.dispose();
+      }
+      cache.clear();
+      for (const overlay of pending.splice(0)) {
+        overlay.image.dispose();
+      }
+    };
+  }, []);
 
   /**
    * The engine lays unplaced pieces out below the board (`layout.ts` tray rows),
@@ -1321,10 +1534,15 @@ export function PuzzleBoard({
                           strokeWidth={1}
                         />
                       ))}
-                      {lockedPieces.map((piece) => (
-                        <BoardPiece
-                          key={piece.pieceId}
-                          prepared={preparedById[piece.pieceId]}
+                      {/* Locked pieces are drawn per *cluster*, not per piece: depth
+                          belongs to the outline of an assembly. A lone piece is a
+                          cluster of one and keeps depth all round, which falls out of
+                          the same path rather than needing a case of its own. */}
+                      {clusters.map((cluster) => (
+                        <LockedCluster
+                          key={cluster.key}
+                          cluster={cluster}
+                          preparedById={preparedById}
                           image={image}
                           imageScale={imageScale}
                         />

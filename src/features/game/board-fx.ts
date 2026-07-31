@@ -117,6 +117,38 @@ export const FX = {
     seamColor: 'rgba(30, 22, 12, 0.38)',
     seamWidth: 2,
     seamBlur: 2.6,
+
+    /**
+     * The seam between two *joined* locked pieces.
+     *
+     * Depth is drawn on a cluster's outline now, not on every piece in it, so an
+     * internal joint has no bevel of its own — which is correct, since two joined
+     * pieces share one seam rather than presenting two cut edges. Left at that the
+     * assembled area would stop reading as pieces at all, so each member's outline
+     * is stroked this faintly and clipped to the cluster.
+     *
+     * In board units, which is what makes one value work at every grid size:
+     * `cellSizeForGrid` anchors the board at ~290 units wide whatever the grid, so
+     * a fixed width here is a fixed width on screen, and it thickens under the
+     * camera's zoom exactly as a real seam would.
+     *
+     * Two neighbours each stroke their shared edge, so an internal joint composites
+     * to roughly double this alpha while the cluster's outer boundary — stroked
+     * once, and half of that clipped away — stays under the baked cut line.
+     */
+    jointColor: 'rgba(58, 43, 26, 0.20)',
+    jointWidth: 0.4,
+
+    /**
+     * The shadow a locked cluster casts on the board.
+     *
+     * Locked pieces used to cast nothing, so the board went flat exactly where the
+     * player had made progress. Tighter and weaker than a raised piece's: the
+     * assembly is lying on the board, not held above it.
+     */
+    clusterShadowColor: 'rgba(46, 32, 16, 0.34)',
+    clusterShadowDy: 2,
+    clusterShadowBlur: 5,
   },
 
   /**

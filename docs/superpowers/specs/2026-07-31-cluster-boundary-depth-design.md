@@ -100,6 +100,30 @@ and needs no change.
 - **Corner rounding.** The four board-corner pieces already trim their outward corner to
   the frame radius; the union inherits that automatically.
 
+## What shipped
+
+Stages 1–3 are in. `clusterLockedPieces` groups the locked pieces; `puzzle-board.tsx`
+unions each group's silhouettes at their solved positions, bakes one overlay per
+cluster keyed by `clusterCacheKey`, and draws shadow → artwork → hairline joints →
+overlay. Locked pieces no longer draw a per-piece overlay at all; tray, loose and
+lifted pieces are untouched.
+
+Two decisions the design did not anticipate:
+
+- **The bevel scales from the cell, not from the bake's bounds.** A piece can derive
+  its band widths from its own bounds, but a cluster's bounds grow as the player
+  plays, so the same rule would have widened the bevel with every placement until a
+  finished board carried a band a third of its width. `bakeOverlay` therefore takes
+  the reference length as an argument rather than measuring it.
+- **Evicted bakes are freed one frame late.** A placement makes the previous
+  membership's key dead immediately, but the tree still on screen is the one drawing
+  it, so disposal is queued and drained in a passive effect.
+
+The union is still built from scratch on each membership change. The incremental
+fallback below is deliberately not written yet: the bake runs a blur and a lighting
+filter over the same region and should dominate, so the union is the smaller half to
+optimise. Stage 4 measures before either is touched.
+
 ## Testing
 
 `cluster-geometry.test.ts`, on the pure functions:

@@ -11,7 +11,12 @@ import {
 import { type PieceEdges } from '@/game-engine';
 
 /**
- * Bakes the cardboard depth of a piece into a transparent overlay image.
+ * Bakes cardboard depth into a transparent overlay image.
+ *
+ * The silhouette is whatever the caller hands over: a single piece, for the tray, a
+ * loose piece and the one under the finger — or the union of a locked cluster, so an
+ * assembled group of pieces is bevelled on its outline as one sheet of card rather
+ * than tile by tile.
  *
  * The overlay holds only *depth* — bevel, cut edge, grain — and never any artwork, so
  * one overlay serves any photo. That is what makes gallery imports work: a picture
@@ -62,14 +67,14 @@ const NEUTRAL_KD = 0.5 / (LIGHT.z / LIGHT_LENGTH);
 export const OVERLAY = {
   /** Alpha-to-height scale for the lighting filter. Higher reads as thicker board. */
   surfaceScale: 3.4,
-  /** Bevel width as a fraction of the piece's smaller bound. */
+  /** Bevel width as a fraction of the bake's reference length — see `bakeOverlay`. */
   bevelRatio: 0.085,
   /** Strength of the lit and shaded halves of the bevel. */
   lightStrength: 0.85,
   shadeStrength: 0.75,
 
   /**
-   * The exposed fibre core at the die cut, as a fraction of the smaller bound.
+   * The exposed fibre core at the die cut, as a fraction of the reference length.
    *
    * Deliberately minimal. Chipboard is pressed fibre with the print laminated on top,
    * so the cut exposes a thin band of pulp — and being *light* is the whole point,
@@ -94,6 +99,16 @@ export const OVERLAY = {
    * those and downscaled, which keeps the bevel crisp instead of visibly soft.
    */
   scale: 3,
+
+  /**
+   * Ceiling on either side of the offscreen surface, in pixels.
+   *
+   * A piece never approaches this, but a cluster's bounds grow to the whole board:
+   * ~290 board units square at every grid size, so `scale` 3 lands at ~870 and this
+   * never binds in practice. It exists so an unusually large bake degrades to a
+   * softer bevel instead of failing to allocate.
+   */
+  maxBakePixels: 2048,
 } as const;
 
 /**
@@ -182,28 +197,42 @@ export interface BakedOverlay {
 }
 
 /**
- * Render one piece's depth overlay. Returns null if Skia cannot allocate a surface,
- * in which case the caller simply draws the piece without depth.
+ * Render a depth overlay for any silhouette — one piece, or a whole cluster's union.
+ *
+ * `unit` is the length the bevel and cut bands scale from, and it is deliberately
+ * *not* derived from `bounds`. A piece's own bounds are the right reference for a
+ * piece, but a cluster's bounds grow with the assembly, so deriving from them would
+ * widen the bevel as the player made progress until a finished board carried a bevel
+ * a third of its width. Callers pass what the band should be proportional to: the
+ * piece's smaller bound for a piece, the cell for a cluster.
+ *
+ * Returns null if Skia cannot allocate a surface, in which case the caller simply
+ * draws the shape without depth.
  */
-export function bakePieceOverlay(path: SkPath, bounds: SkRect): BakedOverlay | null {
-  const smaller = Math.min(bounds.width, bounds.height);
-  if (smaller <= 0) {
+export function bakeOverlay(path: SkPath, bounds: SkRect, unit: number): BakedOverlay | null {
+  if (unit <= 0 || bounds.width <= 0 || bounds.height <= 0) {
     return null;
   }
 
-  const bevelWidth = smaller * OVERLAY.bevelRatio;
-  const coreWidth = smaller * OVERLAY.coreRatio;
-  const cutWidth = smaller * OVERLAY.cutRatio;
+  const bevelWidth = unit * OVERLAY.bevelRatio;
+  const coreWidth = unit * OVERLAY.coreRatio;
+  const cutWidth = unit * OVERLAY.cutRatio;
 
-  const pixelW = Math.ceil(bounds.width * OVERLAY.scale);
-  const pixelH = Math.ceil(bounds.height * OVERLAY.scale);
+  // The cap is on the longer side, so the bake keeps its aspect ratio and the
+  // overlay still registers with the rect it is drawn into.
+  const scale = Math.min(
+    OVERLAY.scale,
+    OVERLAY.maxBakePixels / Math.max(bounds.width, bounds.height),
+  );
+  const pixelW = Math.ceil(bounds.width * scale);
+  const pixelH = Math.ceil(bounds.height * scale);
   const surface = Skia.Surface.MakeOffscreen(pixelW, pixelH);
   if (!surface) {
     return null;
   }
 
   const canvas = surface.getCanvas();
-  canvas.scale(OVERLAY.scale, OVERLAY.scale);
+  canvas.scale(scale, scale);
   canvas.translate(-bounds.x, -bounds.y);
 
   const white = Skia.Paint();

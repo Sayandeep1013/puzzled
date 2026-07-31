@@ -7,7 +7,7 @@ import { getPuzzleImageModule } from '@/data/local/puzzle-assets';
 import { buildPieceLocalPath, cellSizeForGrid } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
 import { PieceDepth, type DepthTreatment } from '@/features/game/piece-depth';
-import { bakePieceOverlay } from '@/features/game/piece-overlay';
+import { bakeOverlay } from '@/features/game/piece-overlay';
 import { colors, spacing, typography } from '@/shared/theme';
 
 /**
@@ -63,8 +63,11 @@ export default function DepthLabScreen() {
   const sourceX = cellSize * 1.5;
   const sourceY = cellSize * 1.5;
 
-  /** The production overlay, baked exactly as the board bakes it. */
-  const baked = useMemo(() => bakePieceOverlay(path, bounds), [path, bounds]);
+  /** The production overlay, baked exactly as the board bakes a standalone piece. */
+  const baked = useMemo(
+    () => bakeOverlay(path, bounds, Math.min(bounds.width, bounds.height)),
+    [path, bounds],
+  );
 
   return (
     <View style={styles.screen}>
