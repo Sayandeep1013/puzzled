@@ -1,4 +1,4 @@
-import { Canvas, Group, useImage } from '@shopify/react-native-skia';
+import { Canvas, Group, Image as SkiaImage, useImage } from '@shopify/react-native-skia';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { getPuzzleImageModule } from '@/data/local/puzzle-assets';
 import { buildPieceLocalPath, cellSizeForGrid } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
 import { PieceDepth, type DepthTreatment } from '@/features/game/piece-depth';
+import { bakePieceOverlay } from '@/features/game/piece-overlay';
 import { colors, spacing, typography } from '@/shared/theme';
 
 /**
@@ -26,10 +27,16 @@ const GRID = 4;
 /** A tab on the right and bottom, a blank on the left — a typical interior piece. */
 const EDGES = { top: 0, right: 1, bottom: 1, left: -1 } as const;
 
-const TREATMENTS: { key: DepthTreatment; label: string; note: string }[] = [
-  { key: 'current', label: 'Current', note: 'one blurred inward stroke' },
-  { key: 'cardboard', label: 'Cardboard', note: 'lit bevel + light fibre core + grain' },
-  { key: 'bevel', label: 'Bevel only', note: 'lit bevel, no light core' },
+/**
+ * `baked` is the production path now wired into the board: the same treatment, but
+ * pre-rendered to a transparent overlay image whose flat interior is already alpha 0.
+ * The two live rows stay for comparison, and because they still use `Group layer=`
+ * they still show the grey saveLayer wash the bake exists to remove.
+ */
+const TREATMENTS: { key: DepthTreatment | 'baked'; label: string; note: string }[] = [
+  { key: 'baked', label: 'Cardboard (baked)', note: 'what the board now uses' },
+  { key: 'current', label: 'Previous', note: 'one blurred inward stroke' },
+  { key: 'cardboard', label: 'Cardboard (live)', note: 'unbaked — note the grey wash' },
 ];
 
 export default function DepthLabScreen() {
@@ -56,6 +63,9 @@ export default function DepthLabScreen() {
   const sourceX = cellSize * 1.5;
   const sourceY = cellSize * 1.5;
 
+  /** The production overlay, baked exactly as the board bakes it. */
+  const baked = useMemo(() => bakePieceOverlay(path, bounds), [path, bounds]);
+
   return (
     <View style={styles.screen}>
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
@@ -76,15 +86,38 @@ export default function DepthLabScreen() {
                   <Canvas style={{ width: canvasW, height: canvasH }}>
                     <Group transform={[{ scale: ZOOM }]}>
                       <Group transform={[{ translateX: -bounds.x }, { translateY: -bounds.y }]}>
-                        <PieceDepth
-                          path={path}
-                          image={image}
-                          imageScale={imageScale}
-                          smallerBound={smallerBound}
-                          sourceX={sourceX}
-                          sourceY={sourceY}
-                          treatment={key}
-                        />
+                        {key === 'baked' ? (
+                          <>
+                            <Group clip={path}>
+                              <SkiaImage
+                                image={image}
+                                x={-sourceX * imageScale}
+                                y={-sourceY * imageScale}
+                                width={image.width() * imageScale}
+                                height={image.height() * imageScale}
+                              />
+                            </Group>
+                            {baked ? (
+                              <SkiaImage
+                                image={baked.image}
+                                x={baked.rect.x}
+                                y={baked.rect.y}
+                                width={baked.rect.width}
+                                height={baked.rect.height}
+                              />
+                            ) : null}
+                          </>
+                        ) : (
+                          <PieceDepth
+                            path={path}
+                            image={image}
+                            imageScale={imageScale}
+                            smallerBound={smallerBound}
+                            sourceX={sourceX}
+                            sourceY={sourceY}
+                            treatment={key}
+                          />
+                        )}
                       </Group>
                     </Group>
                   </Canvas>

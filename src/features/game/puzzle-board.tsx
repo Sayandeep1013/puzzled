@@ -52,6 +52,7 @@ import { backgrounds, colors } from '@/shared/theme';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
 import { FX, impact, setHapticsEnabled, success } from './board-fx';
+import { bakePieceOverlay, overlayCacheKey, type BakedOverlay } from './piece-overlay';
 import {
   BOARD_SHADOW,
   clampTrayScroll,
@@ -124,6 +125,8 @@ interface PreparedPiece {
   /** Centre of the piece's silhouette in local (piece) space. */
   cx: number;
   cy: number;
+  /** Baked cardboard depth, shared between every piece of the same shape. */
+  overlay: BakedOverlay | null;
 }
 
 function isEdgePiece(edges: PieceEdges): boolean {
@@ -192,22 +195,25 @@ function roundPieceCorners(
 }
 
 /**
- * Clip the shared source image to a piece silhouette and give it depth.
+ * Clip the shared source image to a piece silhouette and give it cardboard depth.
  * Scale-agnostic (parent Group scales), so it stays proportional in the tray as
  * well as on the board.
  *
- * Depth is a **drop shadow plus a darker edge**, never a light rim. An earlier
- * version rimmed each piece in near-white, which does read as 3D but as a glow
- * rather than a physical tile; the mockup at 8x has no light rim anywhere.
+ * Depth is a **baked overlay** — a lit bevel, a thin light fibre core at the die cut,
+ * and paper grain — from `piece-overlay.ts`. It replaced three rounds of drawing
+ * depth with strokes, which could never work: a stroke is a band of constant colour
+ * and a bevel is a gradient of surface normals. The overlay's bevel comes from Skia's
+ * lighting filter reading a blurred silhouette as a *height map*, so it is real
+ * shading rather than a painted hint.
  *
- * `raised` splits the two states the mockup treats differently: tray, loose and
- * lifted pieces are objects above a surface and cast a shadow, while locked
- * pieces belong to the finished picture and take only a hairline seam.
+ * The overlay contains no artwork, so one bake serves any photo — which is what keeps
+ * gallery imports working with no per-puzzle assets. It is also cached per shape, so a
+ * piece costs two draws and no filters per frame; the previous treatment ran a blurred
+ * stroke and a shadow filter on every piece on every frame.
  *
- * Because it derives from the silhouette the engine already computes, a photo
- * imported seconds ago behaves exactly like bundled art — no per-puzzle assets,
- * which would otherwise mean one image per piece per grid size and would make
- * gallery imports impossible.
+ * `raised` still splits the two states: tray, loose and lifted pieces sit above a
+ * surface and cast a drop shadow, while a locked piece is flush with its neighbours
+ * and casts nothing. Both get the bevel — a locked piece is still a physical tile.
  *
  * Every piece type routes through here, so the treatment lives in one place.
  */
@@ -227,7 +233,7 @@ function PieceFill({
    */
   raised?: boolean;
 }) {
-  const { geometry, skPath } = prepared;
+  const { geometry, skPath, overlay } = prepared;
   const depth = FX.depth;
 
   return (
@@ -250,23 +256,31 @@ function PieceFill({
         />
       </Group>
 
-      {/* An inward rim, darker rather than lighter. Clipped to the silhouette so it
-          shades the artwork's own boundary instead of outlining it, and blurred so it
-          falls off into the piece as shading rather than banding as a drawn line.
-          Doubled width because the clip discards the outer half of a centred stroke.
-
-          This is the *only* depth a locked piece has — it is flush with its
-          neighbours, so there is nothing for it to cast a shadow onto. */}
-      <Group clip={skPath}>
-        <Path
-          path={skPath}
-          style="stroke"
-          strokeWidth={(raised ? depth.edgeWidth : depth.seamWidth) * 2}
-          color={raised ? depth.edgeColor : depth.seamColor}
-        >
-          <BlurMask blur={raised ? depth.edgeBlur : depth.seamBlur} style="normal" />
-        </Path>
-      </Group>
+      {overlay ? (
+        /* The baked cardboard depth: lit bevel, fibre core, grain. Ordinary source-over
+           — the bake already carries the right alpha, with the piece's flat interior at
+           alpha 0, so no blend mode or clip is needed to keep the artwork readable. */
+        <Image
+          image={overlay.image}
+          x={overlay.rect.x}
+          y={overlay.rect.y}
+          width={overlay.rect.width}
+          height={overlay.rect.height}
+        />
+      ) : (
+        /* Fallback if the offscreen bake failed: the old inward rim, so a piece still
+           has an edge rather than floating flat. */
+        <Group clip={skPath}>
+          <Path
+            path={skPath}
+            style="stroke"
+            strokeWidth={(raised ? depth.edgeWidth : depth.seamWidth) * 2}
+            color={raised ? depth.edgeColor : depth.seamColor}
+          >
+            <BlurMask blur={raised ? depth.edgeBlur : depth.seamBlur} style="normal" />
+          </Path>
+        </Group>
+      )}
     </Group>
   );
 }
@@ -628,25 +642,46 @@ export function PuzzleBoard({
 
   const preparedById = useMemo(() => {
     const map: Record<string, PreparedPiece> = {};
+    /**
+     * One bake per distinct *shape*, not per piece.
+     *
+     * A silhouette is fully determined by its four edge codes and the cell size, so a
+     * grid of any size draws from at most 3^4 = 81 shapes — a 10x10 board bakes far
+     * fewer overlays than it has pieces, and every piece sharing a shape shares the
+     * image. Corner pieces are keyed separately by the rounding radius, since their
+     * outward corner is trimmed to the board frame.
+     */
+    const overlays = new Map<string, BakedOverlay | null>();
+
     for (const geometry of generated.pieces) {
       const localPath = generated.paths[geometry.id];
       const b = localPath.bounds;
+      const skPath = roundPieceCorners(
+        commandsToSkPath(localPath.commands),
+        localPath.bounds,
+        geometry.edges,
+        cornerRadius,
+      );
+
+      const key = `${overlayCacheKey(geometry.edges, cellSize)}r${cornerRadius.toFixed(2)}`;
+      let overlay = overlays.get(key);
+      if (overlay === undefined) {
+        overlay = bakePieceOverlay(skPath, b);
+        overlays.set(key, overlay);
+      }
+
       map[geometry.id] = {
         geometry,
         localPath,
-        skPath: roundPieceCorners(
-          commandsToSkPath(localPath.commands),
-          localPath.bounds,
-          geometry.edges,
-          cornerRadius,
-        ),
+        skPath,
         isEdge: isEdgePiece(geometry.edges),
         cx: b.x + b.width / 2,
         cy: b.y + b.height / 2,
+        overlay,
       };
     }
     return map;
-  }, [generated, cornerRadius]);
+  }, [generated, cornerRadius, cellSize]);
 
   // Locked pieces live on the board at their solved position; unlocked pieces are
   // either loose on the board (a miss that stayed put) or waiting in the tray.
