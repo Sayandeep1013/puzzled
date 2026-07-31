@@ -1,8 +1,41 @@
 # The worklets `isObject()` crash — investigation
 
-**Status: unresolved.** The cause is not found. This records what is established, what
-is ruled out, and the loop that makes further work cheap, so the next attempt does not
-start over.
+**Status: cause found upstream; fix applied, not yet verified on device.**
+
+It is a known bug in `react-native-worklets` 0.10.0, and this project was on exactly
+the affected pair — reanimated 4.5.0 with worklets 0.10.0
+([reanimated#9776](https://github.com/software-mansion/react-native-reanimated/issues/9776),
+duplicate of [#9751](https://github.com/software-mansion/react-native-reanimated/issues/9751)).
+
+When a call is scheduled with `scheduleOnRN` — what `runOnJS` compiles to — and the
+remote function is released before that task runs, the `registry.delete(remoteId)` task
+can run *before* the call task. The callback is freed while its invocation is still
+pending, and the pending task then reads freed memory.
+[PR #9789](https://github.com/software-mansion/react-native-reanimated/pull/9789)
+replaces the JS-side registry, which "cannot keep both the actual callback and the
+cached serialized callback value alive without a memory cycle", with a lifetime tied to
+TurboModule `invalidate()`. Merged 2026-07-01, released in **worklets 0.10.1**.
+
+The rest of this document is the investigation that preceded that discovery. It is kept
+because most of it was wasted effort with an identifiable cause, and that is worth more
+than the conclusion.
+
+## The lesson
+
+**Search for a known upstream issue before theorising.** One web search found this in
+under a minute. It was run only after five failed attempts and hours of work, and every
+one of those attempts was an attempt to out-reason a library bug.
+
+The symptoms all pointed at "upstream, and timing-dependent" from the start: a crash
+inside `libworklets` with no frame in application code, that vanished under `__DEV__`,
+and that moved when instrumentation was added. Nothing about that profile suggested an
+application bug, and it was treated as one anyway.
+
+A second, narrower lesson: **`remoteFunctionRegistry` never evicting was true and
+irrelevant.** That fact was used to rule out the callback as the freed object, without
+checking whether the *native* `SerializableRemoteFunction` wrapper had a lifetime of its
+own. It does, and that is precisely what was being freed. A correct observation about
+one layer was used to dismiss a different layer.
 
 ---
 
@@ -91,10 +124,25 @@ test. Treat breadcrumb runs as suspect.
   `SkImage` while its `Group` carries an animated `transform`. The closure guard does
   not cover this path.
 
-## What to do next
+## How each dead end is explained by the real cause
 
-1. Get a reliable oracle first. Without one, every result is noise. Consider driving the
-   app from inside JS (a hidden dev route that grabs and drops in a loop) rather than
-   through `adb input`, so timing is tight and repeatable.
-2. Only then bisect, and **always run the control**.
-3. Prefer removing code over adding it — instrumentation changes the outcome here.
+Worth keeping, because each one looked like evidence at the time:
+
+| observation | why it happened |
+|---|---|
+| Fixing `FloatingPiece`'s closure changed nothing | Real defect, unrelated cause |
+| `cancelAnimation` on GlowRing changed nothing | Same |
+| Flaky: 2 crashes at 8 grabs, then ~600 clean | It is a race between two scheduled tasks |
+| Never reproduced under `__DEV__` | Dev bookkeeping holds an extra reference |
+| `console.log` breadcrumbs suppressed it | Logging from a worklet perturbs scheduling order |
+| Human play crashed far more than scripted input | Real touch produces denser, more overlapping `runOnJS` traffic |
+
+## What to verify
+
+The bump to worklets 0.10.1 is committed but **unverified on device** — it is a native
+change, so it needs a build. The pre-fix baseline to compare against: the release build
+crashed twice at 8 grabs, and normal human play crashed within ~2 minutes, repeatedly.
+
+Because the crash is a race, a single clean run proves nothing. Run the stress
+repeatedly and compare rates, and prefer a few minutes of ordinary play — which
+historically triggered it far more reliably than scripted input ever did.
