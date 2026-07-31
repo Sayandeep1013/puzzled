@@ -330,8 +330,14 @@ const LockedCluster = memo(function LockedCluster({
 
   return (
     <Group>
-      <Path path={cluster.path} color={FX.depth.clusterShadowColor}>
+      {/* `shadowOnly`, over an opaque source. A drop shadow takes its alpha from the
+          shape it is cast by, so filling the union in the shadow's own translucent
+          colour — as a raised piece does, where the fill is then hidden by artwork —
+          would square that alpha and leave a shadow at ~0.12 that is not there at
+          all. Casting from an opaque fill that is never drawn keeps the tuned value. */}
+      <Path path={cluster.path} color="black">
         <Shadow
+          shadowOnly
           dx={0}
           dy={FX.depth.clusterShadowDy}
           blur={FX.depth.clusterShadowBlur}
