@@ -88,7 +88,24 @@ export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center' },
+  /**
+   * The lockup sits on a soft bordered panel, as the mockup has it — the arched letters
+   * and the JOURNEY pill both sit *on* the panel rather than it replacing either.
+   *
+   * Translucent white rather than opaque: the meadow behind should still read through,
+   * and over a photographic background the letters had nothing holding them together.
+   */
+  wrap: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    borderRadius: radii.xl,
+    backgroundColor: 'rgba(255, 255, 255, 0.42)',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    boxShadow: shadow.card,
+  },
   // `flex-end` so the arch's dropped outer letters hang below a shared top edge
   // rather than each letter centring on its own box.
   row: { flexDirection: 'row', alignItems: 'flex-end' },

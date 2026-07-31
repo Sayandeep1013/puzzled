@@ -846,6 +846,38 @@ export function PuzzleBoard({
   const clearDragging = useCallback(() => setDraggingId(null), []);
 
   /**
+   * Piece geometry for the drop path, as plain numbers only.
+   *
+   * `releasePiece` is invoked with `runOnJS` from inside the pan worklet, so worklets
+   * has to build a shareable from its entire closure. It used to read `preparedById`
+   * directly, which carries `skPath` — and now `overlay.image` — both Skia **host
+   * objects**. Walking those trips a JSI assertion in `libworklets.so`
+   * (`jsi.h: Value::getObject: assertion "isObject()" failed`) which calls `abort()`,
+   * so the process dies outright with no JS error: the app "closing on its own" after
+   * placing a piece.
+   *
+   * Placing is what triggered it because it changes `looseHitTestData`, which re-runs
+   * the gesture memo, which builds a fresh `releasePiece` and re-serialises the closure.
+   *
+   * `looseHitTestData` was already built this way deliberately, for exactly this reason.
+   * The same discipline simply had not been applied here: nothing a `runOnJS` callback
+   * closes over may contain a Skia object.
+   */
+  const releaseGeometry = useMemo(() => {
+    const map: Record<string, { cx: number; cy: number; solvedX: number; solvedY: number }> = {};
+    for (const id of Object.keys(preparedById)) {
+      const prepared = preparedById[id];
+      map[id] = {
+        cx: prepared.cx,
+        cy: prepared.cy,
+        solvedX: prepared.geometry.solvedPosition.x,
+        solvedY: prepared.geometry.solvedPosition.y,
+      };
+    }
+    return map;
+  }, [preparedById]);
+
+  /**
    * Bring the floating piece's scale/tilt back to identity over `FX.snapMs`
    * before finally clearing `draggingId` — the piece stays mounted (and the
    * real BoardPiece/LoosePiece it hands off to is already drawn underneath,
@@ -913,7 +945,9 @@ export function PuzzleBoard({
         setDraggingId(null);
         return;
       }
-      const prepared = preparedById[id];
+      // `releaseGeometry`, never `preparedById`: see its comment — a Skia object in
+      // this closure aborts the process when `runOnJS` serialises it.
+      const prepared = releaseGeometry[id];
       if (!prepared) {
         setDraggingId(null);
         return;
@@ -928,7 +962,7 @@ export function PuzzleBoard({
       const boardX = (preCamX - boardOffsetX) / boardScale - BOARD_PADDING;
       const boardY = (preCamY - boardOffsetY) / boardScale - BOARD_PADDING;
       const position = { x: boardX - prepared.cx, y: boardY - prepared.cy };
-      const solved = prepared.geometry.solvedPosition;
+      const solved = { x: prepared.solvedX, y: prepared.solvedY };
 
       const now = new Date().toISOString();
       const raised = raisePiece(sessionRef.current, id, now);
@@ -1095,7 +1129,7 @@ export function PuzzleBoard({
     layout,
     trayIds.length,
     looseHitTestData,
-    preparedById,
+    releaseGeometry,
     snapThreshold,
     baselineElapsedMs,
     startedAtMs,
