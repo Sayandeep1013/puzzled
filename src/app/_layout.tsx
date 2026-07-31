@@ -25,9 +25,15 @@ export default function RootLayout() {
   /**
    * The JS loading screen covers the app until it dissolves itself.
    *
-   * Two splashes run back to back: the native one (a static bear, circle-masked
-   * by Android and unfixable) and then `LoadingScreen` (the whole bear, bobbing).
-   * They share a background colour, so the seam is invisible.
+   * The native splash carries **no icon** — only `backgrounds.homeSky` — so the app
+   * shows one bear, not two. It used to draw a static bear of its own, and however
+   * carefully that was sized against Android's circular mask it still read as a
+   * separate screen: a motionless bear, then a jump to a different bear bobbing
+   * beside a wordmark. Sharing a background colour hid the seam but not the swap.
+   *
+   * Android always draws *something* before JS is alive, so the native phase cannot
+   * be removed — only made indistinguishable. A flat sky that `LoadingScreen`
+   * continues is exactly that.
    */
   const [loading, setLoading] = useState(true);
   const finishLoading = useCallback(() => setLoading(false), []);

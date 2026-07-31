@@ -1,3 +1,7 @@
+// Node globals are referenced here rather than added to tsconfig's `types`, so
+// `fs`/`__dirname` stay out of scope for the app code, which has no filesystem.
+// This file reads its own source back off disk to inspect what babel emits.
+/// <reference types="node" />
 import { transformSync } from '@babel/core';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
