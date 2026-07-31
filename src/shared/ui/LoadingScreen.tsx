@@ -99,13 +99,21 @@ export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
 
+  /*
+   * The bear does **not** animate in — it is already on screen.
+   *
+   * Android shows its splash window from the moment the icon is tapped until RN
+   * has a frame, and that window carries this same bear, centred. So this bear is
+   * a continuation of one already being displayed, not an entrance: rising or
+   * scaling it here would make the handoff read as a second screen appearing,
+   * which is the whole complaint. It starts at rest and only breathes.
+   *
+   * Everything below it still animates in, which is what makes the moment feel
+   * alive without moving the one element the eye is already locked onto.
+   */
   const bearStyle = useAnimatedStyle(() => ({
-    opacity: intro.value,
     transform: [
-      // Bob and sway are driven by the same value, so the rock is always in
-      // phase with the rise — the bear leans into the top of each breath.
-      { translateY: (1 - intro.value) * 40 - breathe.value * BOB_DISTANCE },
-      { scale: 0.86 + intro.value * 0.14 },
+      { translateY: -breathe.value * BOB_DISTANCE },
       { rotateZ: `${(breathe.value * 2 - 1) * SWAY_DEGREES}deg` },
     ],
   }));
@@ -123,21 +131,31 @@ export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
       accessibilityViewIsModal
       testID="loading-screen"
     >
+      {/* Dead centre, because that is where the native splash draws its icon.
+          Android centres `windowSplashScreenAnimatedIcon` on the screen, so the
+          bear can only line up across the handoff if this one is centred too —
+          which it was not while the wordmark and dots shared the column and
+          pushed it upward. */}
       <Animated.View style={bearStyle}>
         <Art name="bear" size={bearSize} testID="loading-bear" />
       </Animated.View>
 
-      <Animated.View style={[styles.wordmark, wordmarkStyle]}>
-        <WordmarkTitle scale={0.62} />
-      </Animated.View>
+      {/* Anchored below the centre rather than stacked under the bear, so adding
+          or resizing anything here can never shift the bear off the native
+          splash's position again. */}
+      <View style={[styles.below, { top: '50%', marginTop: bearSize / 2 }]} pointerEvents="none">
+        <Animated.View style={[styles.wordmark, wordmarkStyle]}>
+          <WordmarkTitle scale={0.62} />
+        </Animated.View>
 
-      <View style={styles.dots} accessibilityRole="progressbar" accessibilityLabel="Loading">
-        {Array.from({ length: DOT_COUNT }, (_, index) => (
-          <LoadingDot key={index} index={index} />
-        ))}
+        <View style={styles.dots} accessibilityRole="progressbar" accessibilityLabel="Loading">
+          {Array.from({ length: DOT_COUNT }, (_, index) => (
+            <LoadingDot key={index} index={index} />
+          ))}
+        </View>
+
+        <Text style={styles.caption}>Getting your pieces ready…</Text>
       </View>
-
-      <Text style={styles.caption}>Getting your pieces ready…</Text>
     </Animated.View>
   );
 }
@@ -184,6 +202,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  /** Everything under the bear, pinned below screen centre so the bear stays on it. */
+  below: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   wordmark: { marginTop: 4 },
   dots: { flexDirection: 'row', gap: 10, marginTop: 28 },
   dot: {
