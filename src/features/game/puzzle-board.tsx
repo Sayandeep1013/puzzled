@@ -1231,9 +1231,28 @@ export function PuzzleBoard({
           // The piece already rests exactly at (canvasX, canvasY) — only the
           // lift scale/tilt need to settle back to identity there.
           settleFloatingPiece(canvasX, canvasY);
+        } else if (source === 1) {
+          /*
+           * Dropped on the tray, and it came *from* the board: send it back.
+           *
+           * This used to change no state at all, on the reasoning that a piece
+           * released over the tray is "simply back where it was". That holds for a
+           * piece grabbed from a tray slot, but not for a loose one on the board —
+           * it stayed on the board, so there was no way to undo a bad drop except
+           * by dragging the piece around the board forever.
+           *
+           * `isOnBoard` is the only thing that decides which strip a piece belongs
+           * to, and it is purely `position.y < boardSize.height`. So parking the
+           * piece on that boundary is what returns it to the tray; the strip then
+           * lays it out by index like any other tray piece, so the x is irrelevant.
+           */
+          onSessionChangeRef.current(
+            dropPiece({ ...common, position: { x: 0, y: boardSize.height }, snapThreshold: 0 }),
+          );
+          setDraggingId(null);
         } else {
-          // Silently returns to its old tray/board spot (no state change);
-          // nothing to settle towards, so just drop the floating piece.
+          // Came from a tray slot and went back to one: genuinely nothing changed,
+          // and nothing to settle towards, so just drop the floating piece.
           setDraggingId(null);
         }
         return;
@@ -1383,6 +1402,8 @@ export function PuzzleBoard({
     looseHitTestData,
     releaseGeometry,
     snapThreshold,
+    // Decides the tray/board boundary a returned piece is parked on.
+    boardSize.height,
     baselineElapsedMs,
     startedAtMs,
     beginGrab,
