@@ -504,13 +504,30 @@ function FloatingPiece({
   /** `FX.liftScale` while held, easing to 1 over `FX.snapMs` once released. */
   scaleBoost: SharedValue<number>;
 }) {
+  /*
+   * Read out here, not inside the worklet.
+   *
+   * A worklet's closure captures whole *variables*, not the properties it touches:
+   * writing `prepared.cx` inside puts `prepared` itself into the shareable, and
+   * `prepared` carries `skPath` and `overlay.image` — both Skia host objects.
+   * Worklets does not reject those. `cloneHostObject` passes the raw reference
+   * across and rewraps the *same* C++ instance on the UI runtime, so the piece's
+   * path and baked image end up aliased by two runtimes with nothing coordinating
+   * their lifetime. This closure is rebuilt on every grab, since `FloatingPiece`
+   * mounts when a piece is picked up.
+   *
+   * This is the rule `releaseGeometry` was introduced for — nothing a worklet
+   * closes over may contain a Skia object — applied to the one place that still
+   * broke it. Two numbers is all the transform ever needed.
+   */
+  const { cx, cy } = prepared;
   const transform = useDerivedValue(() => [
     { translateX: fx.value },
     { translateY: fy.value },
     { rotate: (tiltDeg.value * Math.PI) / 180 },
     { scale: boardScale * camScale.value * scaleBoost.value },
-    { translateX: -prepared.cx },
-    { translateY: -prepared.cy },
+    { translateX: -cx },
+    { translateY: -cy },
   ]);
 
   return (
