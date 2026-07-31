@@ -794,8 +794,10 @@ const styles = StyleSheet.create({
     maxWidth: 900,
     alignSelf: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    // Wider than spacing.sm: the header, board and toolbar previously sat almost
+    // flush, so the three read as one crowded block.
+    gap: spacing.lg,
   },
   header: {
     flexDirection: 'row',
@@ -825,13 +827,27 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     backgroundColor: colors.surface,
     boxShadow: shadow.card,
+    /**
+     * Absorbs the leftover column height above the board rather than below the
+     * toolbar.
+     *
+     * `maxHeight` caps how far `flex: 1` can grow (the board is square, so a taller
+     * shell is only dead margin), and the slack that cap leaves used to collect
+     * after the last child — stranding the toolbar in mid-screen with empty space
+     * beneath it. An auto top margin claims that slack instead, which drops the
+     * board/tray/toolbar block down the screen and seats the toolbar on the bottom
+     * edge in one move.
+     */
+    marginTop: 'auto',
   },
   toolbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'stretch',
     gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    // No vertical padding of its own: `content`'s gap sets the space above and the
+    // safe-area inset sets the space below, so the row sits on the bottom edge.
+    paddingVertical: 0,
   },
   tool: { flex: 1 },
   toolInner: { alignItems: 'center', gap: 3, paddingVertical: spacing.sm },

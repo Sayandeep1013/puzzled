@@ -1,5 +1,7 @@
 export { AnimatedArt } from './AnimatedArt';
 export { Art } from './Art';
+export { LoadingScreen } from './LoadingScreen';
+export { EnterView, IdleBob } from './Motion';
 export { PopButton, type PopTone } from './PopButton';
 export { PopChip } from './PopChip';
 export { PopHeader } from './PopHeader';

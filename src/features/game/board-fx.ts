@@ -57,15 +57,6 @@ export const FX = {
   maxTiltDeg: 4,
   /** Spring used when a piece settles after release. */
   settle: { damping: 14, stiffness: 180 },
-  /** Neighbour wobble duration on lock, ms. */
-  jiggleMs: 90,
-  /**
-   * Neighbour wobble peak offset, px. Cut from 2 to 1 and then to 0.6 across two
-   * rounds of device testing — at anything above this every placement visibly
-   * shoved its neighbours, which read as the board being knocked rather than as a
-   * soft acknowledgement.
-   */
-  jiggleAmplitude: 0.6,
 
   /**
    * The one-shot ring drawn where a piece locks home.
@@ -105,26 +96,45 @@ export const FX = {
    */
   depth: {
     /** Drop shadow under a raised piece. */
-    shadowColor: 'rgba(46, 32, 16, 0.5)',
-    shadowDy: 3,
-    shadowBlur: 5,
-    /** Thin darker edge at the silhouette boundary, in place of a white rim. */
-    edgeColor: 'rgba(52, 38, 20, 0.34)',
-    edgeWidth: 1.5,
-    /** Barely-there seam between locked pieces, so the picture reads continuous. */
-    seamColor: 'rgba(23, 33, 33, 0.1)',
-    seamWidth: 1,
+    shadowColor: 'rgba(46, 32, 16, 0.55)',
+    shadowDy: 4,
+    shadowBlur: 7,
+    /** Inward rim on a raised piece, in place of a white rim. */
+    edgeColor: 'rgba(52, 38, 20, 0.45)',
+    edgeWidth: 2.2,
+    /** Softens the rim into a gradient, so it reads as shading not as an outline. */
+    edgeBlur: 2,
+    /**
+     * Inward rim on a locked piece — the only depth the assembled picture carries,
+     * since a locked piece is flush with its neighbours and casts nothing outward.
+     *
+     * Was `rgba(23,33,33,0.1)` at 1px: a 10%-alpha hairline, which is why "the
+     * shadow depth isn't visible" while the board filled up. Every piece the player
+     * places is locked, so the board they spend the whole game looking at had
+     * effectively no depth at all, however strong the raised shadow was.
+     */
+    seamColor: 'rgba(30, 22, 12, 0.38)',
+    seamWidth: 2,
+    seamBlur: 2.6,
   },
 
   /**
-   * Corner rounding applied to every piece silhouette, in board units.
+   * Corner radius of the board's play area, in board units.
    *
-   * Border pieces have straight outer edges meeting at hard 90° corners, so an
-   * unplaced corner piece looked sharp against a UI where nothing else is. Once
-   * locked it *appeared* rounded only because the board's rounded clip cut it,
-   * which is why the sharpness seemed to disappear on placement.
+   * This is the *only* corner radius on the board, and that is the point. A corner
+   * piece's outward corner is rounded with this exact value, so the piece's curve
+   * and the frame's curve are the same curve and the frame's clip removes nothing.
+   *
+   * They used to differ: the frame clipped at 20 while pieces rounded at 6. Both
+   * are board units — `cellSizeForGrid` anchors the board at 4 × 72 = 288 units
+   * wide whatever the grid — so a corner piece's 2.1%-of-board curve sat inside
+   * the frame's 6.9% curve and the frame sliced across it. That is why the corner
+   * piece read as clipping out of the board rather than filling it.
+   *
+   * Keep this equal to the radius the play area is clipped with; `board-fx.test.ts`
+   * pins that, and `puzzle-board.tsx` reads this for both.
    */
-  pieceCornerRadius: 6,
+  boardCornerRadius: 20,
 
   /**
    * Tray geometry.
@@ -140,8 +150,12 @@ export const FX = {
     rows: 2,
     /** Columns fully visible at once — the piece size follows from this. */
     visibleColumns: 4,
-    /** Gap between the piece grid and the scroll slider, so they never touch. */
-    sliderGap: 12,
+    /**
+     * Gap between the piece grid and the scroll slider, so they never touch.
+     * Widened from 12 — at that distance the slider read as part of the bottom row
+     * of pieces rather than as its own control.
+     */
+    sliderGap: 22,
     /** Height of the slider's track and pill. */
     sliderHeight: 10,
   },

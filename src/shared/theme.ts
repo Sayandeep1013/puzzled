@@ -5,6 +5,7 @@ export {
   accentRamp,
   backgrounds,
   border,
+  motion,
   radii,
   shadow,
   spacing,

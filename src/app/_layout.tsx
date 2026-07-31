@@ -3,11 +3,12 @@ import { Nunito_400Regular, Nunito_700Bold, Nunito_800ExtraBold } from '@expo-go
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/shared/theme';
+import { LoadingScreen } from '@/shared/ui';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -19,15 +20,28 @@ export default function RootLayout() {
     Nunito_700Bold,
     Nunito_800ExtraBold,
   });
+  const fontsSettled = ready || error != null;
+
+  /**
+   * The JS loading screen covers the app until it dissolves itself.
+   *
+   * Two splashes run back to back: the native one (a static bear, circle-masked
+   * by Android and unfixable) and then `LoadingScreen` (the whole bear, bobbing).
+   * They share a background colour, so the seam is invisible.
+   */
+  const [loading, setLoading] = useState(true);
+  const finishLoading = useCallback(() => setLoading(false), []);
 
   useEffect(() => {
     // Hide on error too: a missing font must not leave the user on a splash forever.
-    if (ready || error) {
+    // Held until the fonts settle so the wordmark on `LoadingScreen` is never
+    // drawn in a fallback face and then reflowed.
+    if (fontsSettled) {
       void SplashScreen.hideAsync();
     }
-  }, [ready, error]);
+  }, [fontsSettled]);
 
-  if (!ready && !error) {
+  if (!fontsSettled) {
     return null;
   }
 
@@ -52,6 +66,9 @@ export default function RootLayout() {
           <Stack.Screen name="statistics" />
           <Stack.Screen name="settings" />
         </Stack>
+        {/* Last child, so it overlays the navigator: the app mounts and warms up
+            behind it rather than after it. */}
+        {loading ? <LoadingScreen onDone={finishLoading} /> : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

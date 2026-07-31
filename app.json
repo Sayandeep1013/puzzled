@@ -42,7 +42,7 @@
         {
           "backgroundColor": "#8AE3F5",
           "image": "./assets/images/splash-bear.png",
-          "imageWidth": 254
+          "imageWidth": 176
         }
       ],
       "expo-sqlite",

@@ -139,3 +139,29 @@ export const springs = {
   pop: { damping: 14, stiffness: 180, mass: 0.8 },
   snappy: { damping: 20, stiffness: 320, mass: 0.6 },
 } as const;
+
+/**
+ * Durations, in ms, for the motion that is not a spring.
+ *
+ * Springs cover anything responding to a touch; these cover the timed motion —
+ * entrances, idle loops and the loading handoff — where a duration reads more
+ * predictably than a physical settle.
+ */
+export const motion = {
+  /** A list item's fade-and-rise entrance. */
+  enter: 320,
+  /** Gap between consecutive items in a staggered list, so the eye tracks order. */
+  stagger: 55,
+  /** Half-cycle of an idle loop: a breathing bob or a slow sway. */
+  idle: 1500,
+  /** The loading overlay's dissolve into the app behind it. */
+  handoff: 420,
+  /**
+   * How long the loading screen stays up at minimum.
+   *
+   * Fonts often resolve in well under 100ms from cache, and without a floor the
+   * loading screen appears for two frames — which reads as a glitch rather than
+   * as a greeting. Long enough for one bob of the bear.
+   */
+  loaderMinimum: 1100,
+} as const;

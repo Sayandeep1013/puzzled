@@ -1,15 +1,18 @@
 import { FX } from './board-fx';
 
 /**
- * These guard tuning the user asked for after playing on a device: the neighbour
- * jiggle was too strong, and the post-lock ring was a loud orange flash. Both are
- * easy to creep back up, so the intent is pinned here rather than left in a
+ * These guard tuning the user asked for after playing on a device: the post-lock
+ * ring was a loud orange flash, and the neighbour jiggle was cut entirely. Both
+ * are easy to creep back, so the intent is pinned here rather than left in a
  * commit message.
  */
 describe('FX tuning', () => {
-  it('keeps the neighbour jiggle subtle', () => {
-    expect(FX.jiggleAmplitude).toBeLessThanOrEqual(1);
-    expect(FX.jiggleMs).toBeLessThanOrEqual(140);
+  it('has no neighbour jiggle at all', () => {
+    // Toned down twice (2px → 1px → 0.6px) and rejected each time: placing a
+    // piece correctly should feel settled, and nudging its neighbours read as the
+    // board being knocked. Removed rather than tuned a third time, so this
+    // asserts absence — the guard against it being reintroduced as "subtle".
+    expect(Object.keys(FX).filter((key) => key.startsWith('jiggle'))).toEqual([]);
   });
 
   describe('lock ring', () => {
@@ -58,11 +61,40 @@ describe('FX tuning', () => {
       expect(seamAlpha).toBeLessThan(edgeAlpha);
       expect(FX.depth.seamWidth).toBeLessThanOrEqual(FX.depth.edgeWidth);
     });
+
+    it('still leaves the locked seam visible, since the board is nearly all locked', () => {
+      // The seam was `rgba(23,33,33,0.1)` at 1px — a 10%-alpha hairline. Every piece
+      // the player places is locked, so however strong the raised shadow was, the
+      // board they look at all game had no perceptible depth. "Fainter than raised"
+      // above must not be satisfied by fading to nothing again.
+      const seamAlpha = Number(FX.depth.seamColor.match(/,\s*([\d.]+)\)$/)?.[1]);
+      expect(seamAlpha).toBeGreaterThanOrEqual(0.25);
+      expect(FX.depth.seamWidth).toBeGreaterThanOrEqual(1.5);
+      // Blurred, so it shades into the piece instead of banding as a drawn outline.
+      expect(FX.depth.seamBlur).toBeGreaterThan(0);
+    });
+
+    it('only lifts raised pieces off the surface', () => {
+      // A locked piece is flush with its neighbours, so an outward drop shadow would
+      // be physically wrong; its depth comes from the inward rim alone.
+      expect(FX.depth.shadowDy).toBeGreaterThan(0);
+      expect(FX.depth.edgeBlur).toBeGreaterThan(0);
+    });
   });
 
   describe('piece corners', () => {
     it('rounds the silhouette so unplaced border pieces are not sharp', () => {
-      expect(FX.pieceCornerRadius).toBeGreaterThan(0);
+      expect(FX.boardCornerRadius).toBeGreaterThan(0);
+    });
+
+    it('exposes exactly one corner radius, shared by the frame and its corner pieces', () => {
+      // The board frame clipped at 20 while corner pieces rounded at 6, so the
+      // frame sliced across each corner piece and it read as clipping out of the
+      // board. A second radius token is how that regresses, so there must not be
+      // one: `puzzle-board.tsx` reads `boardCornerRadius` for the frame's
+      // `RoundedRect`, its clip, and `roundPieceCorners` alike.
+      const radiusTokens = Object.keys(FX).filter((key) => /cornerradius|radius/i.test(key));
+      expect(radiusTokens).toEqual(['boardCornerRadius']);
     });
   });
 

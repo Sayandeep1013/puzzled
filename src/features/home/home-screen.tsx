@@ -7,7 +7,15 @@ import { getWalletRepository, listCatalog } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
 import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopSurface, WordmarkTitle, useTabBarSpace } from '@/shared/ui';
+import {
+  Art,
+  EnterView,
+  IdleBob,
+  PopButton,
+  PopSurface,
+  WordmarkTitle,
+  useTabBarSpace,
+} from '@/shared/ui';
 
 const HOME_BACKGROUND = require('../../../assets/backgrounds/home.png');
 
@@ -90,16 +98,23 @@ export function HomeScreen() {
           </Pressable>
         </View>
 
+        {/* Logo, mascot then actions rise in that order, which is also the order
+            the eye should read them. The bear keeps breathing afterwards — sitting
+            perfectly still is what made it read as a sticker rather than a mascot. */}
         <View style={[styles.body, { paddingBottom: tabBarSpace }]}>
-          <WordmarkTitle />
+          <EnterView index={0}>
+            <WordmarkTitle />
+          </EnterView>
 
           {/* The mascot absorbs the slack between logo and actions, so the
               layout holds on both short and tall screens. */}
-          <View style={styles.mascotWrap}>
-            <Art name="bear" size={MASCOT_SIZE} />
-          </View>
+          <EnterView index={1} style={styles.mascotWrap}>
+            <IdleBob distance={9} sway={2}>
+              <Art name="bear" size={MASCOT_SIZE} />
+            </IdleBob>
+          </EnterView>
 
-          <View style={styles.actions}>
+          <EnterView index={2} style={styles.actions}>
             <PopButton
               label="Play"
               tone="grass"
@@ -125,7 +140,7 @@ export function HomeScreen() {
               />
               <QuickLink art="album" label="My Album" onPress={() => router.push('/library')} />
             </View>
-          </View>
+          </EnterView>
         </View>
       </SafeAreaView>
     </ImageBackground>

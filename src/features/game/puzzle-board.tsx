@@ -2,6 +2,7 @@
  * Reanimated shared values and gesture handlers intentionally mutate `.value` and close over refs.
  */
 import {
+  BlurMask,
   Canvas,
   Circle,
   Group,
@@ -27,7 +28,6 @@ import Animated, {
   runOnJS,
   useDerivedValue,
   useSharedValue,
-  withSequence,
   withSpring,
   withTiming,
   type SharedValue,
@@ -37,10 +37,8 @@ import { getSettingsRepository } from '@/data';
 import {
   dropPiece,
   isWithinSnapDistance,
-  makePieceId,
   raisePiece,
   snapThresholdForCellSize,
-  TAB_SIZE_RATIO,
   type GameSession,
   type GeneratedPuzzle,
   type PieceEdges,
@@ -55,21 +53,37 @@ import { backgrounds, colors } from '@/shared/theme';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
 import { FX, impact, setHapticsEnabled, success } from './board-fx';
+import { maxPieceExtent, TRAY_SLOT, trayThumbScale } from './tray-geometry';
 import { useBoardCamera } from './use-board-camera';
 
 const BOARD_PADDING = 12;
-/** Corner radius of the board face, matching `radii.lg` on the surrounding card. */
-const BOARD_RADIUS = 20;
+
+/**
+ * The one corner radius on the board, in board units: used for the play area's
+ * `RoundedRect`, for the clip that masks the pieces to it, and for a corner piece's
+ * outward corner. All three must agree or the frame slices across the piece.
+ *
+ * Capped at 45% of a cell because `FX.boardCornerRadius` is a fixed 20 while a cell
+ * shrinks with the grid. `cellSizeForGrid` gives 72 units at 4x4 but only 29 at
+ * 10x10, where a corner piece's bounds are ~29–35 units — a radius of 20 exceeds
+ * half the piece, and `roundPieceCorners`' `arcToTangent` mask then folds back on
+ * itself and produces a self-crossing path. Deriving the cap from the cell keeps
+ * the frame and its corner pieces equal at every grid size, which matching a fixed
+ * radius against a shrinking piece cannot do.
+ */
+function boardCornerRadius(cellSize: number): number {
+  return Math.min(FX.boardCornerRadius, cellSize * 0.45);
+}
 const TRAY_PAD = 12;
+/**
+ * Corner radius of the tray shelf, in *screen points* — the tray sits outside the
+ * board's scaled group, so this is unrelated to `boardCornerRadius`'s board units
+ * despite both having read 20.
+ */
+const TRAY_RADIUS = 20;
 const SLOT_GAP = 6;
 /** Breathing room between the fitted board and the tray strip. */
 const TRAY_GAP = 14;
-/**
- * Slot edge, derived so exactly `visibleColumns` fit the narrowest phone width
- * this app targets. Pieces are smaller than before on purpose: at the old size a
- * fourth piece was always half off-screen.
- */
-const TRAY_SLOT = 92;
 /** Tray strip height: two rows of slots, then a gap, then the slider. */
 const TRAY_HEIGHT =
   TRAY_PAD * 2 +
@@ -133,8 +147,13 @@ function roundPieceCorners(
   path: SkPath,
   bounds: PieceLocalPath['bounds'],
   edges: PieceEdges,
+  radius: number,
 ): SkPath {
-  const r = FX.pieceCornerRadius;
+  // The frame's radius is passed in rather than read from FX: the corner piece must
+  // trace the frame's curve exactly, so both must come from the same call to
+  // `boardCornerRadius`. Clamped again here against this piece's own bounds, since
+  // a blank-edged corner piece is narrower than a tabbed one.
+  const r = Math.min(radius, bounds.width / 2, bounds.height / 2);
   // A flat edge (0) means that side sits on the board's boundary, so a corner is
   // outward only where two flat edges meet.
   const topLeft = edges.top === 0 && edges.left === 0;
@@ -227,15 +246,22 @@ function PieceFill({
         />
       </Group>
 
-      {/* A darker edge, not a lighter one. Clipped to the silhouette so it reads
-          as the artwork's own boundary rather than an outline drawn around it. */}
+      {/* An inward rim, darker rather than lighter. Clipped to the silhouette so it
+          shades the artwork's own boundary instead of outlining it, and blurred so it
+          falls off into the piece as shading rather than banding as a drawn line.
+          Doubled width because the clip discards the outer half of a centred stroke.
+
+          This is the *only* depth a locked piece has — it is flush with its
+          neighbours, so there is nothing for it to cast a shadow onto. */}
       <Group clip={skPath}>
         <Path
           path={skPath}
           style="stroke"
-          strokeWidth={raised ? depth.edgeWidth * 2 : depth.seamWidth * 2}
+          strokeWidth={(raised ? depth.edgeWidth : depth.seamWidth) * 2}
           color={raised ? depth.edgeColor : depth.seamColor}
-        />
+        >
+          <BlurMask blur={raised ? depth.edgeBlur : depth.seamBlur} style="normal" />
+        </Path>
       </Group>
     </Group>
   );
@@ -260,62 +286,6 @@ const BoardPiece = memo(function BoardPiece({
     </Group>
   );
 });
-
-/**
- * A locked piece mid-wobble: one of the just-placed piece's orthogonal
- * neighbours, briefly rendered through its own shared value instead of
- * `BoardPiece`'s static transform. Unmounts itself back to `BoardPiece` via
- * `onDone` once the wobble finishes, so no locked piece carries an animated
- * transform permanently (perf: only the handful of affected neighbours ever
- * mount this, and only for `FX.jiggleMs`).
- */
-function JigglingBoardPiece({
-  prepared,
-  image,
-  imageScale,
-  onDone,
-}: {
-  prepared: PreparedPiece;
-  image: SkImage;
-  imageScale: number;
-  onDone: () => void;
-}) {
-  const offset = useSharedValue(0);
-  // `onDone` is a fresh inline closure on every parent render (it's created
-  // inside a `.map()`); route it through a ref so the animation effect below
-  // depends only on `offset` and fires exactly once per mount instead of
-  // restarting the wobble if the board happens to re-render mid-jiggle.
-  const onDoneRef = useRef(onDone);
-  useEffect(() => {
-    onDoneRef.current = onDone;
-  }, [onDone]);
-
-  useEffect(() => {
-    const half = FX.jiggleMs / 2;
-    const finish = () => onDoneRef.current();
-    offset.value = withSequence(
-      withTiming(-FX.jiggleAmplitude, { duration: half * 0.5, easing: Easing.out(Easing.quad) }),
-      withTiming(FX.jiggleAmplitude, { duration: half }),
-      withTiming(0, { duration: half * 0.5 }, (finished) => {
-        if (finished) {
-          runOnJS(finish)();
-        }
-      }),
-    );
-  }, [offset]);
-
-  const { solvedPosition } = prepared.geometry;
-  const transform = useDerivedValue(() => [
-    { translateX: solvedPosition.x },
-    { translateY: solvedPosition.y + offset.value },
-  ]);
-
-  return (
-    <Group transform={transform}>
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-    </Group>
-  );
-}
 
 /**
  * An unplaced piece resting directly on the board — a miss that stayed where it
@@ -572,8 +542,6 @@ export function PuzzleBoard({
   const [baselineElapsedMs] = useState(() => session.elapsedMs);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [snapFlash, setSnapFlash] = useState<{ id: number; cx: number; cy: number } | null>(null);
-  /** pieceId → wobble token for locked neighbours currently jiggling (Task 13). */
-  const [jiggleTokens, setJiggleTokens] = useState<Record<string, number>>({});
 
   // Finger position of the floating piece, in canvas coordinates.
   const fx = useSharedValue(0);
@@ -649,6 +617,11 @@ export function PuzzleBoard({
   const snapThreshold = snapThresholdForCellSize(cellSize);
   const gridSize = generated.puzzle.gridSize;
 
+  /** Shared by the frame, its clip and the corner pieces — see `boardCornerRadius`. */
+  const cornerRadius = boardCornerRadius(cellSize);
+  /** Real worst-case piece size, which the tray scales against — see `maxPieceExtent`. */
+  const pieceExtent = useMemo(() => maxPieceExtent(Object.values(generated.paths)), [generated]);
+
   const preparedById = useMemo(() => {
     const map: Record<string, PreparedPiece> = {};
     for (const geometry of generated.pieces) {
@@ -661,6 +634,7 @@ export function PuzzleBoard({
           commandsToSkPath(localPath.commands),
           localPath.bounds,
           geometry.edges,
+          cornerRadius,
         ),
         isEdge: isEdgePiece(geometry.edges),
         cx: b.x + b.width / 2,
@@ -668,7 +642,7 @@ export function PuzzleBoard({
       };
     }
     return map;
-  }, [generated]);
+  }, [generated, cornerRadius]);
 
   // Locked pieces live on the board at their solved position; unlocked pieces are
   // either loose on the board (a miss that stayed put) or waiting in the tray.
@@ -756,8 +730,7 @@ export function PuzzleBoard({
     // Slots are a fixed size so exactly `visibleColumns` fit; the piece scales to
     // the slot rather than the slot growing with the tray height.
     const slotInner = TRAY_SLOT;
-    const pieceExtent = cellSize * (1 + 2 * TAB_SIZE_RATIO);
-    const thumbScale = (slotInner * 0.86) / pieceExtent;
+    const thumbScale = trayThumbScale(slotInner, pieceExtent);
     const slotW = slotInner + SLOT_GAP;
 
     return {
@@ -771,7 +744,7 @@ export function PuzzleBoard({
       thumbScale,
       slotInner,
     };
-  }, [viewport.width, viewport.height, boardSize.width, boardSize.height, cellSize]);
+  }, [viewport.width, viewport.height, boardSize.width, boardSize.height, pieceExtent]);
 
   // Camera pans/zooms the board zone only (1x-3x); the tray strip is pinned
   // and unscaled. At rest (scale 1, translate 0) it is the identity, so it
@@ -858,51 +831,6 @@ export function PuzzleBoard({
     [fx, fy, tiltDeg, scaleBoost, clearDragging],
   );
 
-  const clearJiggle = useCallback((pieceId: string, token: number) => {
-    setJiggleTokens((prev) => {
-      if (prev[pieceId] !== token) {
-        // A newer wobble has since started on the same neighbour; leave it running.
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[pieceId];
-      return next;
-    });
-  }, []);
-
-  /** Orthogonal locked neighbours of `pieceId` (by row/column), for the lock-jiggle. */
-  const triggerNeighbourJiggle = useCallback(
-    (pieceId: string) => {
-      const geometry = preparedById[pieceId]?.geometry;
-      if (!geometry) {
-        return;
-      }
-      const { row, column } = geometry;
-      const candidates = [
-        row > 0 ? makePieceId(row - 1, column) : null,
-        row < gridSize - 1 ? makePieceId(row + 1, column) : null,
-        column > 0 ? makePieceId(row, column - 1) : null,
-        column < gridSize - 1 ? makePieceId(row, column + 1) : null,
-      ].filter((id): id is string => id !== null);
-
-      const lockedNeighbourIds = candidates.filter((id) =>
-        sessionRef.current.pieces.some((p) => p.pieceId === id && p.isLocked),
-      );
-      if (lockedNeighbourIds.length === 0) {
-        return;
-      }
-
-      setJiggleTokens((prev) => {
-        const next = { ...prev };
-        for (const id of lockedNeighbourIds) {
-          next[id] = (next[id] ?? 0) + 1;
-        }
-        return next;
-      });
-    },
-    [preparedById, gridSize],
-  );
-
   const gesture = useMemo(() => {
     const { boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, vw } = layout;
     const count = trayIds.length;
@@ -974,7 +902,6 @@ export function PuzzleBoard({
       onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: placeThreshold }));
       impact('medium');
       playSfx('snap');
-      triggerNeighbourJiggle(id);
       flashId.current += 1;
       // The glow ring is drawn at the Canvas root (outside the camera group,
       // so it stays on top of the tray/floating piece), so its position must
@@ -1121,7 +1048,6 @@ export function PuzzleBoard({
     beginGrab,
     resolveGrabbedId,
     settleFloatingPiece,
-    triggerNeighbourJiggle,
     fx,
     fy,
     tiltDeg,
@@ -1196,7 +1122,7 @@ export function PuzzleBoard({
               y={boardZoneH}
               width={Math.max(vw - TRAY_PAD, 1)}
               height={TRAY_HEIGHT}
-              r={BOARD_RADIUS}
+              r={TRAY_RADIUS}
               color={backgrounds.game}
               opacity={0.95}
             />
@@ -1234,7 +1160,7 @@ export function PuzzleBoard({
                     y={0}
                     width={boardSize.width + BOARD_PADDING * 2}
                     height={boardSize.height + BOARD_PADDING * 2}
-                    r={BOARD_RADIUS + BOARD_PADDING * 0.6}
+                    r={cornerRadius + BOARD_PADDING * 0.6}
                     color={colors.surface}
                   >
                     <Shadow dx={0} dy={6} blur={14} color="rgba(58,43,26,0.4)" />
@@ -1244,15 +1170,15 @@ export function PuzzleBoard({
                     y={BOARD_PADDING}
                     width={boardSize.width}
                     height={boardSize.height}
-                    r={BOARD_RADIUS}
+                    r={cornerRadius}
                     color="#DCE9CD"
                   />
 
                   <Group
                     clip={rrect(
                       rect(BOARD_PADDING, BOARD_PADDING, boardSize.width, boardSize.height),
-                      BOARD_RADIUS,
-                      BOARD_RADIUS,
+                      cornerRadius,
+                      cornerRadius,
                     )}
                   >
                     <Group
@@ -1279,28 +1205,14 @@ export function PuzzleBoard({
                           strokeWidth={1}
                         />
                       ))}
-                      {lockedPieces.map((piece) => {
-                        const jiggleToken = jiggleTokens[piece.pieceId];
-                        if (jiggleToken) {
-                          return (
-                            <JigglingBoardPiece
-                              key={`${piece.pieceId}:${jiggleToken}`}
-                              prepared={preparedById[piece.pieceId]}
-                              image={image}
-                              imageScale={imageScale}
-                              onDone={() => clearJiggle(piece.pieceId, jiggleToken)}
-                            />
-                          );
-                        }
-                        return (
-                          <BoardPiece
-                            key={piece.pieceId}
-                            prepared={preparedById[piece.pieceId]}
-                            image={image}
-                            imageScale={imageScale}
-                          />
-                        );
-                      })}
+                      {lockedPieces.map((piece) => (
+                        <BoardPiece
+                          key={piece.pieceId}
+                          prepared={preparedById[piece.pieceId]}
+                          image={image}
+                          imageScale={imageScale}
+                        />
+                      ))}
 
                       {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
                       {loosePieces.map((piece) => (
