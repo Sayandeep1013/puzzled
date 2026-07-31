@@ -28,7 +28,6 @@ import Animated, {
   runOnJS,
   useDerivedValue,
   useSharedValue,
-  withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -53,7 +52,14 @@ import { backgrounds, colors } from '@/shared/theme';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
 import { FX, impact, setHapticsEnabled, success } from './board-fx';
-import { maxPieceExtent, TRAY_SLOT, trayThumbScale } from './tray-geometry';
+import {
+  BOARD_SHADOW,
+  clampTrayScroll,
+  maxPieceExtent,
+  TRAY_GAP,
+  TRAY_SLOT,
+  trayThumbScale,
+} from './tray-geometry';
 import { useBoardCamera } from './use-board-camera';
 
 const BOARD_PADDING = 12;
@@ -82,8 +88,6 @@ const TRAY_PAD = 12;
  */
 const TRAY_RADIUS = 20;
 const SLOT_GAP = 6;
-/** Breathing room between the fitted board and the tray strip. */
-const TRAY_GAP = 14;
 /** Tray strip height: two rows of slots, then a gap, then the slider. */
 const TRAY_HEIGHT =
   TRAY_PAD * 2 +
@@ -389,7 +393,7 @@ function FloatingPiece({
   fy: SharedValue<number>;
   /** Live drag tilt in degrees, capped at `FX.maxTiltDeg`; springs back to 0 on release. */
   tiltDeg: SharedValue<number>;
-  /** `FX.liftScale` while held, springing to 1 (`FX.settle`) once released. */
+  /** `FX.liftScale` while held, easing to 1 over `FX.snapMs` once released. */
   scaleBoost: SharedValue<number>;
 }) {
   const transform = useDerivedValue(() => [
@@ -548,7 +552,7 @@ export function PuzzleBoard({
   const fy = useSharedValue(0);
   /** Live drag tilt in degrees (`FX.maxTiltDeg` cap); springs to 0 on release. */
   const tiltDeg = useSharedValue(0);
-  /** `FX.liftScale` while held; springs to 1 via `FX.settle` on release. */
+  /** `FX.liftScale` while held; eases to 1 over `FX.snapMs` on release. */
   const scaleBoost = useSharedValue<number>(FX.liftScale);
   const trayScroll = useSharedValue(0);
   /**
@@ -807,22 +811,37 @@ export function PuzzleBoard({
   const clearDragging = useCallback(() => setDraggingId(null), []);
 
   /**
-   * Bring the floating piece's scale/tilt back to identity via `FX.settle`
+   * Bring the floating piece's scale/tilt back to identity over `FX.snapMs`
    * before finally clearing `draggingId` — the piece stays mounted (and the
    * real BoardPiece/LoosePiece it hands off to is already drawn underneath,
    * at the same spot) for the short settle window instead of popping away
    * the instant the finger lifts.
    */
+  /**
+   * Move the floating piece onto its resting place and hand back to the static
+   * render.
+   *
+   * Timed with an ease-out rather than sprung. `FX.settle` was
+   * `{ damping: 14, stiffness: 180 }`, whose critical damping is `2 * sqrt(180)` =
+   * 26.8 — a damping ratio of 0.52, so it overshot by around 15% and rang before
+   * coming to rest. On a correct placement the locked piece is *already* drawn at
+   * the target, so that ringing was a duplicate visibly wobbling on top of the
+   * finished piece: the jiggle that survived removing the neighbour wobble, and the
+   * reason placement felt laggy — the piece kept moving well after the finger left.
+   *
+   * An ease-out cannot overshoot, so the piece arrives once and stops.
+   */
   const settleFloatingPiece = useCallback(
     (targetX: number, targetY: number) => {
-      fx.value = withSpring(targetX, FX.settle);
-      fy.value = withSpring(targetY, FX.settle);
-      tiltDeg.value = withSpring(0, FX.settle);
-      // Gate clearing `draggingId` on the scale spring specifically: unlike
+      const settle = { duration: FX.snapMs, easing: Easing.out(Easing.cubic) };
+      fx.value = withTiming(targetX, settle);
+      fy.value = withTiming(targetY, settle);
+      tiltDeg.value = withTiming(0, settle);
+      // Gate clearing `draggingId` on the scale animation specifically: unlike
       // tilt (which may already be ~0 and resolve in a single frame), the
       // lift→1 travel is always a fixed, non-trivial distance, so this
       // reliably outlives the whole settle motion.
-      scaleBoost.value = withSpring(1, FX.settle, (finished) => {
+      scaleBoost.value = withTiming(1, settle, (finished) => {
         if (finished) {
           runOnJS(clearDragging)();
         }
@@ -993,8 +1012,8 @@ export function PuzzleBoard({
         if (mode.value === 1) {
           fx.value = e.x;
           fy.value = e.y;
-          // Live tilt follows pointer velocity directly (no extra spring lag
-          // here — `FX.settle` is reserved for the release-to-identity
+          // Live tilt follows pointer velocity directly (no extra easing lag
+          // here — `FX.snapMs` is reserved for the release-to-identity
           // motion), capped at FX.maxTiltDeg either way.
           const rawTilt = e.velocityX * (FX.maxTiltDeg / TILT_VELOCITY_RANGE);
           tiltDeg.value = Math.max(-FX.maxTiltDeg, Math.min(FX.maxTiltDeg, rawTilt));
@@ -1098,6 +1117,29 @@ export function PuzzleBoard({
   });
   const trayThumbTransform = useDerivedValue(() => [{ translateX: trayThumbX.value }]);
 
+  /**
+   * Pull the strip back into range whenever the tray shrinks.
+   *
+   * `trayScroll` is only ever clamped by the gestures that move it, so it kept
+   * whatever offset it had when pieces were removed. Placing pieces shrinks
+   * `trayContentW`, which shrinks `trayOverflow` — and once that reached 0 the slider
+   * unmounted while the strip was still scrolled left, leaving the last few pieces
+   * parked off the shelf with no control left to bring them back. The tray looked
+   * empty even though pieces remained.
+   *
+   * Runs on every change to the limit, not just to zero: a smaller overflow strands
+   * pieces the same way, just less completely.
+   */
+  useEffect(() => {
+    const clamped = clampTrayScroll(trayScroll.value, trayOverflow);
+    if (clamped !== trayScroll.value) {
+      trayScroll.value = withTiming(clamped, {
+        duration: FX.snapMs,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [trayOverflow, trayScroll]);
+
   // Hold the first paint until the image is decoded, the play area is
   // measured, and the camera has framed itself — otherwise the board flashes
   // unframed before the camera's identity transform is in place.
@@ -1163,7 +1205,12 @@ export function PuzzleBoard({
                     r={cornerRadius + BOARD_PADDING * 0.6}
                     color={colors.surface}
                   >
-                    <Shadow dx={0} dy={6} blur={14} color="rgba(58,43,26,0.4)" />
+                    <Shadow
+                      dx={0}
+                      dy={BOARD_SHADOW.dy}
+                      blur={BOARD_SHADOW.blur}
+                      color="rgba(58,43,26,0.4)"
+                    />
                   </RoundedRect>
                   <RoundedRect
                     x={BOARD_PADDING}
@@ -1287,25 +1334,42 @@ export function PuzzleBoard({
             ) : null}
 
             {/* Tray zone. Pieces fill top-to-bottom then rightward, so scrolling
-                reveals whole new columns instead of reshuffling visible ones. */}
-            <Group transform={trayTransform}>
-              {trayPieces.map((piece, index) => {
-                const column = Math.floor(index / FX.tray.rows);
-                const row = index % FX.tray.rows;
-                return (
-                  <TrayPiece
-                    key={piece.pieceId}
-                    prepared={preparedById[piece.pieceId]}
-                    image={image}
-                    imageScale={imageScale}
-                    slotCenterX={TRAY_PAD + column * slotW + slotW / 2}
-                    slotCenterY={TRAY_PAD + row * (TRAY_SLOT + SLOT_GAP) + TRAY_SLOT / 2}
-                    scale={thumbScale}
-                    highlight={highlightEdges && preparedById[piece.pieceId].isEdge}
-                    hidden={piece.pieceId === draggingId}
-                  />
-                );
-              })}
+                reveals whole new columns instead of reshuffling visible ones.
+
+                Clipped to the shelf, which it previously was not: a scrolled-out
+                piece kept drawing at its translated position, so pieces spilled past
+                both ends of the shelf and sat on the cream page beside it. The clip
+                lives on this outer Group, which carries no transform of its own —
+                Skia concats a Group's `transform` before applying its `clip`, so a
+                clip on the same node as `trayTransform` would scroll with the pieces
+                and never cut them. Matching the shelf's own rounded rect means pieces
+                disappear exactly at its edge, including into the rounded corners. */}
+            <Group
+              clip={rrect(
+                rect(TRAY_PAD / 2, boardZoneH, Math.max(vw - TRAY_PAD, 1), TRAY_HEIGHT),
+                TRAY_RADIUS,
+                TRAY_RADIUS,
+              )}
+            >
+              <Group transform={trayTransform}>
+                {trayPieces.map((piece, index) => {
+                  const column = Math.floor(index / FX.tray.rows);
+                  const row = index % FX.tray.rows;
+                  return (
+                    <TrayPiece
+                      key={piece.pieceId}
+                      prepared={preparedById[piece.pieceId]}
+                      image={image}
+                      imageScale={imageScale}
+                      slotCenterX={TRAY_PAD + column * slotW + slotW / 2}
+                      slotCenterY={TRAY_PAD + row * (TRAY_SLOT + SLOT_GAP) + TRAY_SLOT / 2}
+                      scale={thumbScale}
+                      highlight={highlightEdges && preparedById[piece.pieceId].isEdge}
+                      hidden={piece.pieceId === draggingId}
+                    />
+                  );
+                })}
+              </Group>
             </Group>
 
             {/* Floating piece (above everything) */}

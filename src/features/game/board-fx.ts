@@ -45,18 +45,19 @@ export function success(): void {
 export const FX = {
   /** Rendered scale while a piece is lifted under the finger. */
   liftScale: 1.08,
-  /** Peak scale of the snap "pop" before settling to 1. */
-  popScale: 1.12,
-  /** Spring settle time for a snapped piece, ms (visual only). */
-  snapMs: 180,
+  /**
+   * How long the released piece takes to travel onto its resting place, ms.
+   *
+   * Eased, not sprung — see `settleFloatingPiece`. A spring here overshot and rang,
+   * which read as the piece jiggling after it had already been placed.
+   */
+  snapMs: 130,
   /** Beat before handing off to the results screen so the celebration is seen, ms. */
   celebrateMs: 1200,
   /** Confetti particle count cap. */
   confettiCount: 80,
   /** Max tilt in degrees while dragging, derived from pointer velocity. */
   maxTiltDeg: 4,
-  /** Spring used when a piece settles after release. */
-  settle: { damping: 14, stiffness: 180 },
 
   /**
    * The one-shot ring drawn where a piece locks home.
