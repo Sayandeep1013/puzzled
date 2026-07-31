@@ -158,7 +158,15 @@ function QuickLink({ art, label, onPress }: { art: ArtName; label: string; onPre
       <PopSurface fill={colors.surface} radius={radii.md}>
         <View style={styles.quickLinkInner}>
           <Art name={art} size={30} />
-          <Text style={styles.quickLinkLabel}>{label}</Text>
+          {/* `numberOfLines` with a shrinkable style, or the label loses letters.
+              `PopSurface`'s face clips (`overflow: 'hidden'`), and an unshrinkable
+              `Text` in a centred row overflows that face rather than narrowing — so
+              when the label does not fit, the ends are simply cut off with nothing to
+              show for it. Shrinking degrades to an ellipsis instead, which is legible
+              and obviously deliberate. */}
+          <Text style={styles.quickLinkLabel} numberOfLines={1}>
+            {label}
+          </Text>
         </View>
       </PopSurface>
     </Pressable>
@@ -216,5 +224,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.md,
   },
-  quickLinkLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.ink },
+  // `flexShrink` so the label gives way before the clipping face does — see QuickLink.
+  quickLinkLabel: { ...typography.bodyStrong, fontSize: 14, color: colors.ink, flexShrink: 1 },
 });
