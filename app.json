@@ -40,7 +40,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#8AE3F5"
+          "backgroundColor": "#8AE3F5",
+          "image": "./assets/images/splash-none.png",
+          "imageWidth": 96
         }
       ],
       "expo-sqlite",
