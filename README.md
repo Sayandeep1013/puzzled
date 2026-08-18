@@ -24,6 +24,16 @@ rules.
 
 ---
 
+## Screenshots
+
+Captured on-device (adb) from a debug build: home, difficulty picker, and a live drag session mid-solve.
+
+| Home | Difficulty | Gameplay |
+|---|---|---|
+| ![Home](screenshots/readme/01-home.png) | ![Select difficulty](screenshots/readme/02-difficulty.png) | ![Gameplay, pieces dragged from the tray](screenshots/readme/03-gameplay.png) |
+
+---
+
 ## Requirements
 
 | Tool           | Version                                      |
