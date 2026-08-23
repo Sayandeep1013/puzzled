@@ -3,7 +3,13 @@ import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { deriveAchievements, getCompletionsRepository, type AchievementState } from '@/data';
+import {
+  ACHIEVEMENT_REWARD,
+  deriveAchievements,
+  getCompletionsRepository,
+  getWalletRepository,
+  type AchievementState,
+} from '@/data';
 import { type ArtName } from '@/shared/art';
 import { colors, radii, spacing, typography } from '@/shared/theme';
 import { Art, PopHeader, PopProgress, PopSurface, Text } from '@/shared/ui';
@@ -44,6 +50,38 @@ async function loadAchievements(): Promise<AchievementState[]> {
   }
 }
 
+/**
+ * Pay for every achievement that is unlocked but has not been paid for.
+ *
+ * Achievements awarded nothing at all until now — you could unlock all four and
+ * end up with the same balance you started with, which makes the screen a
+ * scoreboard rather than a reward. There is no "claim" button because there is
+ * nothing to decide: `recordOnce` is keyed on the achievement, so this is
+ * idempotent and paying on sight is indistinguishable from claiming.
+ *
+ * Fire-and-forget: a failed credit is retried the next time this screen opens,
+ * and must never stop the list from rendering.
+ */
+async function payForUnlocked(states: readonly AchievementState[]): Promise<void> {
+  const unlocked = states.filter((state) => state.unlocked);
+  if (unlocked.length === 0) {
+    return;
+  }
+  try {
+    const wallet = await getWalletRepository();
+    for (const state of unlocked) {
+      await wallet.recordOnce({
+        deltaCoins: ACHIEVEMENT_REWARD,
+        deltaHints: 0,
+        reason: 'achievement-unlock',
+        ref: state.key,
+      });
+    }
+  } catch {
+    // Best-effort; the next visit tries again.
+  }
+}
+
 export function AchievementsScreen() {
   const router = useRouter();
   const [achievements, setAchievements] = useState<AchievementState[]>(() =>
@@ -56,7 +94,11 @@ export function AchievementsScreen() {
     useCallback(() => {
       let active = true;
       loadAchievements().then((next) => {
-        if (active) setAchievements(next);
+        if (!active) {
+          return;
+        }
+        setAchievements(next);
+        void payForUnlocked(next);
       });
       return () => {
         active = false;
@@ -93,7 +135,11 @@ function AchievementRow({ achievement }: { achievement: AchievementState }) {
       />
       <View style={styles.body}>
         <Text style={styles.title}>{achievement.title}</Text>
-        <Text style={styles.desc}>{achievement.description}</Text>
+        <Text style={styles.desc}>
+          {achievement.unlocked
+            ? `Unlocked · ${ACHIEVEMENT_REWARD} coins`
+            : `${achievement.description} · ${ACHIEVEMENT_REWARD} coins`}
+        </Text>
         <PopProgress value={achievement.current} goal={achievement.goal} tone={tone} height={10} />
       </View>
       <View style={styles.trailing}>

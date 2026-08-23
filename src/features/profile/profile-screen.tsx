@@ -56,7 +56,7 @@ export function ProfileScreen() {
 
   const links: { art: ArtName; label: string; onPress: () => void }[] = [
     { art: 'my-trophies', label: 'Achievements', onPress: () => router.push('/achievements') },
-    { art: 'coin', label: 'Shop', onPress: () => router.push('/shop') },
+    { art: 'coin', label: 'Coins', onPress: () => router.push('/coins') },
     { art: 'bars', label: 'Statistics', onPress: () => router.push('/statistics') },
     { art: 'gear', label: 'Settings', onPress: () => router.push('/settings') },
   ];

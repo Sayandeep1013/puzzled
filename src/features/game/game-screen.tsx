@@ -12,7 +12,6 @@ import {
   getWalletRepository,
   resolvePuzzleImageSource,
   sessionStorageKey,
-  type Wallet,
 } from '@/data';
 import {
   cellSizeForGrid,
@@ -90,7 +89,6 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const [highlightEdges, setHighlightEdges] = useState(false);
   /** Measured width of the board shell, used to cap its height. */
   const [shellWidth, setShellWidth] = useState(0);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
 
   /**
    * Whether this screen is the one on top of the stack.
@@ -142,16 +140,6 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The newest session worth writing. Never cleared — a write is an upsert. */
   const latestSession = useRef<GameSession | null>(null);
-
-  // Tracks whether the component is still mounted, for async work (like the
-  // hint spend below) that must not call state setters after unmount.
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
 
   // Load the catalog entry + artwork once per puzzle.
   useEffect(() => {
@@ -246,25 +234,6 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         setHaptics(current.haptics);
       } catch {
         // Settings are best-effort; the defaults already shown stay in effect.
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Wallet balance drives the live hint count on the toolbar and the "Show me
-  // one" gate. Best-effort: a failed read just leaves the toolbar without a
-  // badge instead of crashing the screen.
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const balance = await (await getWalletRepository()).balance();
-        if (!active) return;
-        setWallet(balance);
-      } catch {
-        // A stale/missing balance is not worth surfacing.
       }
     })();
     return () => {
@@ -500,26 +469,20 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     onSessionChange({ ...session, pieces: nextPieces, updatedAt: new Date().toISOString() });
   }, [session, playable, onSessionChange]);
 
-  // "Show me one": debits a hint BEFORE placing anything, then locks a random
-  // unplaced piece at its solved position via the engine's own `dropPiece`
-  // (position === solvedPosition with a zero threshold always snaps+locks).
-  //
-  // `hintSpendInFlight` closes a fast-double-tap window: the `disabled` prop
-  // on the button and the `wallet.hints > 0` check just below both read the
-  // same closured `wallet` state, which only updates once the async debit
-  // resolves. Two taps fired inside that window would both pass the check,
-  // both debit, and both place a piece for the price of one hint. The ref
-  // flips to `true` synchronously — before the first `await` — so a second
-  // tap during the in-flight debit is a no-op regardless of stale state.
-  const hintSpendInFlight = useRef(false);
+  /**
+   * "Show me one": locks a random unplaced piece at its solved position, via the
+   * engine's own `dropPiece` (position === solvedPosition with a zero threshold
+   * always snaps and locks).
+   *
+   * Free, and synchronous because of it. This used to debit a hint from the
+   * wallet first, which made it an async debit-then-place and needed a
+   * re-entrancy guard: the `disabled` prop and the balance check both read the
+   * same closured `wallet`, which only updated once the debit resolved, so two
+   * fast taps could both pass and place two pieces for one hint. With nothing to
+   * spend there is nothing to race, and the guard goes with the debit.
+   */
   const onSpendHint = useCallback(() => {
     if (!session || !playable) {
-      return;
-    }
-    if ((wallet?.hints ?? 0) <= 0) {
-      return;
-    }
-    if (hintSpendInFlight.current) {
       return;
     }
     const unplaced = session.pieces.filter((piece) => !piece.isLocked);
@@ -528,48 +491,24 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
       return;
     }
 
-    hintSpendInFlight.current = true;
-    void (async () => {
-      try {
-        let nextWallet: Wallet;
-        try {
-          nextWallet = await (
-            await getWalletRepository()
-          ).record({
-            deltaCoins: 0,
-            deltaHints: -1,
-            reason: 'hint-spend',
-            ref: puzzleId,
-          });
-        } catch {
-          // Debit failed — do not reveal a hint the player was never charged for.
-          return;
-        }
-        if (!mounted.current) return;
-        setWallet(nextWallet);
-
-        const target = unplaced[Math.floor(Math.random() * unplaced.length)];
-        const geometry = findGeometry(playable.generated.pieces, target.pieceId);
-        const now = new Date().toISOString();
-        const placed = dropPiece({
-          session,
-          pieceId: target.pieceId,
-          position: geometry.solvedPosition,
-          solvedPosition: geometry.solvedPosition,
-          now,
-          elapsedMs: session.elapsedMs,
-          snapThreshold: 0,
-        });
-        if (!mounted.current) return;
-        onSessionChange(placed);
-        setOverlay('none');
-      } finally {
-        // Cleared regardless of success/failure/early-return so the next tap
-        // (or the same tap after a debit failure) is never permanently locked out.
-        hintSpendInFlight.current = false;
-      }
-    })();
-  }, [session, playable, wallet, puzzleId, onSessionChange]);
+    const target = unplaced[Math.floor(Math.random() * unplaced.length)];
+    const geometry = findGeometry(playable.generated.pieces, target.pieceId);
+    onSessionChange(
+      dropPiece({
+        session,
+        pieceId: target.pieceId,
+        position: geometry.solvedPosition,
+        solvedPosition: geometry.solvedPosition,
+        now: new Date().toISOString(),
+        // The live clock, not `session.elapsedMs` — that field is only refreshed
+        // when the board writes, so reusing it here would roll the play time back
+        // to whatever it read at the last placement.
+        elapsedMs: getElapsedMs(),
+        snapThreshold: 0,
+      }),
+    );
+    setOverlay('none');
+  }, [session, playable, getElapsedMs, onSessionChange]);
 
   const onToggleSound = useCallback((next: boolean) => {
     setSound(next);
@@ -652,7 +591,6 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const trayCount = session.pieces.filter((piece) =>
     isTrayPiece(piece, generated.boardSize.height),
   ).length;
-  const hintCount = wallet?.hints ?? 0;
 
   return (
     <View style={styles.screen}>
@@ -726,12 +664,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
           {/* Order matches the mockup's toolbar: Hint, Edges, Preview, Shuffle. */}
           <View style={styles.toolbar}>
-            <ToolButton
-              art="bulb"
-              label="Hint"
-              badge={hintCount}
-              onPress={() => setOverlay('hint')}
-            />
+            <ToolButton art="bulb" label="Hint" onPress={() => setOverlay('hint')} />
             <ToolButton
               art="edges"
               label="Edges"
@@ -800,30 +733,8 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
               <View style={styles.hintHero}>
                 <Art name="reveal-piece" size={84} />
               </View>
-              <Text style={styles.hintBalance}>
-                {hintCount} {hintCount === 1 ? 'hint' : 'hints'} available
-              </Text>
-              <PopButton
-                label="Show me one — 1 hint"
-                tone="grass"
-                disabled={hintCount <= 0}
-                onPress={onSpendHint}
-              />
-              {/* A button, not a sentence. This read "Get more in the Shop" as
-                  static text with nothing to tap — the one moment the player is
-                  told they need something and the one screen that sells it was
-                  four taps away, through Profile. */}
-              {hintCount <= 0 ? (
-                <PopButton
-                  label="Get more in the Shop"
-                  tone="honey"
-                  icon={<Art name="coin" size={22} />}
-                  onPress={() => {
-                    setOverlay('none');
-                    router.push('/shop');
-                  }}
-                />
-              ) : null}
+              <Text style={styles.hintBalance}>Stuck? Put one piece in for me.</Text>
+              <PopButton label="Show me one" tone="grass" onPress={onSpendHint} />
               <PopButton
                 label={highlightEdges ? 'Hide edges' : 'Highlight edges'}
                 tone="sky"
@@ -1026,7 +937,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.apricot,
   },
   toolBadgeText: { ...typography.caption, fontSize: 10, lineHeight: 12, color: colors.onFill },
-  toolLabel: { ...typography.caption, fontSize: 11, color: colors.ink },
+  // See `PopButton`'s label: two points of measurement slack, not spacing.
+  toolLabel: { ...typography.caption, fontSize: 11, color: colors.ink, paddingHorizontal: 2 },
   toolLabelDisabled: { color: colors.inkMuted },
   sheetBody: { gap: spacing.md },
   pauseRows: { gap: spacing.sm },

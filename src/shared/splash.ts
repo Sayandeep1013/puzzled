@@ -1,5 +1,3 @@
-import { splash } from './tokens';
-
 /**
  * Launch-screen geometry, kept free of React so the handoff arithmetic can be
  * checked directly — including at the device widths nobody develops on.
@@ -10,64 +8,30 @@ import { splash } from './tokens';
  */
 
 /**
- * What Android actually draws, as a multiple of the `imageWidth` requested in
- * `app.json`.
+ * The layout width that makes React Native draw the bear at the size Android's
+ * splash window draws it — 178 points.
  *
- * It is not 1.0, which is the trap: `imageWidth` is what the plugin composites
- * at, not what the system renders. Android 12+ takes the generated drawable and
- * scales it into its own splash icon canvas, and the round trip through the
- * density buckets comes back slightly larger.
+ * Calibrated end to end on device, not derived. A derivation was tried and came
+ * out 2% wrong, because it multiplied two ratios that are not the same ratio:
+ * the fraction of its canvas the bear's opaque pixels fill differs slightly
+ * between the system's splash-icon path and RN's `Image` + `resizeMode:
+ * "contain"` path, and both differ from `app.json`'s requested `imageWidth`.
+ * Chaining them accumulated the error instead of cancelling it.
  *
- * Measured, not guessed — on a 1080x2392 device (A059, 420dpi):
+ * So this is measured against the only thing that matters — what is actually on
+ * screen — on a 1080x2392 device (Nothing A059, 420dpi):
  *
- * - Native splash bear: 391px across, six cold starts, identical every time.
- * - `bear.png` is square with transparent padding; its opaque content spans
- *   0.8202 of its layout box, cross-checked two ways on the same device (Home's
- *   254dp mascot measured 208.4dp; the loading screen's 213.9dp bear measured
- *   175.4dp).
- * - So the native bear occupies 391 / 2.625 / 0.8202 = 181.7dp, against the 176
- *   requested. A second reading at an overridden 480dpi gave 180.9dp — 1.028x.
+ * - Native splash bear: 391px across, identical on every one of eight cold
+ *   starts, which is 149.0dp.
+ * - At a layout width of 181.6dp the loading screen drew 152.0dp: +2.0%.
+ * - 181.6 x (149.0 / 152.0) = 178.0dp, which draws 149.0dp.
  *
- * The caveat: this is one handset. If it turns out to differ per device, the
- * error is ~3%, which is where this sat anyway before the factor existed — so
- * the factor cannot make things meaningfully worse, and on the device we can
- * actually measure it makes the handoff exact.
+ * `app.json` still requests `imageWidth: 176`; that number sizes the *generated
+ * drawable*, and the system rescales it. The two are related but not equal, and
+ * `splash.test.ts` pins both so neither can drift alone.
+ *
+ * If the art or `imageWidth` changes, re-measure rather than re-deriving: run a
+ * cold start, screenshot during the native splash and during the loading screen,
+ * and compare the bear's pixel span in each.
  */
-const NATIVE_RENDER_FACTOR = 1.032;
-
-/**
- * On-screen width of the native splash's bear, in points.
- *
- * This — not `splash.iconWidth` — is what the loading screen has to match, and
- * confusing the two is worth 3% of a seam.
- */
-export function nativeSplashRenderedWidth(): number {
-  return splash.iconWidth * NATIVE_RENDER_FACTOR;
-}
-
-/**
- * Bear size on the loading screen, in points: exactly what the native splash
- * draws, on every screen.
- *
- * Not a fraction of the screen, and **not animated**. Two attempts tried to have
- * the loading screen grow the bear from the splash's size to a larger one, and
- * both failed on device for the same reason — the growth was over before anyone
- * could see it:
- *
- * 1. Started on mount. But `LoadingScreen` mounts behind the native splash, so
- *    the spring ran while hidden. Measured: native bear 149.0dp, first visible
- *    loading frame 179.8dp, 30ms later, already decaying from the overshoot.
- * 2. Started when `SplashScreen.hideAsync()` resolved. No better — that promise
- *    resolves when the *call* completes, not when Android has finished its own
- *    splash exit animation, so the spring still ran against a window that was
- *    still on screen. A 30ms-resolution phase sweep across nine cold starts
- *    never once caught the bear below 176dp, and cold-start timing wandered
- *    +/-100ms run to run, which is why no fixed delay would have fixed it either.
- *
- * The lesson is that the teardown of a system-owned window is not an event this
- * app can synchronise an animation to. So the size stops changing: the bear is
- * the same size before and after, and the handoff is seamless by construction
- * rather than by timing. Aliveness comes from the bob and from the wordmark and
- * dots rising in beneath it, neither of which can produce a jump.
- */
-export const LOADING_BEAR_SIZE = nativeSplashRenderedWidth();
+export const LOADING_BEAR_SIZE = 178;

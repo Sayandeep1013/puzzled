@@ -155,5 +155,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 11,
     letterSpacing: 0.3,
+    // See `PopButton`'s label: two points of measurement slack, not spacing.
+    paddingHorizontal: 2,
   },
 });

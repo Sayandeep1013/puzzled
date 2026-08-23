@@ -153,6 +153,18 @@ const styles = StyleSheet.create({
   },
   // `flexShrink` so the label gives way before the row (or a clipping ancestor)
   // does; `textAlign` keeps it centred once it has narrowed. See the label above.
-  label: { fontFamily: typography.heading.fontFamily, flexShrink: 1, textAlign: 'center' },
+  label: {
+    fontFamily: typography.heading.fontFamily,
+    flexShrink: 1,
+    textAlign: 'center',
+    // Two points of horizontal slack, which is measurement headroom, not spacing.
+    // Android measures a `Text`'s intrinsic width and draws its glyphs with
+    // slightly different rounding, and an OS font scale makes `fontSize`
+    // fractional (14 x 0.85 = 11.9) which widens the gap. When the drawn string
+    // needs marginally more than the measured box, `numberOfLines={1}` ellipsises
+    // a label that had hundreds of points of room beside it — measured on device:
+    // "My Album" truncated to "My Alb..." inside a card 356px wide.
+    paddingHorizontal: 2,
+  },
   disabled: { opacity: 0.45 },
 });

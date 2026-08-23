@@ -108,7 +108,7 @@ export default function RootLayout() {
           <Stack.Screen name="results/[puzzleId]" />
           <Stack.Screen name="pack/[packId]" />
           <Stack.Screen name="daily" />
-          <Stack.Screen name="shop" />
+          <Stack.Screen name="coins" />
           <Stack.Screen name="achievements" />
           <Stack.Screen name="statistics" />
           <Stack.Screen name="settings" />

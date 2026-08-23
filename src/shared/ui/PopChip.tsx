@@ -69,5 +69,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
-  label: { ...typography.caption, flexShrink: 1 },
+  // See `PopButton`'s label: two points of measurement slack, not spacing.
+  label: { ...typography.caption, flexShrink: 1, paddingHorizontal: 2 },
 });

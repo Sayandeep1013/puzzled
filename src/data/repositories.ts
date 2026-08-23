@@ -72,6 +72,7 @@ export type LedgerReason =
   | 'streak-bonus'
   | 'hint-spend'
   | 'hint-purchase'
+  | 'achievement-unlock'
   | 'coin-purchase'
   | 'starter-grant';
 

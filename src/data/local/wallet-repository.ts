@@ -46,6 +46,31 @@ export function coinsForCompletion(gridSize: GridSize): number {
   return 10 + gridSize * gridSize;
 }
 
+/**
+ * The daily bonus, and how it grows.
+ *
+ * Escalating rather than flat, because a flat bonus gives a player who returns
+ * every day for a week exactly as much as one who shows up twice a month — the
+ * point of a daily is the streak, so the streak has to be worth something.
+ *
+ * Capped, because it compounds against a currency that buys things. Without the
+ * cap a long streak eventually pays more per day than finishing a 10x10 board,
+ * which would make playing the game the slow way to earn.
+ */
+export const DAILY_BONUS = { base: 25, perDay: 15, cap: 100 } as const;
+
+/**
+ * Coins for today's claim, given how many consecutive days were claimed *before*
+ * today. A first-ever claim passes 0 and gets `base`.
+ */
+export function dailyBonusFor(priorStreakDays: number): number {
+  const days = Math.max(0, Math.floor(priorStreakDays));
+  return Math.min(DAILY_BONUS.cap, DAILY_BONUS.base + days * DAILY_BONUS.perDay);
+}
+
+/** Paid once per achievement, the first time it is seen unlocked. */
+export const ACHIEVEMENT_REWARD = 50;
+
 export const STARTER_GRANT = {
   deltaCoins: 100,
   deltaHints: 5,
