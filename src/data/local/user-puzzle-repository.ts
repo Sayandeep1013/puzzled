@@ -5,6 +5,8 @@ import type { PuzzleDefinition } from '@/game-engine';
 
 import type { NewUserPuzzle, UserPuzzleRepository } from '../repositories';
 
+import { fallbackPhotoTitle, isOpaqueFileName } from './photo-title';
+
 /** Subfolder of the app document directory that holds imported puzzle images. */
 const IMAGE_SUBDIR = 'user-puzzles';
 
@@ -89,6 +91,41 @@ export class SQLiteUserPuzzleRepository implements UserPuzzleRepository {
       CREATE INDEX IF NOT EXISTS user_puzzles_created_at_idx
         ON user_puzzles(created_at DESC);
     `);
+
+    await this.renameOpaqueTitles();
+  }
+
+  /**
+   * Give already-imported photos a readable name.
+   *
+   * Titles are written once, at import, so naming them better only helped photos
+   * imported *after* the fix — every photo already on the device kept the
+   * `2c2550e4 36fc 4ab7...` it was given, on the board header, in Library and in
+   * Puzzles. This rewrites those.
+   *
+   * Naturally idempotent, which is why it needs no migration flag: a renamed
+   * title is no longer opaque, so a second pass matches nothing. Numbering runs
+   * oldest-first so the names follow import order rather than whatever order
+   * rows happen to come back in.
+   */
+  private async renameOpaqueTitles(): Promise<void> {
+    const rows = await this.database.getAllAsync<{ id: string; title: string }>(
+      'SELECT id, title FROM user_puzzles ORDER BY created_at ASC',
+    );
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      if (!isOpaqueFileName(row.title)) {
+        continue;
+      }
+      // Numbered by position among *all* imports, so the third photo imported is
+      // "My photo 3" whether or not the first two needed renaming.
+      await this.database.runAsync(
+        'UPDATE user_puzzles SET title = ? WHERE id = ?',
+        fallbackPhotoTitle(index),
+        row.id,
+      );
+    }
   }
 
   async list(): Promise<PuzzleDefinition[]> {

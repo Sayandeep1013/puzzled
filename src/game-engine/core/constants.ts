@@ -17,6 +17,17 @@ export function isSupportedGridSize(value: number): value is GridSize {
 /** Default snap radius as a fraction of the board cell size. */
 export const DEFAULT_SNAP_THRESHOLD_RATIO = 0.28;
 
+/**
+ * Snap radius with the assist turned off, as a fraction of the cell size.
+ *
+ * Tightened, not removed. A finger covers the piece it is holding, so with no
+ * catch radius at all the player is aiming at a target they cannot see and the
+ * board becomes unfinishable rather than harder. Half the default is close
+ * enough to demand a deliberate placement and still forgive the parallax
+ * between where a fingertip is and where the phone thinks it is.
+ */
+export const STRICT_SNAP_THRESHOLD_RATIO = 0.14;
+
 /** Tab / blank protrusion as a fraction of the shorter cell side. */
 export const TAB_SIZE_RATIO = 0.2;
 

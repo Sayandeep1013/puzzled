@@ -3,9 +3,6 @@ import type { PuzzleDefinition } from '@/game-engine';
 import { getUserPuzzleRepository } from './local/database';
 import { LocalPuzzleRepository } from './local/local-puzzle-repository';
 
-// Re-exported so callers can pull image resolution from the catalog entry point.
-export { isUserPuzzle, resolvePuzzleImageSource } from './local/puzzle-assets';
-
 export interface Catalog {
   bundled: PuzzleDefinition[];
   user: PuzzleDefinition[];

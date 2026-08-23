@@ -1,0 +1,143 @@
+name: Android APK
+
+# Builds an installable APK on GitHub's runners instead of EAS, because the EAS
+# free tier allows only a handful of Android builds per month. Private repos get
+# 2,000 free Actions minutes/month and a run here takes ~10-15, so this removes
+# the build bottleneck entirely.
+#
+# The APK is currently **debug-signed** — see docs/android-release-signing.md for
+# switching to the real upload key. Debug signing means each install needs the
+# previous one uninstalled first, which is fine while the app is in development.
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: Gradle variant to assemble
+        type: choice
+        default: release
+        options: [release, debug]
+  # `design/**` is included because that is where the work happens — this project
+  # keeps each theme direction on its own long-lived design branch and merges to
+  # main only once approved. Without it, nothing could be built until merge, and
+  # `workflow_dispatch` alone is no help: GitHub only offers that trigger for
+  # workflows present on the default branch.
+  push:
+    branches: [main, 'design/**']
+    paths-ignore: ['**/*.md', 'docs/**']
+
+# One build per branch; a newer push supersedes an in-flight run rather than
+# queueing behind it and burning minutes on a stale commit.
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Needed to publish the APK as a release below.
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` rather than `npm install`: the lockfile is the contract, and this
+      # is the same command EAS runs.
+      - name: Install dependencies
+        run: npm ci
+
+      # Cheap gates first — no point spending Gradle minutes on a build that
+      # cannot pass review anyway.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      # `android/` is gitignored, so the native project is generated here. --clean
+      # guarantees the output matches app.json rather than any stale artefacts.
+      - name: Prebuild native project
+        run: npx expo prebuild --platform android --clean
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/**/*.gradle*') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # Release, not debug. `assembleDebug` produces a *development* build: it does
+      # not embed the JS bundle and it boots expo-dev-client's launcher, so the APK
+      # only runs while a Metro server is reachable — standalone it just sits
+      # retrying `ws://localhost:8081`. Release embeds the Hermes bundle and skips
+      # the dev launcher.
+      #
+      # This needs no secrets: Expo's Android template signs `release` with the
+      # debug signing config until a real keystore is configured
+      # (docs/android-release-signing.md).
+      #
+      # `inputs.variant` is empty on a push trigger, so the fallback here is what
+      # actually decides — it must be Release, not Debug.
+      - name: Assemble APK
+        working-directory: android
+        run: ./gradlew assemble${{ inputs.variant == 'debug' && 'Debug' || 'Release' }} --no-daemon
+
+      # Gradle's output path differs per variant, so resolve it rather than
+      # hardcoding one and silently uploading nothing.
+      - name: Locate APK
+        id: apk
+        run: |
+          path="$(find android/app/build/outputs/apk -name '*.apk' -print -quit)"
+          if [ -z "$path" ]; then
+            echo "No APK produced" >&2
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "Built $path ($(du -h "$path" | cut -f1))"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: puzzled-apk-${{ github.sha }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # Also publish as a prerelease. Actions *artifacts* need authentication to
+      # download even from a public repo, which makes them awkward to fetch from a
+      # script or to hand to a tester. Release assets on a public repo are plain
+      # anonymous HTTPS, so `curl`/`adb install` can pull a build directly.
+      #
+      # Marked prerelease and named by run number so these never look like real
+      # versioned releases of the app.
+      - name: Publish APK as a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ci-${{ github.run_number }}
+        run: |
+          cp "${{ steps.apk.outputs.path }}" "puzzled-${TAG}.apk"
+          gh release create "$TAG" "puzzled-${TAG}.apk" \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            --title "CI build ${{ github.run_number }} (${{ github.ref_name }})" \
+            --notes "Debug-signed APK from ${{ github.sha }}.
+          Uninstall any existing build first — the debug key differs from the EAS one:
+          \`adb uninstall com.puzzled.app\`"

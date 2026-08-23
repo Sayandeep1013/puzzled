@@ -9,8 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.puzzled.app",
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.puzzled.app"
     },
     "android": {
       "package": "com.puzzled.app",
@@ -32,18 +31,29 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Puzzled to use photos you pick as puzzles."
+          "photosPermission": "Allow Puzzled to use photos you pick as puzzles.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F6F2EA",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#8AE3F5",
+          "image": "./assets/images/splash-bear.png",
+          "imageWidth": 176
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "microphonePermission": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -52,9 +62,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "03062fde-2c89-4351-9e7e-a37a722a49b0"
+        "projectId": "3a809dc5-fa5e-4d46-a93e-8d39fd244ee8"
       }
     },
-    "owner": "sayandeep1013"
+    "owner": "sayandeep1013s-team"
   }
 }

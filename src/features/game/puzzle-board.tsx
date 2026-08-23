@@ -2,32 +2,48 @@
  * Reanimated shared values and gesture handlers intentionally mutate `.value` and close over refs.
  */
 import {
+  BlurMask,
   Canvas,
+  Circle,
   Group,
   Image,
+  Line,
   Path,
-  Rect,
+  PathOp,
+  rect,
   RoundedRect,
+  rrect,
+  Shadow,
+  Skia,
   useImage,
+  vec,
   type SkImage,
   type SkPath,
 } from '@shopify/react-native-skia';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  cancelAnimation,
+  Easing,
   runOnJS,
   useDerivedValue,
   useSharedValue,
+  withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
 
+import { getSettingsRepository } from '@/data';
 import {
   dropPiece,
+  isWithinSnapDistance,
   raisePiece,
   snapThresholdForCellSize,
+  DEFAULT_SNAP_THRESHOLD_RATIO,
+  STRICT_SNAP_THRESHOLD_RATIO,
   type GameSession,
   type GeneratedPuzzle,
+  type PieceEdges,
   type PieceGeometry,
   type PieceLocalPath,
   type PieceState,
@@ -35,7 +51,96 @@ import {
   type Size,
 } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
-import { colors } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { type Theme } from '@/shared/themes';
+
+import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
+import { FX, impact, pickup, setHapticsEnabled, success } from './board-fx';
+import { clusterCacheKey, clusterLockedPieces } from './cluster-geometry';
+import { bakeOverlay, overlayCacheKey, type BakedOverlay } from './piece-overlay';
+import {
+  BOARD_SHADOW,
+  clampTrayScroll,
+  maxPieceExtent,
+  TRAY_GAP,
+  TRAY_SLOT,
+  trayThumbScale,
+} from './tray-geometry';
+import { useBoardCamera } from './use-board-camera';
+
+const BOARD_PADDING = 12;
+
+/**
+ * The one corner radius on the board, in board units: used for the play area's
+ * `RoundedRect`, for the clip that masks the pieces to it, and for a corner piece's
+ * outward corner. All three must agree or the frame slices across the piece.
+ *
+ * Capped at 45% of a cell because `FX.boardCornerRadius` is a fixed 20 while a cell
+ * shrinks with the grid. `cellSizeForGrid` gives 72 units at 4x4 but only 29 at
+ * 10x10, where a corner piece's bounds are ~29–35 units — a radius of 20 exceeds
+ * half the piece, and `roundPieceCorners`' `arcToTangent` mask then folds back on
+ * itself and produces a self-crossing path. Deriving the cap from the cell keeps
+ * the frame and its corner pieces equal at every grid size, which matching a fixed
+ * radius against a shrinking piece cannot do.
+ */
+function boardCornerRadius(cellSize: number): number {
+  return Math.min(FX.boardCornerRadius, cellSize * 0.45);
+}
+const TRAY_PAD = 12;
+/**
+ * Corner radius of the tray shelf, in *screen points* — the tray sits outside the
+ * board's scaled group, so this is unrelated to `boardCornerRadius`'s board units
+ * despite both having read 20.
+ */
+const TRAY_RADIUS = 20;
+const SLOT_GAP = 6;
+/** Tray strip height: two rows of slots, then a gap, then the slider. */
+const TRAY_HEIGHT =
+  TRAY_PAD * 2 +
+  FX.tray.rows * TRAY_SLOT +
+  (FX.tray.rows - 1) * SLOT_GAP +
+  FX.tray.sliderGap +
+  FX.tray.sliderHeight;
+/**
+ * Vertical space the tray needs below the board.
+ *
+ * Exported so the game screen can cap the board shell's height: the board is
+ * square, so a shell taller than `width + this` can only add dead margin.
+ */
+export const BOARD_TRAY_RESERVE = TRAY_HEIGHT + TRAY_GAP;
+/**
+ * Confetti brights, as a function of the theme.
+ *
+ * A module-level array would be built once against whichever palette loaded
+ * first, so the celebration would keep the meadow's colours on every other
+ * theme — the same build-time binding the whole theme refactor exists to undo.
+ */
+function confettiColors(theme: Theme): string[] {
+  return [
+    theme.colors.berry,
+    theme.colors.honey,
+    theme.colors.apricot,
+    theme.colors.grass,
+    theme.colors.blossom,
+  ];
+}
+/** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
+const TILT_VELOCITY_RANGE = 900;
+/**
+ * Fraction of a tray slot that counts as "on the piece", for grabbing.
+ *
+ * The slot is 92pt and the piece drawn inside it fills `TRAY_SLOT_FILL` of that,
+ * so the rest of the slot is visibly empty — and treating the *whole* slot as
+ * the piece is what left nowhere to scroll from: the strip could only be moved
+ * by its slider. Hit-testing the piece instead turns the leftover margin, plus
+ * the gap between slots, into a free channel either side of every piece.
+ *
+ * Slightly larger than `TRAY_SLOT_FILL` on purpose. Matching it exactly makes
+ * the edge of a piece the edge of its target, and a finger is not a pixel — a
+ * little forgiveness here is the difference between "grabs when I touch it" and
+ * "hit or miss", while still leaving roughly 15pt of channel between pieces.
+ */
+const TRAY_GRAB_FILL = 0.92;
 
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
@@ -43,144 +148,574 @@ interface PuzzleBoardProps {
   /** Bundled `require` module id, or a `file://` uri for an imported photo. */
   imageSource: number | string;
   onSessionChange: (session: GameSession) => void;
+  /**
+   * Live play time in ms, read at the instant a piece is placed.
+   *
+   * The board used to keep its own `baselineElapsedMs + (Date.now() - startedAtMs)`,
+   * which is raw wall clock — it counted pauses, sheets and time spent in the
+   * background, and so disagreed with the clock on screen. The screen owns the
+   * one clock now (`use-play-clock.ts`) and the board reads it.
+   */
+  getElapsedMs: () => number;
+  /** When true, unplaced border pieces are outlined in the tray (edges-first helper). */
+  highlightEdges?: boolean;
 }
 
 interface PreparedPiece {
   geometry: PieceGeometry;
   localPath: PieceLocalPath;
   skPath: SkPath;
+  isEdge: boolean;
+  /** Centre of the piece's silhouette in local (piece) space. */
+  cx: number;
+  cy: number;
+  /** Baked cardboard depth, shared between every piece of the same shape. */
+  overlay: BakedOverlay | null;
 }
 
-function hitTestPiece(point: Point, piece: PieceState, prepared: PreparedPiece): boolean {
-  if (piece.isLocked) {
-    return false;
-  }
-
-  const { bounds } = prepared.localPath;
-  const localX = point.x - piece.position.x;
-  const localY = point.y - piece.position.y;
-
-  // Cheap bounds reject before the exact silhouette test.
-  if (
-    localX < bounds.x ||
-    localX > bounds.x + bounds.width ||
-    localY < bounds.y ||
-    localY > bounds.y + bounds.height
-  ) {
-    return false;
-  }
-
-  // Tray pieces overlap; the bounding box alone grabs the wrong neighbour.
-  return prepared.skPath.contains(localX, localY);
+function isEdgePiece(edges: PieceEdges): boolean {
+  return edges.top === 0 || edges.right === 0 || edges.bottom === 0 || edges.left === 0;
 }
-
-function findTopPieceAt(
-  point: Point,
-  session: GameSession,
-  preparedById: Record<string, PreparedPiece>,
-): PieceState | null {
-  const ordered = [...session.pieces].sort((a, b) => b.zIndex - a.zIndex);
-
-  for (const piece of ordered) {
-    const prepared = preparedById[piece.pieceId];
-    if (prepared && hitTestPiece(point, piece, prepared)) {
-      return piece;
-    }
-  }
-
-  return null;
-}
-
-/*
- * Piece fills are drawn by clipping the shared source image per piece.
- *
- * An earlier revision pre-baked each piece into its own texture with
- * `Skia.Surface.MakeOffscreen` to avoid re-clipping a 1024² image once per piece.
- * That renders correctly nowhere: the offscreen surface is GPU-backed and was
- * being drawn from the JS thread, while the canvas consuming the snapshots runs
- * on Skia's render thread under a different GL context — every piece came back
- * blank on device. Baking has to happen on the render thread (a worklet, or
- * `Atlas`/`Picture`) before it is worth re-attempting.
- */
 
 /**
- * Memoized: a drag changes one piece's props, and re-rendering the other 99 to
- * move a single piece is what made large boards stutter.
+ * Round only a corner piece's single outward corner, matching the board's own
+ * rounded frame.
+ *
+ * The first attempt intersected every piece with a rounded rect of its bounds,
+ * which rounded all four bbox corners of every piece. That was wrong: for an
+ * interior piece those corners are interlocking joints, so softening them opened
+ * visible notches where four pieces meet. Only the four true corner pieces have a
+ * corner on the board's outer boundary, and only that one corner should soften.
+ *
+ * The mask is built corner by corner with `arcToTangent` rather than as a rounded
+ * rect, because a rounded rect cannot round one corner and leave three square.
+ *
+ * This rounds the *geometry*, not the stroke, which matters because the artwork is
+ * clipped to this path — a paint-level corner effect would round the outline and
+ * leave the image square underneath.
  */
-const StaticPiece = memo(function StaticPiece({
-  piece,
+function roundPieceCorners(
+  path: SkPath,
+  bounds: PieceLocalPath['bounds'],
+  edges: PieceEdges,
+  radius: number,
+): SkPath {
+  // The frame's radius is passed in rather than read from FX: the corner piece must
+  // trace the frame's curve exactly, so both must come from the same call to
+  // `boardCornerRadius`. Clamped again here against this piece's own bounds, since
+  // a blank-edged corner piece is narrower than a tabbed one.
+  const r = Math.min(radius, bounds.width / 2, bounds.height / 2);
+  // A flat edge (0) means that side sits on the board's boundary, so a corner is
+  // outward only where two flat edges meet.
+  const topLeft = edges.top === 0 && edges.left === 0;
+  const topRight = edges.top === 0 && edges.right === 0;
+  const bottomRight = edges.bottom === 0 && edges.right === 0;
+  const bottomLeft = edges.bottom === 0 && edges.left === 0;
+
+  if (r <= 0 || !(topLeft || topRight || bottomRight || bottomLeft)) {
+    return path;
+  }
+
+  const { x, y, width, height } = bounds;
+  const right = x + width;
+  const bottom = y + height;
+
+  const mask = Skia.Path.Make();
+  mask.moveTo(x + (topLeft ? r : 0), y);
+  mask.lineTo(right - (topRight ? r : 0), y);
+  if (topRight) mask.arcToTangent(right, y, right, y + r, r);
+  mask.lineTo(right, bottom - (bottomRight ? r : 0));
+  if (bottomRight) mask.arcToTangent(right, bottom, right - r, bottom, r);
+  mask.lineTo(x + (bottomLeft ? r : 0), bottom);
+  if (bottomLeft) mask.arcToTangent(x, bottom, x, bottom - r, r);
+  mask.lineTo(x, y + (topLeft ? r : 0));
+  if (topLeft) mask.arcToTangent(x, y, x + r, y, r);
+  mask.close();
+
+  const rounded = path.copy();
+  // `op` mutates the receiver and reports success; on failure keep the original
+  // rather than shipping an empty silhouette.
+  return rounded.op(mask, PathOp.Intersect) ? rounded : path;
+}
+
+/**
+ * Clip the shared source image to a piece silhouette and give it cardboard depth.
+ * Scale-agnostic (parent Group scales), so it stays proportional in the tray as
+ * well as on the board.
+ *
+ * Depth is a **baked overlay** — a lit bevel, a thin light fibre core at the die cut,
+ * and paper grain — from `piece-overlay.ts`. It replaced three rounds of drawing
+ * depth with strokes, which could never work: a stroke is a band of constant colour
+ * and a bevel is a gradient of surface normals. The overlay's bevel comes from Skia's
+ * lighting filter reading a blurred silhouette as a *height map*, so it is real
+ * shading rather than a painted hint.
+ *
+ * The overlay contains no artwork, so one bake serves any photo — which is what keeps
+ * gallery imports working with no per-puzzle assets. It is also cached per shape, so a
+ * piece costs two draws and no filters per frame; the previous treatment ran a blurred
+ * stroke and a shadow filter on every piece on every frame.
+ *
+ * `raised` still splits the two states: tray, loose and lifted pieces sit above a
+ * surface and cast a drop shadow, while a locked piece is flush with its neighbours
+ * and casts nothing. Both get the bevel — a locked piece is still a physical tile.
+ *
+ * Every piece type routes through here, so the treatment lives in one place.
+ */
+function PieceFill({
   prepared,
   image,
   imageScale,
-  hidden,
+  raised = false,
 }: {
-  piece: PieceState;
   prepared: PreparedPiece;
   image: SkImage;
   imageScale: number;
+  /**
+   * True for pieces resting above a surface — tray, loose, and the lifted piece.
+   * False for locked pieces, which are part of the finished picture and take only
+   * a hairline seam.
+   */
+  raised?: boolean;
+}) {
+  const { geometry, skPath, overlay } = prepared;
+  const depth = FX.depth;
+
+  return (
+    <Group>
+      {/* Drop shadow, drawn from the silhouette *behind* the artwork. The fill is
+          hidden by the image on top; only the blurred, offset spill is visible. */}
+      {raised ? (
+        <Path path={skPath} color={depth.shadowColor}>
+          <Shadow dx={0} dy={depth.shadowDy} blur={depth.shadowBlur} color={depth.shadowColor} />
+        </Path>
+      ) : null}
+
+      <Group clip={skPath}>
+        <Image
+          image={image}
+          x={-geometry.sourceRect.x * imageScale}
+          y={-geometry.sourceRect.y * imageScale}
+          width={image.width() * imageScale}
+          height={image.height() * imageScale}
+        />
+      </Group>
+
+      {overlay ? (
+        /* The baked cardboard depth: lit bevel, fibre core, grain. Ordinary source-over
+           — the bake already carries the right alpha, with the piece's flat interior at
+           alpha 0, so no blend mode or clip is needed to keep the artwork readable. */
+        <Image
+          image={overlay.image}
+          x={overlay.rect.x}
+          y={overlay.rect.y}
+          width={overlay.rect.width}
+          height={overlay.rect.height}
+        />
+      ) : (
+        /* Fallback if the offscreen bake failed: the old inward rim, so a piece still
+           has an edge rather than floating flat. */
+        <Group clip={skPath}>
+          <Path
+            path={skPath}
+            style="stroke"
+            strokeWidth={(raised ? depth.edgeWidth : depth.seamWidth) * 2}
+            color={raised ? depth.edgeColor : depth.seamColor}
+          >
+            <BlurMask blur={raised ? depth.edgeBlur : depth.seamBlur} style="normal" />
+          </Path>
+        </Group>
+      )}
+    </Group>
+  );
+}
+
+/** One connected group of locked pieces, with its union path and baked depth. */
+interface ClusterDepth {
+  /** `clusterCacheKey` of the membership — the cluster's identity. */
+  key: string;
+  memberIds: string[];
+  /** Union of the members' silhouettes, already at their solved positions. */
+  path: SkPath;
+  overlay: BakedOverlay | null;
+}
+
+/**
+ * A connected group of locked pieces, drawn as one sheet of card.
+ *
+ * Depth belongs to the assembly, not to each piece in it. Per-piece bevels gave every
+ * internal seam *two* light fibre-core rims facing each other, which read as a gap
+ * where a real puzzle has no cut edge at all, and made an assembled row look like
+ * loose tiles rather than one board.
+ *
+ * The four passes are ordered so each is only responsible for one thing:
+ *
+ * 1. The cluster's drop shadow, from the union path. The fill under it is covered by
+ *    the artwork; only the offset spill shows, which is what makes the assembly read
+ *    as resting *on* the board.
+ * 2. Each member's artwork, clipped to its own silhouette. This is the one pass that
+ *    cannot be merged — every piece samples a different region of the photo.
+ * 3. Faint hairline joints, clipped to the union. Real puzzles show their seams;
+ *    without these the assembled area stops reading as pieces.
+ * 4. The baked bevel, on the union's outline only.
+ */
+const LockedCluster = memo(function LockedCluster({
+  cluster,
+  preparedById,
+  image,
+  imageScale,
+}: {
+  cluster: ClusterDepth;
+  preparedById: Record<string, PreparedPiece>;
+  image: SkImage;
+  imageScale: number;
+}) {
+  const { overlay } = cluster;
+
+  return (
+    <Group>
+      {/* `shadowOnly`, over an opaque source. A drop shadow takes its alpha from the
+          shape it is cast by, so filling the union in the shadow's own translucent
+          colour — as a raised piece does, where the fill is then hidden by artwork —
+          would square that alpha and leave a shadow at ~0.12 that is not there at
+          all. Casting from an opaque fill that is never drawn keeps the tuned value. */}
+      <Path path={cluster.path} color="black">
+        <Shadow
+          shadowOnly
+          dx={0}
+          dy={FX.depth.clusterShadowDy}
+          blur={FX.depth.clusterShadowBlur}
+          color={FX.depth.clusterShadowColor}
+        />
+      </Path>
+
+      {cluster.memberIds.map((id) => {
+        const prepared = preparedById[id];
+        const { solvedPosition } = prepared.geometry;
+        return (
+          <Group
+            key={id}
+            transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}
+          >
+            <Group clip={prepared.skPath}>
+              <Image
+                image={image}
+                x={-prepared.geometry.sourceRect.x * imageScale}
+                y={-prepared.geometry.sourceRect.y * imageScale}
+                width={image.width() * imageScale}
+                height={image.height() * imageScale}
+              />
+            </Group>
+          </Group>
+        );
+      })}
+
+      <Group clip={cluster.path}>
+        {cluster.memberIds.map((id) => {
+          const prepared = preparedById[id];
+          const { solvedPosition } = prepared.geometry;
+          return (
+            <Group
+              key={id}
+              transform={[{ translateX: solvedPosition.x }, { translateY: solvedPosition.y }]}
+            >
+              <Path
+                path={prepared.skPath}
+                style="stroke"
+                strokeWidth={FX.depth.jointWidth}
+                color={FX.depth.jointColor}
+              />
+            </Group>
+          );
+        })}
+      </Group>
+
+      {overlay ? (
+        <Image
+          image={overlay.image}
+          x={overlay.rect.x}
+          y={overlay.rect.y}
+          width={overlay.rect.width}
+          height={overlay.rect.height}
+        />
+      ) : null}
+    </Group>
+  );
+});
+
+/**
+ * An unplaced piece resting directly on the board — a miss that stayed where it
+ * landed instead of returning to the tray.
+ *
+ * Raised rather than outlined: its drop shadow is what says "not locked yet". The
+ * coloured ring it used to carry was the persistent orange the board was covered
+ * in, since with free placement most drops miss.
+ */
+const LoosePiece = memo(function LoosePiece({
+  prepared,
+  image,
+  imageScale,
+  position,
+  hidden,
+}: {
+  prepared: PreparedPiece;
+  image: SkImage;
+  imageScale: number;
+  position: Point;
   hidden: boolean;
 }) {
   if (hidden) {
     return null;
   }
-
   return (
-    <Group transform={[{ translateX: piece.position.x }, { translateY: piece.position.y }]}>
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path
-        path={prepared.skPath}
-        style="stroke"
-        strokeWidth={piece.isLocked ? 1 : 1.4}
-        color={piece.isLocked ? 'rgba(23,33,33,0.14)' : 'rgba(23,33,33,0.32)'}
-      />
+    <Group transform={[{ translateX: position.x }, { translateY: position.y }]}>
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} raised />
     </Group>
   );
 });
 
-function PieceFill({
+/** One unplaced piece sitting in a tray slot, centred and scaled to the thumbnail size. */
+const TrayPiece = memo(function TrayPiece({
   prepared,
   image,
   imageScale,
+  slotCenterX,
+  slotCenterY,
+  scale,
+  highlight,
+  hidden,
 }: {
   prepared: PreparedPiece;
   image: SkImage;
   imageScale: number;
+  slotCenterX: number;
+  slotCenterY: number;
+  scale: number;
+  highlight: boolean;
+  hidden: boolean;
 }) {
-  const { geometry, skPath } = prepared;
+  const theme = useTheme();
+  if (hidden) {
+    return null;
+  }
+  return (
+    <Group
+      transform={[
+        { translateX: slotCenterX },
+        { translateY: slotCenterY },
+        { scale },
+        { translateX: -prepared.cx },
+        { translateY: -prepared.cy },
+      ]}
+    >
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} raised />
+      {/* The Edges helper is an explicit opt-in, so it alone may draw a coloured
+          ring — in sky blue, so no orange remains anywhere on the board. Pieces
+          otherwise rely on the drop shadow from `PieceFill`. */}
+      {highlight ? (
+        <Path path={prepared.skPath} style="stroke" strokeWidth={3} color={theme.colors.sky} />
+      ) : null}
+    </Group>
+  );
+});
+
+/**
+ * The piece under the finger, drawn at board scale and tracking the finger
+ * exactly. `fx`/`fy` are raw canvas coordinates (the piece is rendered outside
+ * the camera-transformed board group so it never gets double-transformed),
+ * but its drawn *size* still follows the live camera zoom so it matches the
+ * board underneath if a second finger pinches mid-drag.
+ */
+function FloatingPiece({
+  prepared,
+  image,
+  imageScale,
+  boardScale,
+  camScale,
+  fx,
+  fy,
+  tiltDeg,
+  scaleBoost,
+}: {
+  prepared: PreparedPiece;
+  image: SkImage;
+  imageScale: number;
+  boardScale: number;
+  camScale: SharedValue<number>;
+  fx: SharedValue<number>;
+  fy: SharedValue<number>;
+  /** Live drag tilt in degrees, capped at `FX.maxTiltDeg`; springs back to 0 on release. */
+  tiltDeg: SharedValue<number>;
+  /** `FX.liftScale` while held, easing to 1 over `FX.snapMs` once released. */
+  scaleBoost: SharedValue<number>;
+}) {
+  /*
+   * Read out here, not inside the worklet.
+   *
+   * A worklet's closure captures whole *variables*, not the properties it touches:
+   * writing `prepared.cx` inside puts `prepared` itself into the shareable, and
+   * `prepared` carries `skPath` and `overlay.image` — both Skia host objects.
+   * Worklets does not reject those. `cloneHostObject` passes the raw reference
+   * across and rewraps the *same* C++ instance on the UI runtime, so the piece's
+   * path and baked image end up aliased by two runtimes with nothing coordinating
+   * their lifetime. This closure is rebuilt on every grab, since `FloatingPiece`
+   * mounts when a piece is picked up.
+   *
+   * This is the rule `releaseGeometry` was introduced for — nothing a worklet
+   * closes over may contain a Skia object — applied to the one place that still
+   * broke it. Two numbers is all the transform ever needed.
+   */
+  const { cx, cy } = prepared;
+  const transform = useDerivedValue(() => [
+    { translateX: fx.value },
+    { translateY: fy.value },
+    { rotate: (tiltDeg.value * Math.PI) / 180 },
+    { scale: boardScale * camScale.value * scaleBoost.value },
+    { translateX: -cx },
+    { translateY: -cy },
+  ]);
 
   return (
-    <Group clip={skPath}>
-      <Image
-        image={image}
-        x={-geometry.sourceRect.x * imageScale}
-        y={-geometry.sourceRect.y * imageScale}
-        width={image.width() * imageScale}
-        height={image.height() * imageScale}
+    <Group transform={transform}>
+      {/* No shadow while dragging. `raised` would add a blurred Skia filter that
+          re-renders every frame under the finger, which is the most expensive
+          thing on screen at exactly the moment latency is most noticeable. The
+          lift scale and tilt already communicate that the piece is held. */}
+      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
+    </Group>
+  );
+}
+
+/**
+ * A one-shot ring that fades where a piece locks home (canvas coords).
+ *
+ * Values live in `FX.lockRing`. It used to be a thick orange ring at high
+ * opacity over 420ms, which blinked hard enough to pull the eye off the board.
+ */
+function GlowRing({
+  id,
+  cx,
+  cy,
+  onDone,
+}: {
+  id: number;
+  cx: number;
+  cy: number;
+  onDone: (id: number) => void;
+}) {
+  const ring = FX.lockRing;
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withTiming(
+      1,
+      { duration: ring.durationMs, easing: Easing.out(Easing.quad) },
+      (done) => {
+        if (done) {
+          runOnJS(onDone)(id);
+        }
+      },
+    );
+    /*
+     * Cancel on unmount, or the animation outlives the ring that owns it.
+     *
+     * This ring is keyed by `snapFlash.id`, so placing a second piece within the
+     * 600ms fade unmounts the first mid-flight — and an uncancelled `withTiming`
+     * keeps driving a shared value belonging to a component that is gone, then fires
+     * a completion worklet that calls back into JS. Rapid placement is the normal
+     * case, not an edge one.
+     *
+     * Hygiene, and deliberately not claimed as the fix for the `isObject()` crash:
+     * that was not reproducible often enough to attribute anything to it (see
+     * docs/superpowers/specs/2026-07-31-worklets-crash-investigation.md). It is
+     * correct on its own terms regardless.
+     */
+    return () => cancelAnimation(progress);
+  }, [progress, id, onDone, ring.durationMs]);
+  const radius = useDerivedValue(() => ring.startRadius + progress.value * ring.growBy);
+  const opacity = useDerivedValue(() => (1 - progress.value) * ring.peakOpacity);
+  return (
+    <Circle
+      cx={cx}
+      cy={cy}
+      r={radius}
+      style="stroke"
+      strokeWidth={ring.strokeWidth}
+      color={ring.color}
+      opacity={opacity}
+    />
+  );
+}
+
+interface Particle {
+  i: number;
+  startX: number;
+  startY: number;
+  delay: number;
+  drift: number;
+  spin: number;
+  size: number;
+  color: string;
+}
+
+function ConfettiPiece({
+  particle,
+  t,
+  height,
+}: {
+  particle: Particle;
+  t: SharedValue<number>;
+  height: number;
+}) {
+  const transform = useDerivedValue(() => {
+    const span = 1 - particle.delay;
+    const tt = Math.min(1, Math.max(0, (t.value - particle.delay) / span));
+    const y = particle.startY + tt * (height + 80);
+    const x = particle.startX + Math.sin(tt * 6 + particle.i) * particle.drift;
+    return [{ translateX: x }, { translateY: y }, { rotate: tt * particle.spin }];
+  });
+  const opacity = useDerivedValue(() =>
+    t.value < 0.85 ? 1 : Math.max(0, 1 - (t.value - 0.85) / 0.15),
+  );
+  return (
+    <Group transform={transform} opacity={opacity}>
+      <RoundedRect
+        x={0}
+        y={0}
+        width={particle.size}
+        height={particle.size * 0.5}
+        r={1.5}
+        color={particle.color}
       />
     </Group>
   );
 }
 
-function FloatingPiece({
-  prepared,
-  image,
-  imageScale,
-  x,
-  y,
-}: {
-  prepared: PreparedPiece;
-  image: SkImage;
-  imageScale: number;
-  x: SharedValue<number>;
-  y: SharedValue<number>;
-}) {
-  const transform = useDerivedValue(() => [{ translateX: x.value }, { translateY: y.value }]);
-
+function Confetti({ width, height }: { width: number; height: number }) {
+  const theme = useTheme();
+  const t = useSharedValue(0);
+  useEffect(() => {
+    t.value = withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) });
+  }, [t]);
+  const palette = useMemo(() => confettiColors(theme), [theme]);
+  const particles = useMemo<Particle[]>(
+    () =>
+      Array.from({ length: FX.confettiCount }, (_, i) => ({
+        i,
+        startX: Math.random() * width,
+        startY: -20 - Math.random() * height * 0.3,
+        delay: Math.random() * 0.35,
+        drift: 20 + Math.random() * 40,
+        spin: (Math.random() * 8 - 4) * Math.PI,
+        size: 8 + Math.random() * 6,
+        color: palette[i % palette.length],
+      })),
+    [width, height, palette],
+  );
   return (
-    <Group transform={transform}>
-      <PieceFill prepared={prepared} image={image} imageScale={imageScale} />
-      <Path path={prepared.skPath} style="stroke" strokeWidth={2.2} color="rgba(232,110,69,0.95)" />
-    </Group>
+    <Canvas style={[styles.overlay, { width, height }]} pointerEvents="none">
+      {particles.map((p) => (
+        <ConfettiPiece key={p.i} particle={p} t={t} height={height} />
+      ))}
+    </Canvas>
   );
 }
 
@@ -189,275 +724,1122 @@ export function PuzzleBoard({
   session,
   imageSource,
   onSessionChange,
+  getElapsedMs,
+  highlightEdges = false,
 }: PuzzleBoardProps) {
+  const theme = useTheme();
   const image = useImage(imageSource);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
-  const [startedAtMs] = useState(() => Date.now());
-  // Resuming a saved session must keep the time already banked.
-  const [baselineElapsedMs] = useState(() => session.elapsedMs);
-  const [activePieceId, setActivePieceId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [snapFlash, setSnapFlash] = useState<{ id: number; cx: number; cy: number } | null>(null);
+  /**
+   * The two board preferences, seeded from the same read that seeds audio.
+   *
+   * Held as React state rather than pushed into a module the way haptics and
+   * sound are: both of these change what is *drawn* and what the gesture
+   * computes, so the board has to re-render when they arrive. Defaults match
+   * `DEFAULT_SETTINGS`, so the first frame before the read lands is the one the
+   * majority of players keep.
+   */
+  const [boardPrefs, setBoardPrefs] = useState({ showGrid: true, snapAssist: true });
 
-  const dragX = useSharedValue(0);
-  const dragY = useSharedValue(0);
-  const grabOffsetX = useSharedValue(0);
-  const grabOffsetY = useSharedValue(0);
-  const isDragging = useSharedValue(false);
-  const activeIdSV = useSharedValue('');
-  const scaleSV = useSharedValue(1);
-  const paddingSV = useSharedValue(12);
-  /** True between onBegin and onFinalize, so a tap that ends before the JS-thread
-   *  hit test resolves does not strand a piece in the dragging state. */
-  const gestureActive = useSharedValue(false);
+  // Finger position of the floating piece, in canvas coordinates.
+  const fx = useSharedValue(0);
+  const fy = useSharedValue(0);
+  /** Live drag tilt in degrees (`FX.maxTiltDeg` cap); springs to 0 on release. */
+  const tiltDeg = useSharedValue(0);
+  /** `FX.liftScale` while held; eases to 1 over `FX.snapMs` on release. */
+  const scaleBoost = useSharedValue<number>(FX.liftScale);
+  const trayScroll = useSharedValue(0);
+  /**
+   * 0 idle · 1 dragging a piece · 2 scrolling the tray · 3 panning the
+   * camera (a one-finger touch on empty board space) · 4 dragging the tray's
+   * slider · 5 undecided, on a tray piece.
+   *
+   * All decided instantly in onBegin, including the tray: a touch on a piece
+   * grabs it, a touch in the space around one scrolls. Reading the intent from
+   * the drag direction instead was tried and was worse — a piece meant for the
+   * board slid the tray whenever the first few points of movement happened to
+   * be sideways, which is most of the time when reaching across.
+   */
+  const mode = useSharedValue(0);
+  /** Index into the current tray render order, or -1 when the grab isn't from the tray. */
+  const grabSlot = useSharedValue(-1);
+  /** Index into `looseHitTestData`/`looseIdsRef`, or -1 when the grab isn't a loose piece. */
+  const grabLoose = useSharedValue(-1);
+  const flashId = useRef(0);
 
   const sessionRef = useRef(session);
   const onSessionChangeRef = useRef(onSessionChange);
-  const generatedRef = useRef(generated);
-  const preparedRef = useRef<Record<string, PreparedPiece>>({});
+  const getElapsedMsRef = useRef(getElapsedMs);
+  const trayIdsRef = useRef<string[]>([]);
+  const looseIdsRef = useRef<string[]>([]);
+  const celebratedRef = useRef(false);
 
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
-
   useEffect(() => {
     onSessionChangeRef.current = onSessionChange;
   }, [onSessionChange]);
-
+  // Read through a ref, like `onSessionChange` above, so a caller passing an
+  // inline function cannot force the (expensive) gesture memo to rebuild.
   useEffect(() => {
-    generatedRef.current = generated;
-  }, [generated]);
+    getElapsedMsRef.current = getElapsedMs;
+  }, [getElapsedMs]);
 
-  const boardPadding = 12;
+  // Read the persisted Sound/Music/Haptics settings once per mount and wire
+  // them into the board-fx/board-audio modules. The pause-menu toggles
+  // (Task 14) call `setHapticsEnabled`/`setSfxEnabled`/`setMusicEnabled`
+  // directly from then on; this effect only supplies the starting values.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const settings = await (await getSettingsRepository()).get();
+        if (!active) {
+          return;
+        }
+        setHapticsEnabled(settings.haptics);
+        setBoardPrefs({ showGrid: settings.showGrid, snapAssist: settings.snapAssist });
+        await initBoardAudio(settings);
+        if (!active) {
+          // Unmounted while init was in flight (e.g. `ensurePlayersLoaded()`
+          // was still pending): the cleanup's `pauseBoardAudio()` ran before
+          // the ambient player existed and no-opped. Players are guaranteed
+          // to exist now, so pause again to stop a loop `applyMusicState()`
+          // may have just started.
+          pauseBoardAudio();
+        }
+      } catch {
+        // Settings/audio are best-effort; the board must stay playable
+        // even if the read fails (defaults are already sound-on/haptics-on).
+      }
+    })();
+    return () => {
+      active = false;
+      // Leaving the board shouldn't leave the ambient loop playing forever.
+      pauseBoardAudio();
+    };
+  }, []);
+
   const cellSize = generated.cellSize.width;
   const boardSize = generated.boardSize;
+  const imageScale = boardSize.width / generated.crop.width;
+  const snapThreshold = snapThresholdForCellSize(
+    cellSize,
+    boardPrefs.snapAssist ? DEFAULT_SNAP_THRESHOLD_RATIO : STRICT_SNAP_THRESHOLD_RATIO,
+  );
+  const gridSize = generated.puzzle.gridSize;
 
-  /**
-   * World extent is measured once from the opening layout — board plus every piece's
-   * tab overhang. Deriving it from live positions instead would rescale the canvas
-   * mid-drag, and pieces only ever move inward toward the board.
-   */
-  const [world] = useState<Size>(() => {
-    let maxX = boardSize.width;
-    let maxY = boardSize.height;
-
-    for (const piece of session.pieces) {
-      const path = generated.paths[piece.pieceId];
-      if (!path) {
-        continue; // Tolerate a restored session whose geometry no longer matches.
-      }
-      maxX = Math.max(maxX, piece.position.x + path.bounds.x + path.bounds.width);
-      maxY = Math.max(maxY, piece.position.y + path.bounds.y + path.bounds.height);
-    }
-
-    return {
-      width: maxX + boardPadding * 2,
-      height: maxY + boardPadding * 2,
-    };
-  });
-
-  // Must fit BOTH axes: fitting width alone pushed the tray outside the clipped
-  // container, leaving the bottom rows unreachable on every phone-sized screen.
-  const scale =
-    viewport.width > 0 && viewport.height > 0
-      ? Math.min(1, viewport.width / world.width, viewport.height / world.height)
-      : 1;
-
-  useEffect(() => {
-    scaleSV.value = scale;
-    paddingSV.value = boardPadding;
-  }, [boardPadding, paddingSV, scale, scaleSV]);
-
-  const canvasWidth = world.width * scale;
-  const canvasHeight = world.height * scale;
+  /** Shared by the frame, its clip and the corner pieces — see `boardCornerRadius`. */
+  const cornerRadius = boardCornerRadius(cellSize);
+  /** Real worst-case piece size, which the tray scales against — see `maxPieceExtent`. */
+  const pieceExtent = useMemo(() => maxPieceExtent(Object.values(generated.paths)), [generated]);
 
   const preparedById = useMemo(() => {
     const map: Record<string, PreparedPiece> = {};
+    /**
+     * One bake per distinct *shape*, not per piece.
+     *
+     * A silhouette is fully determined by its four edge codes and the cell size, so a
+     * grid of any size draws from at most 3^4 = 81 shapes — a 10x10 board bakes far
+     * fewer overlays than it has pieces, and every piece sharing a shape shares the
+     * image. Corner pieces are keyed separately by the rounding radius, since their
+     * outward corner is trimmed to the board frame.
+     */
+    const overlays = new Map<string, BakedOverlay | null>();
+
     for (const geometry of generated.pieces) {
       const localPath = generated.paths[geometry.id];
+      const b = localPath.bounds;
+      const skPath = roundPieceCorners(
+        commandsToSkPath(localPath.commands),
+        localPath.bounds,
+        geometry.edges,
+        cornerRadius,
+      );
+
+      const key = `${overlayCacheKey(geometry.edges, cellSize)}r${cornerRadius.toFixed(2)}`;
+      let overlay = overlays.get(key);
+      if (overlay === undefined) {
+        // Scaled from the piece's own smaller bound: this overlay is only ever drawn
+        // on a piece that stands alone — in the tray, loose on the board, or under
+        // the finger. A locked piece takes its depth from its cluster instead.
+        overlay = bakeOverlay(skPath, b, Math.min(b.width, b.height));
+        overlays.set(key, overlay);
+      }
+
       map[geometry.id] = {
         geometry,
         localPath,
-        skPath: commandsToSkPath(localPath.commands),
+        skPath,
+        isEdge: isEdgePiece(geometry.edges),
+        cx: b.x + b.width / 2,
+        cy: b.y + b.height / 2,
+        overlay,
       };
     }
     return map;
-  }, [generated]);
+  }, [generated, cornerRadius, cellSize]);
 
+  // Locked pieces live on the board at their solved position; unlocked pieces are
+  // either loose on the board (a miss that stayed put) or waiting in the tray.
+  const lockedPieces = useMemo(() => session.pieces.filter((p) => p.isLocked), [session.pieces]);
+
+  /**
+   * Union paths and baked bevels for the locked clusters, keyed by membership.
+   *
+   * A cluster's shape changes only when a piece is placed, never per frame, so both
+   * the union and the bake are held here across renders. A frame then costs one
+   * overlay draw per cluster — *fewer* than the one-per-piece it replaces, and
+   * strictly fewer as the player makes progress and clusters merge.
+   */
+  const clusterCache = useRef(new Map<string, ClusterDepth>());
+  /**
+   * Bakes whose cluster no longer exists, waiting to be freed *after* the frame that
+   * replaced them.
+   *
+   * Freeing them where they are evicted would free them during render, while the tree
+   * still on screen is the old one that draws them — the same shape of mistake as
+   * reaching for a Skia object from a `runOnJS` closure, and it would land mid-game
+   * on the placement that merged two clusters. The passive effect below runs after
+   * the new frame is painted, by which point nothing references them.
+   */
+  const clusterDisposals = useRef<BakedOverlay[]>([]);
+
+  const clusters = useMemo(() => {
+    const cache = clusterCache.current;
+    const groups = clusterLockedPieces(
+      lockedPieces.map((piece) => {
+        const { row, column } = preparedById[piece.pieceId].geometry;
+        return { pieceId: piece.pieceId, row, column };
+      }),
+      gridSize,
+    );
+
+    const live = groups.map((memberIds) => {
+      const key = clusterCacheKey(memberIds);
+      const cached = cache.get(key);
+      if (cached) {
+        return cached;
+      }
+
+      /*
+       * Unioned from scratch each time the membership changes.
+       *
+       * The obvious worry is a near-complete 10x10 board unioning ~100 paths on
+       * every placement, and the cheap answer would be to union only the new piece
+       * into the cluster's previous path. It is not obviously the bottleneck: the
+       * bake below runs a blur and a lighting filter over the same region and is
+       * the larger cost by far, so the incremental union would save the smaller
+       * half. Measured on device first — see the design doc's risk list.
+       */
+      const path = Skia.Path.Make();
+      for (const id of memberIds) {
+        const prepared = preparedById[id];
+        const { x, y } = prepared.geometry.solvedPosition;
+        const placed = prepared.skPath.copy().offset(x, y);
+        // `op` mutates the receiver and reports success. On failure add the outline
+        // anyway: a slightly wrong boundary beats a member vanishing from the sheet.
+        if (!path.op(placed, PathOp.Union)) {
+          path.addPath(placed);
+        }
+      }
+
+      /*
+       * The bevel scales from the *cell*, not from the cluster's bounds.
+       *
+       * Bounds would be the natural reference — it is what a single piece uses — but
+       * a cluster's bounds grow as the player plays, so the bevel would widen with
+       * every placement until a finished board was rimmed by a band a third of its
+       * width. The cell is what the depth should stay proportional to.
+       */
+      const entry: ClusterDepth = {
+        key,
+        memberIds,
+        path,
+        overlay: bakeOverlay(path, path.computeTightBounds(), cellSize),
+      };
+      cache.set(key, entry);
+      return entry;
+    });
+
+    /*
+     * Drop the shapes that no longer exist.
+     *
+     * Every placement gives its cluster a new membership and so a new key, and the
+     * old entry is dead the moment that happens. Without this the map would keep one
+     * baked image per placement — at 10x10 that is a hundred surfaces of up to
+     * ~870 square, held for the whole game.
+     */
+    const liveKeys = new Set(live.map((entry) => entry.key));
+    for (const [key, entry] of cache) {
+      if (!liveKeys.has(key)) {
+        if (entry.overlay) {
+          clusterDisposals.current.push(entry.overlay);
+        }
+        cache.delete(key);
+      }
+    }
+
+    return live;
+  }, [lockedPieces, preparedById, gridSize, cellSize]);
+
+  // Passive, so it runs after the frame that stopped drawing these. Drained in place
+  // rather than replaced, so the unmount cleanup below keeps holding the live array.
   useEffect(() => {
-    preparedRef.current = preparedById;
-  }, [preparedById]);
+    for (const overlay of clusterDisposals.current.splice(0)) {
+      overlay.image.dispose();
+    }
+  });
 
-  const imageScale = boardSize.width / generated.crop.width;
-  const snapThreshold = snapThresholdForCellSize(cellSize);
+  // Leaving the board must not strand the last set of bakes.
+  useEffect(() => {
+    const cache = clusterCache.current;
+    const pending = clusterDisposals.current;
+    return () => {
+      for (const entry of cache.values()) {
+        entry.overlay?.image.dispose();
+      }
+      cache.clear();
+      for (const overlay of pending.splice(0)) {
+        overlay.image.dispose();
+      }
+    };
+  }, []);
 
-  const sortedPieces = useMemo(
-    () => [...session.pieces].sort((a, b) => a.zIndex - b.zIndex),
-    [session.pieces],
+  /**
+   * The engine lays unplaced pieces out below the board (`layout.ts` tray rows),
+   * so a y inside the board rect means the player has dropped this piece on the
+   * board and it should stay there, re-grabbable, instead of returning to a slot.
+   */
+  const isOnBoard = useCallback(
+    (piece: PieceState) => piece.position.y < boardSize.height,
+    [boardSize.height],
   );
 
-  const activePrepared = activePieceId ? preparedById[activePieceId] : null;
+  // Loose pieces are sorted by z-index (ascending) so overlapping drops paint
+  // and hit-test in the same order: the most recently touched piece is on top.
+  const loosePieces = useMemo(
+    () =>
+      session.pieces.filter((p) => !p.isLocked && isOnBoard(p)).sort((a, b) => a.zIndex - b.zIndex),
+    [session.pieces, isOnBoard],
+  );
+
+  const trayPieces = useMemo(
+    () => session.pieces.filter((p) => !p.isLocked && !isOnBoard(p)),
+    [session.pieces, isOnBoard],
+  );
+
+  const looseIds = useMemo(() => loosePieces.map((p) => p.pieceId), [loosePieces]);
+  const trayIds = useMemo(() => trayPieces.map((p) => p.pieceId), [trayPieces]);
+  useEffect(() => {
+    looseIdsRef.current = looseIds;
+  }, [looseIds]);
+  useEffect(() => {
+    trayIdsRef.current = trayIds;
+  }, [trayIds]);
+
+  // Hit-test boxes for loose board pieces, in the same board-local space as
+  // `releasePiece`'s coordinate conversion (post BOARD_PADDING removal). Kept as
+  // plain numbers/strings only — no SkPath/Skia objects — so the gesture worklet
+  // can safely close over this array.
+  const looseHitTestData = useMemo(
+    () =>
+      loosePieces.map((piece) => {
+        const prepared = preparedById[piece.pieceId];
+        const bounds = prepared.localPath.bounds;
+        return {
+          cx: piece.position.x + prepared.cx,
+          cy: piece.position.y + prepared.cy,
+          halfW: bounds.width / 2,
+          halfH: bounds.height / 2,
+        };
+      }),
+    [loosePieces, preparedById],
+  );
+
+  // ---- Layout: fitted board with the tray directly beneath, block centred. ----
+  const layout = useMemo(() => {
+    const vw = viewport.width;
+    const vh = viewport.height;
+    const outerW = boardSize.width + BOARD_PADDING * 2;
+    const outerH = boardSize.height + BOARD_PADDING * 2;
+
+    // Fit against the space left once the tray is accounted for, so every board
+    // edge stays on screen.
+    const availableH = Math.max(vh - TRAY_HEIGHT - TRAY_GAP, 1);
+    const boardScale = Math.min((vw * 0.96) / outerW, availableH / outerH);
+    const fittedH = outerH * boardScale;
+
+    /**
+     * The board is square while the zone is tall, so width almost always
+     * constrains the fit and vertical slack is unavoidable. Previously the board
+     * was centred in `vh - TRAY_HEIGHT` and the tray pinned to the very bottom,
+     * which put all that slack in one visible gap between the two. Treating
+     * board + tray as one centred block distributes it as an even mat instead.
+     */
+    const blockH = fittedH + TRAY_GAP + TRAY_HEIGHT;
+    const blockTop = Math.max(0, (vh - blockH) / 2);
+
+    const boardOffsetX = (vw - outerW * boardScale) / 2;
+    const boardOffsetY = blockTop;
+    /** Where the tray starts — also the board/tray gesture and clip boundary. */
+    const boardZoneH = Math.max(blockTop + fittedH + TRAY_GAP, 1);
+
+    // Slots are a fixed size so exactly `visibleColumns` fit; the piece scales to
+    // the slot rather than the slot growing with the tray height.
+    const slotInner = TRAY_SLOT;
+    const thumbScale = trayThumbScale(slotInner, pieceExtent);
+    const slotW = slotInner + SLOT_GAP;
+
+    return {
+      vw,
+      vh,
+      boardZoneH,
+      boardScale,
+      boardOffsetX,
+      boardOffsetY,
+      slotW,
+      thumbScale,
+      slotInner,
+    };
+  }, [viewport.width, viewport.height, boardSize.width, boardSize.height, pieceExtent]);
+
+  // Camera pans/zooms the board zone only (1x-3x); the tray strip is pinned
+  // and unscaled. At rest (scale 1, translate 0) it is the identity, so it
+  // never perturbs the Task 11 static framing computed above.
+  const camera = useBoardCamera({ viewport: { width: layout.vw, height: layout.boardZoneH } });
+  const {
+    scale: camScale,
+    translateX: camTx,
+    translateY: camTy,
+    pinch: camPinch,
+    doubleTap: camDoubleTap,
+    panBy: camPanBy,
+    ready: camReady,
+  } = camera;
+
+  const cameraTransform = useDerivedValue(() => [
+    { translateX: camTx.value },
+    { translateY: camTy.value },
+    { scale: camScale.value },
+  ]);
+
+  const draggingPrepared = draggingId ? preparedById[draggingId] : null;
+
+  const complete = session.status === 'completed';
+  useEffect(() => {
+    if (complete && !celebratedRef.current) {
+      celebratedRef.current = true;
+      success();
+      playSfx('complete');
+    }
+  }, [complete]);
 
   const onLayout = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
-    setViewport((current) =>
-      current.width === width && current.height === height ? current : { width, height },
-    );
+    setViewport((cur) => (cur.width === width && cur.height === height ? cur : { width, height }));
   };
 
-  const panGesture = useMemo(() => {
-    const tryBegin = (canvasX: number, canvasY: number) => {
-      const currentScale = scaleSV.value;
-      const padding = paddingSV.value;
-      const boardPoint = {
-        x: canvasX / currentScale - padding,
-        y: canvasY / currentScale - padding,
+  const clearFlash = useCallback(
+    (id: number) => setSnapFlash((cur) => (cur && cur.id === id ? null : cur)),
+    [],
+  );
+
+  /** Resolve a grab/release origin (0 = tray slot, 1 = loose board piece) to a piece id. */
+  const resolveGrabbedId = useCallback((source: 0 | 1, index: number) => {
+    return source === 0 ? trayIdsRef.current[index] : looseIdsRef.current[index];
+  }, []);
+
+  const beginGrab = useCallback(
+    (source: 0 | 1, index: number) => {
+      const id = resolveGrabbedId(source, index);
+      if (id) {
+        // Feedback before the state update. `setDraggingId` re-renders the board
+        // — a Skia tree — and firing the haptic afterwards puts it behind that
+        // work on the same thread, which is what made the buzz arrive late or,
+        // once another haptic had started, not at all.
+        pickup();
+        playSfx('pickup');
+        setDraggingId(id);
+      }
+    },
+    [resolveGrabbedId],
+  );
+
+  const clearDragging = useCallback(() => setDraggingId(null), []);
+
+  /**
+   * Piece geometry for the drop path, as plain numbers only.
+   *
+   * `releasePiece` is invoked with `runOnJS` from inside the pan worklet, so worklets
+   * has to build a shareable from its entire closure. It used to read `preparedById`
+   * directly, which carries `skPath` — and now `overlay.image` — both Skia **host
+   * objects**. Walking those trips a JSI assertion in `libworklets.so`
+   * (`jsi.h: Value::getObject: assertion "isObject()" failed`) which calls `abort()`,
+   * so the process dies outright with no JS error: the app "closing on its own" after
+   * placing a piece.
+   *
+   * Placing is what triggered it because it changes `looseHitTestData`, which re-runs
+   * the gesture memo, which builds a fresh `releasePiece` and re-serialises the closure.
+   *
+   * `looseHitTestData` was already built this way deliberately, for exactly this reason.
+   * The same discipline simply had not been applied here: nothing a `runOnJS` callback
+   * closes over may contain a Skia object.
+   */
+  const releaseGeometry = useMemo(() => {
+    const map: Record<string, { cx: number; cy: number; solvedX: number; solvedY: number }> = {};
+    for (const id of Object.keys(preparedById)) {
+      const prepared = preparedById[id];
+      map[id] = {
+        cx: prepared.cx,
+        cy: prepared.cy,
+        solvedX: prepared.geometry.solvedPosition.x,
+        solvedY: prepared.geometry.solvedPosition.y,
       };
-      const hit = findTopPieceAt(boardPoint, sessionRef.current, preparedRef.current);
-      if (!hit) {
-        return;
-      }
+    }
+    return map;
+  }, [preparedById]);
 
-      // The gesture may already have ended while this hop to the JS thread was
-      // in flight; committing now would leave the piece hidden with no finalize.
-      if (!gestureActive.value) {
-        return;
-      }
-
-      // Deliberately no session update here. Z-order is committed on drop, so
-      // touching a piece no longer re-renders the whole board.
-      setActivePieceId(hit.pieceId);
-      activeIdSV.value = hit.pieceId;
-      dragX.value = hit.position.x;
-      dragY.value = hit.position.y;
-      grabOffsetX.value = boardPoint.x - hit.position.x;
-      grabOffsetY.value = boardPoint.y - hit.position.y;
-      isDragging.value = true;
-    };
-
-    const finishDrag = (pieceId: string, x: number, y: number) => {
-      const geometry = generatedRef.current.pieces.find((piece) => piece.id === pieceId);
-      setActivePieceId(null);
-
-      if (!geometry) {
-        return;
-      }
-
-      // Raise then drop in one commit: a single state update per completed drag.
-      const now = new Date().toISOString();
-      const raised = raisePiece(sessionRef.current, pieceId, now);
-
-      onSessionChangeRef.current(
-        dropPiece({
-          session: raised,
-          pieceId,
-          position: { x, y },
-          solvedPosition: geometry.solvedPosition,
-          now,
-          elapsedMs: baselineElapsedMs + (Date.now() - startedAtMs),
-          snapThreshold,
-        }),
-      );
-    };
-
-    return Gesture.Pan()
-      .onBegin((event) => {
-        gestureActive.value = true;
-        runOnJS(tryBegin)(event.x, event.y);
-      })
-      .onChange((event) => {
-        if (!isDragging.value) {
-          return;
+  /**
+   * Bring the floating piece's scale/tilt back to identity over `FX.snapMs`
+   * before finally clearing `draggingId` — the piece stays mounted (and the
+   * real BoardPiece/LoosePiece it hands off to is already drawn underneath,
+   * at the same spot) for the short settle window instead of popping away
+   * the instant the finger lifts.
+   */
+  /**
+   * Move the floating piece onto its resting place and hand back to the static
+   * render.
+   *
+   * Timed with an ease-out rather than sprung. `FX.settle` was
+   * `{ damping: 14, stiffness: 180 }`, whose critical damping is `2 * sqrt(180)` =
+   * 26.8 — a damping ratio of 0.52, so it overshot by around 15% and rang before
+   * coming to rest. On a correct placement the locked piece is *already* drawn at
+   * the target, so that ringing was a duplicate visibly wobbling on top of the
+   * finished piece: the jiggle that survived removing the neighbour wobble, and the
+   * reason placement felt laggy — the piece kept moving well after the finger left.
+   *
+   * An ease-out cannot overshoot, so the piece arrives once and stops.
+   */
+  const settleFloatingPiece = useCallback(
+    (targetX: number, targetY: number) => {
+      const settle = { duration: FX.snapMs, easing: Easing.out(Easing.cubic) };
+      fx.value = withTiming(targetX, settle);
+      fy.value = withTiming(targetY, settle);
+      tiltDeg.value = withTiming(0, settle);
+      // Gate clearing `draggingId` on the scale animation specifically: unlike
+      // tilt (which may already be ~0 and resolve in a single frame), the
+      // lift→1 travel is always a fixed, non-trivial distance, so this
+      // reliably outlives the whole settle motion.
+      scaleBoost.value = withTiming(1, settle, (finished) => {
+        if (finished) {
+          runOnJS(clearDragging)();
         }
-        const boardX = event.x / scaleSV.value - paddingSV.value;
-        const boardY = event.y / scaleSV.value - paddingSV.value;
-        dragX.value = boardX - grabOffsetX.value;
-        dragY.value = boardY - grabOffsetY.value;
+      });
+    },
+    [fx, fy, tiltDeg, scaleBoost, clearDragging],
+  );
+
+  const gesture = useMemo(() => {
+    const { boardZoneH, boardScale, boardOffsetX, boardOffsetY, slotW, vw } = layout;
+    const count = trayIds.length;
+    // Column-major over `rows`, matching how the tray renders.
+    const columns = Math.ceil(count / FX.tray.rows);
+    const contentW = columns * slotW + TRAY_PAD * 2;
+    const minScroll = Math.min(0, vw - contentW);
+    /** Distance the slider pill can travel, used to scale slider drags. */
+    const trackW = Math.max(vw - TRAY_PAD * 2, 1);
+    const thumbW = Math.max(56, contentW > 0 ? (vw / contentW) * trackW : trackW);
+    const trackTravel = Math.max(0, trackW - thumbW);
+    /** Canvas y at which the slider band starts. */
+    const sliderTop =
+      boardZoneH +
+      TRAY_PAD +
+      FX.tray.rows * TRAY_SLOT +
+      (FX.tray.rows - 1) * SLOT_GAP +
+      FX.tray.sliderGap -
+      // A few points of slop above the pill, so it is comfortable to grab.
+      6;
+    const looseBoxes = looseHitTestData;
+
+    const releasePiece = (source: 0 | 1, index: number, canvasX: number, canvasY: number) => {
+      const id = resolveGrabbedId(source, index);
+      if (!id) {
+        setDraggingId(null);
+        return;
+      }
+      // `releaseGeometry`, never `preparedById`: see its comment — a Skia object in
+      // this closure aborts the process when `runOnJS` serialises it.
+      const prepared = releaseGeometry[id];
+      if (!prepared) {
+        setDraggingId(null);
+        return;
+      }
+      // Canvas → board piece-space. The board zone now renders behind the
+      // camera transform, so this must undo the LIVE camera first (JS-thread
+      // read of the camera's shared values — same pattern as the onBegin
+      // worklet below, just off the UI thread) before the static framing
+      // math from Task 11, which is otherwise unchanged.
+      const preCamX = (canvasX - camTx.value) / camScale.value;
+      const preCamY = (canvasY - camTy.value) / camScale.value;
+      const boardX = (preCamX - boardOffsetX) / boardScale - BOARD_PADDING;
+      const boardY = (preCamY - boardOffsetY) / boardScale - BOARD_PADDING;
+      const position = { x: boardX - prepared.cx, y: boardY - prepared.cy };
+      const solved = { x: prepared.solvedX, y: prepared.solvedY };
+
+      const now = new Date().toISOString();
+      const raised = raisePiece(sessionRef.current, id, now);
+      const elapsedMs = getElapsedMsRef.current();
+      const common = { session: raised, pieceId: id, solvedPosition: solved, now, elapsedMs };
+
+      const placeThreshold = snapThreshold;
+      if (!isWithinSnapDistance(position, solved, placeThreshold)) {
+        // Out of range on the board: leave the piece exactly where it was released so
+        // it can be nudged and re-grabbed. Released over the tray, it returns to the
+        // tray instead (its position never changes, so it's simply back where it was).
+        if (canvasY < boardZoneH) {
+          onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: 0 }));
+          // The piece already rests exactly at (canvasX, canvasY) — only the
+          // lift scale/tilt need to settle back to identity there.
+          settleFloatingPiece(canvasX, canvasY);
+        } else if (source === 1) {
+          /*
+           * Dropped on the tray, and it came *from* the board: send it back.
+           *
+           * This used to change no state at all, on the reasoning that a piece
+           * released over the tray is "simply back where it was". That holds for a
+           * piece grabbed from a tray slot, but not for a loose one on the board —
+           * it stayed on the board, so there was no way to undo a bad drop except
+           * by dragging the piece around the board forever.
+           *
+           * `isOnBoard` is the only thing that decides which strip a piece belongs
+           * to, and it is purely `position.y < boardSize.height`. So parking the
+           * piece on that boundary is what returns it to the tray; the strip then
+           * lays it out by index like any other tray piece, so the x is irrelevant.
+           */
+          onSessionChangeRef.current(
+            dropPiece({ ...common, position: { x: 0, y: boardSize.height }, snapThreshold: 0 }),
+          );
+          setDraggingId(null);
+        } else {
+          // Came from a tray slot and went back to one: genuinely nothing changed,
+          // and nothing to settle towards, so just drop the floating piece.
+          setDraggingId(null);
+        }
+        return;
+      }
+
+      onSessionChangeRef.current(dropPiece({ ...common, position, snapThreshold: placeThreshold }));
+      impact('medium');
+      playSfx('snap');
+      flashId.current += 1;
+      // The glow ring is drawn at the Canvas root (outside the camera group,
+      // so it stays on top of the tray/floating piece), so its position must
+      // be pushed through the same live camera transform used above.
+      const staticCx = boardOffsetX + (BOARD_PADDING + solved.x + prepared.cx) * boardScale;
+      const staticCy = boardOffsetY + (BOARD_PADDING + solved.y + prepared.cy) * boardScale;
+      const settledCx = camTx.value + camScale.value * staticCx;
+      const settledCy = camTy.value + camScale.value * staticCy;
+      setSnapFlash({
+        id: flashId.current,
+        cx: settledCx,
+        cy: settledCy,
+      });
+      // The just-locked BoardPiece already renders at this exact spot, so the
+      // floating piece settling on top of it (shrinking liftScale → 1, tilt →
+      // 0) reads as one piece thudding down rather than a visible duplicate.
+      settleFloatingPiece(settledCx, settledCy);
+    };
+
+    const pan = Gesture.Pan()
+      .maxPointers(1)
+      .onBegin((e) => {
+        'worklet';
+        mode.value = 0;
+        grabSlot.value = -1;
+        grabLoose.value = -1;
+
+        // Anything outside the drawn tray strip is board, including the margin
+        // below it — that margin previously counted as tray, so a drag there could
+        // grab a slot with no piece visible under the finger.
+        if (e.y < boardZoneH || e.y > boardZoneH + TRAY_HEIGHT) {
+          // Board zone: hit-test loose pieces, topmost (highest z-index) first.
+          // The board now renders behind the camera transform (Group
+          // transform={cameraTransform} wrapping the static board Group), so
+          // the same live camera must be undone here before Task 11's static
+          // board-space math — otherwise grabs drift whenever zoomed/panned.
+          const preCamX = (e.x - camTx.value) / camScale.value;
+          const preCamY = (e.y - camTy.value) / camScale.value;
+          const boardX = (preCamX - boardOffsetX) / boardScale - BOARD_PADDING;
+          const boardY = (preCamY - boardOffsetY) / boardScale - BOARD_PADDING;
+          for (let i = looseBoxes.length - 1; i >= 0; i -= 1) {
+            const box = looseBoxes[i];
+            if (Math.abs(boardX - box.cx) <= box.halfW && Math.abs(boardY - box.cy) <= box.halfH) {
+              mode.value = 1;
+              grabLoose.value = i;
+              // Instant grab (Task 11): pop straight to lift scale, no tilt yet.
+              scaleBoost.value = FX.liftScale;
+              tiltDeg.value = 0;
+              fx.value = e.x;
+              fy.value = e.y;
+              runOnJS(beginGrab)(1, i);
+              break;
+            }
+          }
+          // Otherwise: empty board space → this one finger pans the camera
+          // instead (mode 3). A finger that started on a piece already took
+          // mode 1 above; the tray branch below handles its own zone.
+          if (mode.value === 0) {
+            mode.value = 3;
+          }
+        } else if (e.y >= sliderTop) {
+          // Slider band: drag the pill to scroll. A dedicated control, because
+          // scrolling by dragging a piece sideways was confusing — you had to grab
+          // a piece you did not want in order to move the strip.
+          mode.value = 4;
+        } else {
+          // Tray grid: on a piece grabs it, the space around one scrolls.
+          // Column-major, matching how the pieces are laid out.
+          const localX = e.x - trayScroll.value;
+          const column = Math.floor((localX - TRAY_PAD) / slotW);
+          const row = Math.floor((e.y - boardZoneH - TRAY_PAD) / (TRAY_SLOT + SLOT_GAP));
+          const slot =
+            row >= 0 && row < FX.tray.rows && column >= 0 ? column * FX.tray.rows + row : -1;
+
+          // Centre of that slot, and how far from it still counts as the piece.
+          const slotCentreX = TRAY_PAD + column * slotW + slotW / 2 + trayScroll.value;
+          const slotCentreY = boardZoneH + TRAY_PAD + row * (TRAY_SLOT + SLOT_GAP) + TRAY_SLOT / 2;
+          const grabHalf = (TRAY_SLOT * TRAY_GRAB_FILL) / 2;
+          const onPiece =
+            slot >= 0 &&
+            slot < count &&
+            Math.abs(e.x - slotCentreX) <= grabHalf &&
+            Math.abs(e.y - slotCentreY) <= grabHalf;
+
+          if (onPiece) {
+            mode.value = 1;
+            grabSlot.value = slot;
+            scaleBoost.value = FX.liftScale;
+            tiltDeg.value = 0;
+            fx.value = e.x;
+            fy.value = e.y;
+            runOnJS(beginGrab)(0, slot);
+          } else {
+            mode.value = 2;
+          }
+        }
+      })
+      .onChange((e) => {
+        'worklet';
+        if (mode.value === 1) {
+          fx.value = e.x;
+          fy.value = e.y;
+          // Live tilt follows pointer velocity directly (no extra easing lag
+          // here — `FX.snapMs` is reserved for the release-to-identity
+          // motion), capped at FX.maxTiltDeg either way.
+          const rawTilt = e.velocityX * (FX.maxTiltDeg / TILT_VELOCITY_RANGE);
+          tiltDeg.value = Math.max(-FX.maxTiltDeg, Math.min(FX.maxTiltDeg, rawTilt));
+        } else if (mode.value === 2) {
+          trayScroll.value = Math.min(0, Math.max(minScroll, trayScroll.value + e.changeX));
+        } else if (mode.value === 4) {
+          // Slider drag: the thumb travels the track while the strip travels its
+          // overflow, so finger movement is scaled by the ratio between them.
+          if (trackTravel > 0) {
+            const perPixel = -minScroll / trackTravel;
+            trayScroll.value = Math.min(
+              0,
+              Math.max(minScroll, trayScroll.value - e.changeX * perPixel),
+            );
+          }
+        } else if (mode.value === 3) {
+          camPanBy(e.changeX, e.changeY);
+        }
       })
       .onFinalize(() => {
-        gestureActive.value = false;
-
-        if (!isDragging.value || activeIdSV.value === '') {
-          return;
+        'worklet';
+        if (mode.value === 1) {
+          const source: 0 | 1 = grabSlot.value >= 0 ? 0 : 1;
+          const index = source === 0 ? grabSlot.value : grabLoose.value;
+          const dropX = fx.value;
+          const dropY = fy.value;
+          mode.value = 0;
+          grabSlot.value = -1;
+          grabLoose.value = -1;
+          runOnJS(releasePiece)(source, index, dropX, dropY);
+        } else {
+          mode.value = 0;
+          grabSlot.value = -1;
+          grabLoose.value = -1;
         }
-
-        const pieceId = activeIdSV.value;
-        isDragging.value = false;
-        activeIdSV.value = '';
-        runOnJS(finishDrag)(pieceId, dragX.value, dragY.value);
       });
+
+    // camDoubleTap and pan are exclusive (a touch either starts a piece
+    // grab/tray-scroll/camera-pan via `pan`, or resolves as a double-tap
+    // zoom toggle — never both); camPinch (two fingers) runs simultaneously
+    // alongside that pair since it never conflicts with a one-finger gesture.
+    return Gesture.Simultaneous(Gesture.Exclusive(camDoubleTap, pan), camPinch);
   }, [
-    activeIdSV,
-    baselineElapsedMs,
-    dragX,
-    dragY,
-    gestureActive,
-    grabOffsetX,
-    grabOffsetY,
-    isDragging,
-    paddingSV,
-    scaleSV,
+    layout,
+    trayIds.length,
+    looseHitTestData,
+    releaseGeometry,
     snapThreshold,
-    startedAtMs,
+    // Decides the tray/board boundary a returned piece is parked on.
+    boardSize.height,
+    beginGrab,
+    resolveGrabbedId,
+    settleFloatingPiece,
+    fx,
+    fy,
+    tiltDeg,
+    scaleBoost,
+    grabSlot,
+    grabLoose,
+    mode,
+    trayScroll,
+    camScale,
+    camTx,
+    camTy,
+    camPanBy,
+    camPinch,
+    camDoubleTap,
   ]);
 
-  if (!image || viewport.width === 0 || viewport.height === 0) {
+  const trayTransform = useDerivedValue(() => [
+    { translateX: trayScroll.value },
+    { translateY: layout.boardZoneH },
+  ]);
+
+  // ---- Tray slider geometry ----
+  /** Columns needed for every tray piece, filling top-to-bottom then rightward. */
+  const trayColumns = Math.ceil(trayIds.length / FX.tray.rows);
+  const trayContentW = trayColumns * layout.slotW + TRAY_PAD * 2;
+  const trayTrackW = Math.max(layout.vw - TRAY_PAD * 2, 1);
+  /** How far the strip can scroll; 0 when everything already fits. */
+  const trayOverflow = Math.max(0, trayContentW - layout.vw);
+  /** Wide enough to be an obvious drag target, not a hairline indicator. */
+  const trayThumbW = Math.max(
+    56,
+    trayContentW > 0 ? (layout.vw / trayContentW) * trayTrackW : trayTrackW,
+  );
+  /** Top of the slider band, sitting `sliderGap` below the piece rows. */
+  const sliderY =
+    layout.boardZoneH +
+    TRAY_PAD +
+    FX.tray.rows * TRAY_SLOT +
+    (FX.tray.rows - 1) * SLOT_GAP +
+    FX.tray.sliderGap;
+  const trayThumbX = useDerivedValue(() => {
+    if (trayOverflow <= 0) {
+      return TRAY_PAD;
+    }
+    // `trayScroll` runs 0 → -overflow, so negate to get 0 → 1.
+    const progress = Math.min(1, Math.max(0, -trayScroll.value / trayOverflow));
+    return TRAY_PAD + progress * (trayTrackW - trayThumbW);
+  });
+  const trayThumbTransform = useDerivedValue(() => [{ translateX: trayThumbX.value }]);
+
+  /**
+   * Pull the strip back into range whenever the tray shrinks.
+   *
+   * `trayScroll` is only ever clamped by the gestures that move it, so it kept
+   * whatever offset it had when pieces were removed. Placing pieces shrinks
+   * `trayContentW`, which shrinks `trayOverflow` — and once that reached 0 the slider
+   * unmounted while the strip was still scrolled left, leaving the last few pieces
+   * parked off the shelf with no control left to bring them back. The tray looked
+   * empty even though pieces remained.
+   *
+   * Runs on every change to the limit, not just to zero: a smaller overflow strands
+   * pieces the same way, just less completely.
+   */
+  useEffect(() => {
+    const clamped = clampTrayScroll(trayScroll.value, trayOverflow);
+    if (clamped !== trayScroll.value) {
+      trayScroll.value = withTiming(clamped, {
+        duration: FX.snapMs,
+        easing: Easing.out(Easing.cubic),
+      });
+    }
+  }, [trayOverflow, trayScroll]);
+
+  // Hold the first paint until the image is decoded, the play area is
+  // measured, and the camera has framed itself — otherwise the board flashes
+  // unframed before the camera's identity transform is in place.
+  if (!image || viewport.width === 0 || viewport.height === 0 || !camReady) {
     return <View style={styles.measure} onLayout={onLayout} />;
   }
 
+  const { boardScale, boardOffsetX, boardOffsetY, boardZoneH, slotW, thumbScale, vw } = layout;
+  const gridLines = Array.from({ length: gridSize - 1 }, (_, i) => cellSize * (i + 1));
+
   return (
     <View style={styles.measure} onLayout={onLayout}>
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={{ width: canvasWidth, height: canvasHeight, alignSelf: 'center' }}>
-          <Canvas style={{ width: canvasWidth, height: canvasHeight }}>
-            <Group transform={[{ scale }]}>
-              <RoundedRect
-                x={boardPadding - 6}
-                y={boardPadding - 6}
-                width={boardSize.width + 12}
-                height={boardSize.height + 12}
-                r={18}
-                color={colors.surface}
-              />
-              <Rect
-                x={boardPadding}
-                y={boardPadding}
-                width={boardSize.width}
-                height={boardSize.height}
-                color="rgba(185,205,189,0.28)"
-              />
-              <Rect
-                x={boardPadding}
-                y={boardPadding}
-                width={boardSize.width}
-                height={boardSize.height}
-                style="stroke"
-                strokeWidth={2}
-                color="rgba(23,33,33,0.14)"
-              />
+      <GestureDetector gesture={gesture}>
+        <Animated.View style={{ width: viewport.width, height: viewport.height }}>
+          <Canvas style={{ width: viewport.width, height: viewport.height }}>
+            {/* Tray backdrop, a rounded strip so it reads as its own shelf. The
+                board shell is cream, so the tray takes the screen's own pale
+                green — matching the mockup, where loose pieces sit on the page
+                rather than on the board card. */}
+            <RoundedRect
+              x={TRAY_PAD / 2}
+              y={boardZoneH}
+              width={Math.max(vw - TRAY_PAD, 1)}
+              height={TRAY_HEIGHT}
+              r={TRAY_RADIUS}
+              color={theme.backgrounds.game}
+              opacity={0.95}
+            />
 
-              <Group transform={[{ translateX: boardPadding }, { translateY: boardPadding }]}>
-                {sortedPieces.map((piece) => (
-                  <StaticPiece
-                    key={piece.pieceId}
-                    piece={piece}
-                    prepared={preparedById[piece.pieceId]}
-                    image={image}
-                    imageScale={imageScale}
-                    hidden={piece.pieceId === activePieceId}
+            {/* Board zone: cameraTransform ∘ staticBoardTransform. At rest
+                (scale 1, translate 0) the camera is the identity, so this is
+                pixel-identical to the Task 11 static framing alone.
+                The outer clip Group carries NO transform of its own, so its
+                clip rect is evaluated in the Canvas' fixed screen space —
+                Skia concats a Group's own `transform` before applying its
+                `clip` (see saveCTM), so a clip placed on the SAME node as
+                cameraTransform would scale/pan with the camera and clip
+                nothing new. Clipping here, above the camera, keeps the
+                board zone boundary pinned to the tray line regardless of
+                zoom/pan. */}
+            <Group clip={rect(0, 0, vw, boardZoneH)}>
+              <Group transform={cameraTransform}>
+                <Group
+                  transform={[
+                    { translateX: boardOffsetX },
+                    { translateY: boardOffsetY },
+                    { scale: boardScale },
+                  ]}
+                >
+                  {/* The board face is a rounded, shadowed card like every other
+                      surface in the app. It used to be a bare `Rect` behind a
+                      cream `RoundedRect` that was invisible against the equally
+                      cream shell, so the board read as a hard square. */}
+                  {/* A cream mat around the artwork, then the play area inset
+                      inside it — the treatment the mockup uses, where the board is
+                      a framed picture rather than a bare rectangle. The mat casts
+                      the shadow; the inner face just needs to differ from it. */}
+                  <RoundedRect
+                    x={0}
+                    y={0}
+                    width={boardSize.width + BOARD_PADDING * 2}
+                    height={boardSize.height + BOARD_PADDING * 2}
+                    r={cornerRadius + BOARD_PADDING * 0.6}
+                    color={theme.colors.surface}
+                  >
+                    <Shadow
+                      dx={0}
+                      dy={BOARD_SHADOW.dy}
+                      blur={BOARD_SHADOW.blur}
+                      color="rgba(58,43,26,0.4)"
+                    />
+                  </RoundedRect>
+                  {/* The play area takes the screen ground, not a literal. It was
+                      '#DCE9CD' — two points off the meadow's paper, and therefore
+                      invisible as a bug until the wood theme, where the whole app
+                      turned oak and the one surface the player stares at stayed
+                      sage. */}
+                  <RoundedRect
+                    x={BOARD_PADDING}
+                    y={BOARD_PADDING}
+                    width={boardSize.width}
+                    height={boardSize.height}
+                    r={cornerRadius}
+                    color={theme.colors.paper}
                   />
-                ))}
 
-                {activePieceId && activePrepared ? (
-                  <FloatingPiece
-                    prepared={activePrepared}
-                    image={image}
-                    imageScale={imageScale}
-                    x={dragX}
-                    y={dragY}
-                  />
-                ) : null}
+                  <Group
+                    clip={rrect(
+                      rect(BOARD_PADDING, BOARD_PADDING, boardSize.width, boardSize.height),
+                      cornerRadius,
+                      cornerRadius,
+                    )}
+                  >
+                    <Group
+                      transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}
+                    >
+                      {/* Faint cell grid to guide placement. Optional: some players
+                          want the bare picture, and the grid is the one thing on
+                          the board that is scaffolding rather than the puzzle. */}
+                      {boardPrefs.showGrid
+                        ? gridLines.map((x, i) => (
+                            <Line
+                              key={`v${i}`}
+                              p1={vec(x, 0)}
+                              p2={vec(x, boardSize.height)}
+                              color="rgba(23,33,33,0.07)"
+                              style="stroke"
+                              strokeWidth={1}
+                            />
+                          ))
+                        : null}
+                      {boardPrefs.showGrid
+                        ? gridLines.map((y, i) => (
+                            <Line
+                              key={`h${i}`}
+                              p1={vec(0, y)}
+                              p2={vec(boardSize.width, y)}
+                              color="rgba(23,33,33,0.07)"
+                              style="stroke"
+                              strokeWidth={1}
+                            />
+                          ))
+                        : null}
+                      {/* Locked pieces are drawn per *cluster*, not per piece: depth
+                          belongs to the outline of an assembly. A lone piece is a
+                          cluster of one and keeps depth all round, which falls out of
+                          the same path rather than needing a case of its own. */}
+                      {clusters.map((cluster) => (
+                        <LockedCluster
+                          key={cluster.key}
+                          cluster={cluster}
+                          preparedById={preparedById}
+                          image={image}
+                          imageScale={imageScale}
+                        />
+                      ))}
+
+                      {/* Loose pieces: unlocked misses resting on the board, re-grabbable. */}
+                      {loosePieces.map((piece) => (
+                        <LoosePiece
+                          key={piece.pieceId}
+                          prepared={preparedById[piece.pieceId]}
+                          image={image}
+                          imageScale={imageScale}
+                          position={piece.position}
+                          hidden={piece.pieceId === draggingId}
+                        />
+                      ))}
+                    </Group>
+                  </Group>
+                </Group>
               </Group>
             </Group>
+
+            {/* Draggable slider, separated from the piece grid by `sliderGap` so
+                the two never touch. A white pill on a sunken track, matching the
+                app's other controls — drag it left and right to scroll the tray.
+                Shown only when the strip actually overflows. */}
+            {trayOverflow > 0 ? (
+              <>
+                <RoundedRect
+                  x={TRAY_PAD}
+                  y={sliderY}
+                  width={Math.max(vw - TRAY_PAD * 2, 1)}
+                  height={FX.tray.sliderHeight}
+                  r={FX.tray.sliderHeight / 2}
+                  color="rgba(58,43,26,0.16)"
+                />
+                {/* The pill: white, ringed in the app's green so it reads as a
+                    control rather than a bare highlight, with three grip lines so
+                    it looks draggable. A plain white capsule gave no hint that it
+                    was the thing to grab. */}
+                <RoundedRect
+                  x={trayThumbX}
+                  y={sliderY}
+                  width={trayThumbW}
+                  height={FX.tray.sliderHeight}
+                  r={FX.tray.sliderHeight / 2}
+                  color={theme.colors.white}
+                >
+                  <Shadow dx={0} dy={1} blur={3} color="rgba(58,43,26,0.35)" />
+                </RoundedRect>
+                <RoundedRect
+                  x={trayThumbX}
+                  y={sliderY}
+                  width={trayThumbW}
+                  height={FX.tray.sliderHeight}
+                  r={FX.tray.sliderHeight / 2}
+                  style="stroke"
+                  strokeWidth={1.5}
+                  color={theme.colors.grass}
+                />
+                {/* Grip lines ride the thumb via a translated group, so only one
+                    animated value is involved rather than six derived points. */}
+                <Group transform={trayThumbTransform}>
+                  {[-5, 0, 5].map((offset) => (
+                    <Line
+                      key={offset}
+                      p1={vec(trayThumbW / 2 + offset, sliderY + 3)}
+                      p2={vec(trayThumbW / 2 + offset, sliderY + FX.tray.sliderHeight - 3)}
+                      color={theme.colors.grass}
+                      style="stroke"
+                      strokeWidth={1.5}
+                    />
+                  ))}
+                </Group>
+              </>
+            ) : null}
+
+            {/* Tray zone. Pieces fill top-to-bottom then rightward, so scrolling
+                reveals whole new columns instead of reshuffling visible ones.
+
+                Clipped to the shelf, which it previously was not: a scrolled-out
+                piece kept drawing at its translated position, so pieces spilled past
+                both ends of the shelf and sat on the cream page beside it. The clip
+                lives on this outer Group, which carries no transform of its own —
+                Skia concats a Group's `transform` before applying its `clip`, so a
+                clip on the same node as `trayTransform` would scroll with the pieces
+                and never cut them. Matching the shelf's own rounded rect means pieces
+                disappear exactly at its edge, including into the rounded corners. */}
+            <Group
+              clip={rrect(
+                rect(TRAY_PAD / 2, boardZoneH, Math.max(vw - TRAY_PAD, 1), TRAY_HEIGHT),
+                TRAY_RADIUS,
+                TRAY_RADIUS,
+              )}
+            >
+              <Group transform={trayTransform}>
+                {trayPieces.map((piece, index) => {
+                  const column = Math.floor(index / FX.tray.rows);
+                  const row = index % FX.tray.rows;
+                  return (
+                    <TrayPiece
+                      key={piece.pieceId}
+                      prepared={preparedById[piece.pieceId]}
+                      image={image}
+                      imageScale={imageScale}
+                      slotCenterX={TRAY_PAD + column * slotW + slotW / 2}
+                      slotCenterY={TRAY_PAD + row * (TRAY_SLOT + SLOT_GAP) + TRAY_SLOT / 2}
+                      scale={thumbScale}
+                      highlight={highlightEdges && preparedById[piece.pieceId].isEdge}
+                      hidden={piece.pieceId === draggingId}
+                    />
+                  );
+                })}
+              </Group>
+            </Group>
+
+            {/* Floating piece (above everything) */}
+            {draggingPrepared ? (
+              <FloatingPiece
+                prepared={draggingPrepared}
+                image={image}
+                imageScale={imageScale}
+                boardScale={boardScale}
+                camScale={camScale}
+                fx={fx}
+                fy={fy}
+                tiltDeg={tiltDeg}
+                scaleBoost={scaleBoost}
+              />
+            ) : null}
+
+            {snapFlash ? (
+              <GlowRing
+                key={snapFlash.id}
+                id={snapFlash.id}
+                cx={snapFlash.cx}
+                cy={snapFlash.cy}
+                onDone={clearFlash}
+              />
+            ) : null}
           </Canvas>
+
+          {complete ? <Confetti width={viewport.width} height={viewport.height} /> : null}
         </Animated.View>
       </GestureDetector>
     </View>
@@ -469,5 +1851,10 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     justifyContent: 'center',
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
 });

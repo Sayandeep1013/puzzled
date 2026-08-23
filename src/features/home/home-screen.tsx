@@ -1,549 +1,664 @@
-import * as ImagePicker from 'expo-image-picker';
-import { Link, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
+  ImageBackground,
+  LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  dateKey,
+  getCompletionsRepository,
   getProgressRepository,
-  getUserPuzzleRepository,
+  getWalletRepository,
   listCatalog,
-  type PuzzleProgressSummary,
+  pickDailyPuzzle,
+  resolvePuzzleImageSource,
 } from '@/data';
-import { type PuzzleDefinition } from '@/game-engine';
-import { colors, radii, spacing } from '@/shared/theme';
+import { type GridSize, type PuzzleDefinition } from '@/game-engine';
+import { type ArtName } from '@/shared/art';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { radii, shadow, spacing, typography } from '@/shared/theme';
+import {
+  Art,
+  EnterView,
+  IdleBob,
+  PopButton,
+  PopSurface,
+  Text,
+  ThemeGround,
+  useTabBarSpace,
+  WordmarkTitle,
+} from '@/shared/ui';
+
+/** Coins for finishing the puzzle picked for today. */
+export const DAILY_CHALLENGE_REWARD = 50;
+
+/** Bear size inside the challenge card, in points. */
+const CARD_BEAR = 112;
+/** Thumbnail edge in the Continue Playing strip, in points. */
+const THUMB = 84;
+/** How many boards the strip shows before it is just a list. */
+const CONTINUE_LIMIT = 8;
+
+interface ContinueItem {
+  puzzleId: string;
+  gridSize: GridSize;
+  title: string;
+  source: number | string | null;
+  percent: number;
+}
+
+interface DailyPick {
+  puzzle: PuzzleDefinition;
+  source: number | string | null;
+  doneToday: boolean;
+}
 
 interface HomeData {
-  bundled: PuzzleDefinition[];
-  user: PuzzleDefinition[];
-  /** All saved sessions for a puzzle, most recently played first. */
-  byPuzzle: Record<string, PuzzleProgressSummary[]>;
+  /** First puzzle the Play button can start when there is nothing to resume. */
+  firstPlayable: PuzzleDefinition | null;
+  /**
+   * Boards in progress, most recently played first.
+   *
+   * Home's Play button used to ignore progress entirely and always open the
+   * difficulty picker for `bundled[0]` — while Puzzles, Library and Pack all
+   * resumed the last session. The strip makes every one of them reachable, and
+   * `[0]` is what the button itself resumes.
+   */
+  continuePlaying: ContinueItem[];
+  /** Today's pick, or null before the catalog arrives. */
+  daily: DailyPick | null;
+  /** Null rather than a fabricated zero when the wallet cannot be read. */
+  coins: number | null;
 }
 
-const EMPTY: HomeData = { bundled: [], user: [], byPuzzle: {} };
+const EMPTY: HomeData = { firstPlayable: null, continuePlaying: [], daily: null, coins: null };
 
-async function loadHomeData(): Promise<HomeData> {
+async function loadHomeData(todayKey: string): Promise<HomeData> {
   const { bundled, user } = await listCatalog();
+  const pool = [...bundled, ...user];
+  const byId = new Map(pool.map((puzzle) => [puzzle.id, puzzle]));
 
-  const byPuzzle: Record<string, PuzzleProgressSummary[]> = {};
+  let coins: number | null = null;
   try {
-    // Rows arrive most-recent-first; preserve that so [0] is the resume target.
-    const rows = await (await getProgressRepository()).listSummaries();
-    for (const row of rows) {
-      (byPuzzle[row.puzzleId] ??= []).push(row);
-    }
+    coins = (await (await getWalletRepository()).balance()).coins;
   } catch {
-    // Progress is best-effort; an unreadable database still lists puzzles.
+    // Same contract as the coins screen: no balance is better than a wrong one.
   }
 
-  return { bundled, user, byPuzzle };
-}
-
-/** Turn a picked file name into a friendly title. */
-function titleFromFileName(fileName: string | null | undefined): string {
-  if (!fileName) {
-    return 'My puzzle';
+  let continuePlaying: ContinueItem[] = [];
+  try {
+    // Summaries arrive most-recent-first, so this strip is in "last played"
+    // order without sorting. Rows for puzzles no longer in the catalog are
+    // dropped rather than shown — following one lands on "Puzzle not found".
+    const rows = await (await getProgressRepository()).listSummaries();
+    continuePlaying = rows
+      .filter((row) => row.status !== 'completed' && row.lockedPieces > 0 && byId.has(row.puzzleId))
+      .slice(0, CONTINUE_LIMIT)
+      .map((row) => {
+        const puzzle = byId.get(row.puzzleId) as PuzzleDefinition;
+        return {
+          puzzleId: row.puzzleId,
+          gridSize: row.gridSize,
+          title: puzzle.title,
+          source: resolvePuzzleImageSource(puzzle),
+          percent: Math.round((row.lockedPieces / row.totalPieces) * 100),
+        };
+      });
+  } catch {
+    // Progress is best-effort; without it Home simply starts something new.
   }
-  const withoutExt = fileName.replace(/\.[^.]+$/, '');
-  const cleaned = withoutExt.replace(/[_-]+/g, ' ').trim();
-  return cleaned.length > 0 ? cleaned.slice(0, 40) : 'My puzzle';
+
+  let daily: DailyPick | null = null;
+  const pick = pickDailyPuzzle(pool, todayKey);
+  if (pick) {
+    let doneToday = false;
+    try {
+      const completions = await (await getCompletionsRepository()).list();
+      doneToday = completions.some(
+        (entry) => entry.puzzleId === pick.id && dateKey(new Date(entry.completedAt)) === todayKey,
+      );
+    } catch {
+      // Best-effort; an unreadable log just means the card still invites a play.
+    }
+    daily = { puzzle: pick, source: resolvePuzzleImageSource(pick), doneToday };
+  }
+
+  return { firstPlayable: bundled[0] ?? user[0] ?? null, continuePlaying, daily, coins };
 }
 
+/**
+ * Home, as the mockup's dashboard rather than a landing screen.
+ *
+ * It was deliberately cut back to logo, mascot and three buttons once, on the
+ * grounds that it had grown into a dashboard. The new mockup asks for one
+ * again — but a *useful* one: the things it surfaces (today's pick, the boards
+ * you have open) are the two questions a returning player actually has, and
+ * both were previously two taps away on other tabs.
+ *
+ * The mascot moves into the challenge card rather than standing alone, which is
+ * what makes room for all of it without a second screenful of scrolling.
+ */
 export function HomeScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
+  const router = useRouter();
   const [data, setData] = useState<HomeData>(EMPTY);
-  const [importing, setImporting] = useState(false);
+  const tabBarSpace = useTabBarSpace();
 
-  // Refetch on focus so progress reflects the board you just left.
+  // Re-read on focus rather than at mount, so crossing midnight with the app
+  // open rolls the daily pick over instead of pinning yesterday's.
+  const [today, setToday] = useState(() => dateKey(new Date()));
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      loadHomeData().then((next) => {
+      const now = dateKey(new Date());
+      if (now !== today) {
+        setToday(now);
+        return () => {
+          active = false;
+        };
+      }
+      loadHomeData(today).then((next) => {
         if (active) setData(next);
       });
       return () => {
         active = false;
       };
-    }, []),
+    }, [today]),
   );
 
-  const onImport = useCallback(async () => {
-    if (importing) {
+  /**
+   * Pay the challenge reward once the daily is finished.
+   *
+   * Paid here rather than on the board, because the board has no idea which
+   * puzzle happens to be today's pick — it would have to load the whole catalog
+   * mid-game to find out. `recordOnce` is keyed on the day, so arriving at this
+   * screen repeatedly cannot pay twice, and a player who finishes the daily and
+   * never opens Home is paid the next time they do.
+   */
+  const dailyDone = data.daily?.doneToday ?? false;
+  useEffect(() => {
+    if (!dailyDone) {
       return;
     }
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert(
-          'Photos permission needed',
-          'Allow photo access to turn an image into a puzzle.',
-        );
-        return;
+    void (async () => {
+      try {
+        await (
+          await getWalletRepository()
+        ).recordOnce({
+          deltaCoins: DAILY_CHALLENGE_REWARD,
+          deltaHints: 0,
+          reason: 'daily-complete',
+          ref: today,
+        });
+      } catch {
+        // Best-effort; the next visit tries again.
       }
+    })();
+  }, [dailyDone, today]);
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 1,
-      });
-      if (result.canceled || result.assets.length === 0) {
-        return;
-      }
-
-      const asset = result.assets[0];
-      setImporting(true);
-      await (
-        await getUserPuzzleRepository()
-      ).add({
-        title: titleFromFileName(asset.fileName),
-        sourceUri: asset.uri,
-        pixelSize: { width: asset.width, height: asset.height },
-      });
-      setData(await loadHomeData());
-    } catch {
-      Alert.alert(
-        'Could not import',
-        'Something went wrong adding that image. Please try another.',
-      );
-    } finally {
-      setImporting(false);
-    }
-  }, [importing]);
-
-  const onDelete = useCallback((puzzle: PuzzleDefinition) => {
-    Alert.alert('Delete puzzle?', `Remove “${puzzle.title}” and its saved progress?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await (await getUserPuzzleRepository()).remove(puzzle.id);
-            await (await getProgressRepository()).deleteSessionsForPuzzle(puzzle.id);
-          } catch {
-            // Best-effort; a failed delete leaves the puzzle listed to retry.
-          }
-          setData(await loadHomeData());
-        },
-      },
-    ]);
+  /**
+   * Height of the scroll viewport, which is what one "screenful" means here.
+   *
+   * Measured rather than derived from the window: the frame already has the top
+   * bar above it and the dock's reservation below, and reproducing that
+   * arithmetic would drift the moment either changes.
+   */
+  const [foldHeight, setFoldHeight] = useState(0);
+  const onScrollLayout = useCallback((event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    setFoldHeight((current) => (Math.abs(current - height) < 1 ? current : height));
   }, []);
 
-  const allRows = Object.values(data.byPuzzle).flat();
-  const placed = allRows.reduce((sum, row) => sum + row.lockedPieces, 0);
-  const totalAcross = allRows.reduce((sum, row) => sum + row.totalPieces, 0);
-  const percent = totalAcross > 0 ? Math.round((placed / totalAcross) * 100) : 0;
+  const resume = data.continuePlaying[0] ?? null;
+
+  const openBoard = useCallback(
+    (puzzleId: string, gridSize: GridSize) => {
+      router.push({
+        pathname: '/game/[puzzleId]',
+        params: { puzzleId, size: String(gridSize) },
+      });
+    },
+    [router],
+  );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heading}>
-          <Text style={styles.eyebrow}>YOUR QUIET CORNER</Text>
-          <Text style={styles.title}>Puzzled</Text>
-          <Text style={styles.subtitle}>
-            Slow down, find the edges, and make the picture whole.
-          </Text>
-        </View>
-
-        <View style={styles.progressCard}>
-          <View style={styles.progressCopy}>
-            <Text style={styles.cardLabel}>YOUR PROGRESS</Text>
-            <Text style={styles.progressValue}>
-              {placed} {placed === 1 ? 'piece' : 'pieces'} placed
-            </Text>
-            <Text style={styles.cardDescription}>
-              Progress is stored on this device, even when you are offline.
-            </Text>
-          </View>
-          <View style={styles.progressRing}>
-            <Text style={styles.progressPercent}>{percent}%</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeading}>
-            <Text style={styles.sectionTitle}>Ready to play?</Text>
-            <Text style={styles.sectionMeta}>
-              {data.bundled.length} starter{data.bundled.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-          {data.bundled.map((puzzle) => (
-            <PuzzleCard key={puzzle.id} puzzle={puzzle} rows={data.byPuzzle[puzzle.id] ?? []} />
-          ))}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeading}>
-            <Text style={styles.sectionTitle}>Your puzzles</Text>
-            <Text style={styles.sectionMeta}>
-              {data.user.length} {data.user.length === 1 ? 'photo' : 'photos'}
-            </Text>
-          </View>
-
+    // One cover-fitted image rather than stacked colour bands. The bands could
+    // never line up with scrolling content, which is what made the old seam cut
+    // across cards.
+    <ImageBackground
+      // The theme's own artwork, or a flat ground when it ships without any.
+      source={theme.homeBackground ?? undefined}
+      resizeMode="cover"
+      style={styles.root}
+    >
+      {/* Behind everything, and only drawn by a theme that has a material.
+          A theme with a `homeBackground` has already painted this screen. */}
+      <ThemeGround />
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.topBar}>
+          {/* The pill is a button now. A balance you can see and not act on is
+              a dead end — the `+` is the only route to where coins come from. */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Add a puzzle from your gallery"
-            onPress={onImport}
-            disabled={importing}
-            style={({ pressed }) => [styles.importButton, pressed && styles.importButtonPressed]}
+            accessibilityLabel={`${data.coins ?? 'Unknown'} coins. Get more.`}
+            onPress={() => router.push('/coins')}
+            style={styles.coinPill}
           >
-            {importing ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : (
-              <Text style={styles.importPlus}>＋</Text>
-            )}
-            <Text style={styles.importText}>
-              {importing ? 'Adding your photo…' : 'Add from gallery'}
+            <Art name="coin" size={26} />
+            <Text style={styles.coinText} numberOfLines={1}>
+              {data.coins ?? '—'}
             </Text>
+            {/* Two bars, not a "+" glyph. A glyph is positioned by its font's
+                baseline and side bearings, so inside a 26pt disc it sits high and
+                slightly left however the box is aligned — and it moves again with
+                the reader's font scale. Two absolutely-centred bars cannot. */}
+            <View style={styles.coinPlus}>
+              <View style={styles.coinPlusBarH} />
+              <View style={styles.coinPlusBarV} />
+            </View>
           </Pressable>
 
-          {data.user.length === 0 ? (
-            <Text style={styles.emptyHint}>
-              Pick any photo and it becomes a jigsaw you can play at 3×3 up to 10×10.
-            </Text>
-          ) : (
-            data.user.map((puzzle) => (
-              <PuzzleCard
-                key={puzzle.id}
-                puzzle={puzzle}
-                rows={data.byPuzzle[puzzle.id] ?? []}
-                previewUri={puzzle.image.uri}
-                onDelete={() => onDelete(puzzle)}
-              />
-            ))
-          )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function PuzzleCard({
-  puzzle,
-  rows,
-  previewUri,
-  onDelete,
-}: {
-  puzzle: PuzzleDefinition;
-  rows: PuzzleProgressSummary[];
-  previewUri?: string;
-  onDelete?: () => void;
-}) {
-  const latest = rows[0]; // Most recently played size, or undefined.
-  const done = latest?.status === 'completed';
-  const started = latest != null && latest.lockedPieces > 0;
-  // Continue resumes the last size you played; a new puzzle uses its default.
-  const resumeSize = latest?.gridSize ?? puzzle.gridSize;
-
-  return (
-    <View style={styles.puzzleCard}>
-      <View style={styles.preview}>
-        {previewUri ? (
-          <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="cover" />
-        ) : (
-          <>
-            <View style={[styles.previewTile, styles.previewTileOne]} />
-            <View style={[styles.previewTile, styles.previewTileTwo]} />
-            <View style={[styles.previewTile, styles.previewTileThree]} />
-          </>
-        )}
-        <Text style={styles.previewLabel}>
-          {done ? 'Completed' : started ? 'In progress' : 'Not started'}
-        </Text>
-        {onDelete ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Delete ${puzzle.title}`}
-            onPress={onDelete}
+            accessibilityLabel="Settings"
             hitSlop={10}
-            style={({ pressed }) => [styles.deleteButton, pressed && styles.deleteButtonPressed]}
+            onPress={() => router.push('/settings')}
+            style={styles.gearButton}
           >
-            <Text style={styles.deleteButtonText}>Delete</Text>
+            <Art name="gear" size={26} />
           </Pressable>
-        ) : null}
-      </View>
-      <View style={styles.puzzleDetails}>
-        <View style={styles.puzzleCopy}>
-          <Text style={styles.puzzleTitle} numberOfLines={1}>
-            {puzzle.title}
-          </Text>
-          <Text style={styles.puzzleMeta}>
-            {started
-              ? `${latest.gridSize}×${latest.gridSize} · ${latest.lockedPieces}/${latest.totalPieces} placed`
-              : 'Choose 3×3 up to 10×10'}
-            {rows.length > 1 ? ` · ${rows.length} sizes` : ''}
-          </Text>
         </View>
-        <Link
-          href={{
-            pathname: '/game/[puzzleId]',
-            params: { puzzleId: puzzle.id, size: String(resumeSize) },
-          }}
-          asChild
-        >
-          {/* `Link asChild` overwrites the child's `style` prop, which silently
-              erased the button fill. Keep the visuals on an inner View. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
+
+        {/* The scroll frame stops above the floating dock rather than running
+            under it. Content sliding beneath a bar that does not span the full
+            width reads as two overlapping layers, which is what the quick links
+            were doing to the tab bar. */}
+        <View style={[styles.scrollFrame, { paddingBottom: tabBarSpace }]}>
+          <ScrollView
+            contentContainerStyle={styles.body}
+            onLayout={onScrollLayout}
+            showsVerticalScrollIndicator={false}
           >
-            {({ pressed }) => (
-              <View style={[styles.playButton, pressed && styles.playButtonPressed]}>
-                <Text style={styles.playButtonText}>
-                  {done ? 'Play again' : started ? 'Continue' : 'Start puzzle'}
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        </Link>
-      </View>
-    </View>
+            {/* One screenful, ending on the quick links. Everything below is
+                found by scrolling, which is what makes the first view feel
+                finished rather than cut off. */}
+            <View
+              style={[
+                styles.fold,
+                // Less the container padding above it, so the fold is exactly one
+                // screenful rather than one screenful plus 16pt of phantom scroll.
+                foldHeight > 0 ? { minHeight: foldHeight - spacing.md } : null,
+              ]}
+            >
+              <EnterView index={0}>
+                <WordmarkTitle />
+              </EnterView>
+
+              {data.daily ? (
+                <EnterView index={1} style={styles.block}>
+                  <PopSurface
+                    fill={theme.colors.surface}
+                    radius={radii.lg}
+                    contentStyle={styles.challengeBody}
+                  >
+                    <View style={styles.challengeCopy}>
+                      <Text style={styles.challengeTitle}>Today&apos;s Challenge</Text>
+                      <Text style={styles.challengeMeta}>
+                        {data.daily.doneToday
+                          ? `Done! ${DAILY_CHALLENGE_REWARD} coins earned.`
+                          : `Complete “${data.daily.puzzle.title}” and earn ${DAILY_CHALLENGE_REWARD} coins.`}
+                      </Text>
+                      <PopButton
+                        label={data.daily.doneToday ? 'Play again' : 'Play Now'}
+                        tone="grass"
+                        size="sm"
+                        icon={<Art name="play" size={20} />}
+                        style={styles.challengeButton}
+                        onPress={() => router.push('/daily')}
+                      />
+                    </View>
+                    {/* The bear lives here now rather than standing alone above the
+                      buttons — which is what makes room for the rest of the page. */}
+                    <IdleBob distance={6} sway={2}>
+                      <Art name="bear" size={CARD_BEAR} />
+                    </IdleBob>
+                  </PopSurface>
+                </EnterView>
+              ) : null}
+
+              <EnterView index={2} style={styles.block}>
+                {/* An accent frame around a cream body, the pattern the rows use: it
+                  gives the card its own colour without putting caption text on a
+                  saturated fill, which fails contrast on half the palette. */}
+                <PopSurface
+                  fill={theme.colors.berry}
+                  radius={radii.lg}
+                  contentStyle={styles.huntFrame}
+                >
+                  <View style={styles.huntBody}>
+                    <Art name="chest" size={54} />
+                    <View style={styles.challengeCopy}>
+                      <Text style={styles.challengeTitle}>Daily Treasure Hunt</Text>
+                      <Text style={styles.challengeMeta}>
+                        Seven stops, one a day. The last one is the chest.
+                      </Text>
+                    </View>
+                    <PopButton
+                      label="Open"
+                      tone="berry"
+                      size="sm"
+                      accessibilityLabel="Open the daily treasure hunt"
+                      onPress={() => router.push('/treasure')}
+                    />
+                  </View>
+                </PopSurface>
+              </EnterView>
+
+              <EnterView index={3} style={[styles.block, styles.actions]}>
+                <PopButton
+                  // The label follows the destination: "Play" opening a half-finished
+                  // board would be as wrong as "Continue" starting a new one.
+                  label={resume ? 'Continue' : 'Play'}
+                  tone="grass"
+                  size="lg"
+                  icon={<Art name={resume ? 'resume' : 'play'} size={28} />}
+                  style={styles.fullWidth}
+                  disabled={!resume && !data.firstPlayable}
+                  onPress={() => {
+                    if (resume) {
+                      openBoard(resume.puzzleId, resume.gridSize);
+                      return;
+                    }
+                    if (data.firstPlayable) {
+                      router.push({
+                        pathname: '/difficulty/[puzzleId]',
+                        params: { puzzleId: data.firstPlayable.id },
+                      });
+                    }
+                  }}
+                />
+
+                <View style={styles.quickRow}>
+                  <QuickLink
+                    art="calendar"
+                    label="Daily Puzzle"
+                    onPress={() => router.push('/daily')}
+                  />
+                  {/* `navigate`, not `push`: Home is itself a tab, and pushing a
+                      sibling tab stacks a second copy of the whole tab navigator
+                      on top of this one — same screen, but with a back entry
+                      behind it and a dock that is now steering the copy. */}
+                  <QuickLink
+                    art="album"
+                    label="My Album"
+                    onPress={() => router.navigate('/library')}
+                  />
+                </View>
+              </EnterView>
+            </View>
+
+            {data.continuePlaying.length > 0 ? (
+              <EnterView index={4} style={styles.block}>
+                {/* On a card, not straight on the meadow. White copy over a
+                    photographic sky is unreadable wherever a cloud sits behind it —
+                    measured on device, the heading and the percentages both
+                    disappeared into the bright band above the hills. */}
+                <PopSurface
+                  fill={theme.colors.surface}
+                  radius={radii.lg}
+                  contentStyle={styles.stripCard}
+                >
+                  <View style={styles.sectionHead}>
+                    <Text style={styles.sectionTitle}>Continue Playing</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="See every puzzle"
+                      hitSlop={8}
+                      onPress={() => router.navigate('/puzzles')}
+                    >
+                      <Text style={styles.seeAll}>View All</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.strip}
+                  >
+                    {data.continuePlaying.map((item) => (
+                      <ContinueThumb
+                        key={`${item.puzzleId}-${item.gridSize}`}
+                        item={item}
+                        onPress={() => openBoard(item.puzzleId, item.gridSize)}
+                      />
+                    ))}
+                  </ScrollView>
+                </PopSurface>
+              </EnterView>
+            ) : null}
+          </ScrollView>
+        </View>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-  },
-  content: {
-    width: '100%',
-    maxWidth: 760,
-    alignSelf: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xl,
-    gap: spacing.xl,
-  },
-  heading: {
-    gap: spacing.sm,
-  },
-  eyebrow: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-  },
-  title: {
-    color: colors.ink,
-    fontSize: 44,
-    fontWeight: '800',
-    letterSpacing: -1.5,
-  },
-  subtitle: {
-    maxWidth: 500,
-    color: colors.inkMuted,
-    fontSize: 17,
-    lineHeight: 25,
-  },
-  progressCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.sage,
-  },
-  progressCopy: {
-    flex: 1,
-    gap: spacing.sm,
-  },
-  cardLabel: {
-    color: colors.ink,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.4,
-  },
-  progressValue: {
-    color: colors.ink,
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  cardDescription: {
-    maxWidth: 430,
-    color: colors.inkMuted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  progressRing: {
-    width: 72,
-    height: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 7,
-    borderColor: colors.surfaceStrong,
-    borderRadius: radii.pill,
-  },
-  progressPercent: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  section: {
-    gap: spacing.md,
-  },
-  sectionHeading: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  sectionTitle: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: '800',
-  },
-  sectionMeta: {
-    color: colors.inkMuted,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  importButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderRadius: radii.lg,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-  },
-  importButtonPressed: {
-    backgroundColor: colors.sage,
-  },
-  importPlus: {
-    color: colors.accent,
-    fontSize: 22,
-    fontWeight: '800',
-    marginTop: -2,
-  },
-  importText: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  emptyHint: {
-    color: colors.inkMuted,
-    fontSize: 14,
-    lineHeight: 20,
-    paddingHorizontal: spacing.xs,
-  },
-  puzzleCard: {
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-  },
-  preview: {
-    height: 210,
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-    padding: spacing.lg,
-    backgroundColor: '#F4C78D',
-  },
-  previewImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  previewTile: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: radii.pill,
-  },
-  previewTileOne: {
-    top: -70,
-    left: -20,
-    backgroundColor: '#E88962',
-  },
-  previewTileTwo: {
-    top: 20,
-    right: -30,
-    backgroundColor: '#759A88',
-  },
-  previewTileThree: {
-    bottom: -110,
-    left: 110,
-    backgroundColor: '#F8E6B9',
-  },
-  previewLabel: {
-    alignSelf: 'flex-start',
-    color: colors.surfaceStrong,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    // Legible over any photo.
-    backgroundColor: 'rgba(23,33,33,0.45)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.sm,
-    overflow: 'hidden',
-  },
-  deleteButton: {
-    position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(23,33,33,0.55)',
-  },
-  deleteButtonPressed: {
-    backgroundColor: colors.accentPressed,
-  },
-  deleteButtonText: {
-    color: colors.surfaceStrong,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  puzzleDetails: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  puzzleCopy: {
-    flex: 1,
-  },
-  puzzleTitle: {
-    color: colors.ink,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  puzzleMeta: {
-    marginTop: spacing.xs,
-    color: colors.inkMuted,
-    fontSize: 13,
-  },
-  playButton: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 13,
-    borderRadius: radii.pill,
-    backgroundColor: colors.accent,
-  },
-  playButtonPressed: {
-    backgroundColor: colors.accentPressed,
-  },
-  playButtonText: {
-    color: colors.surfaceStrong,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-});
+/** One board in the Continue Playing strip, with how far through it is. */
+function ContinueThumb({ item, onPress }: { item: ContinueItem; onPress: () => void }) {
+  const styles = useStyles();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Continue ${item.title}, ${item.percent} percent done`}
+      onPress={onPress}
+      style={styles.thumbWrap}
+    >
+      <View style={styles.thumb}>
+        {item.source != null ? (
+          <ImageBackground
+            source={typeof item.source === 'number' ? item.source : { uri: item.source }}
+            style={styles.thumbImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <Art name="puzzle-quad" size={40} />
+        )}
+      </View>
+      <Text style={styles.thumbMeta} numberOfLines={1}>
+        {item.percent}%
+      </Text>
+    </Pressable>
+  );
+}
+
+function QuickLink({ art, label, onPress }: { art: ArtName; label: string; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useStyles();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={styles.quickLink}
+    >
+      <PopSurface fill={theme.colors.surface} radius={radii.md}>
+        <View style={styles.quickLinkInner}>
+          <Art name={art} size={30} />
+          {/* `numberOfLines` with a shrinkable style, or the label loses letters.
+              `PopSurface`'s face clips (`overflow: 'hidden'`), and an unshrinkable
+              `Text` in a centred row overflows that face rather than narrowing — so
+              when the label does not fit, the ends are simply cut off with nothing to
+              show for it. Shrinking degrades to an ellipsis instead, which is legible
+              and obviously deliberate. */}
+          <Text style={styles.quickLinkLabel} numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+      </PopSurface>
+    </Pressable>
+  );
+}
+
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safeArea: { flex: 1 },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+    },
+    coinPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingLeft: spacing.xs,
+      paddingRight: spacing.xs,
+      paddingVertical: spacing.xs,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    coinText: {
+      ...typography.heading,
+      fontSize: 18,
+      color: theme.colors.ink,
+      paddingHorizontal: 2,
+    },
+    // A green disc rather than an outline, matching the mockup's pill.
+    coinPlus: {
+      width: 26,
+      height: 26,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.grassDeep,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    coinPlusBarH: {
+      position: 'absolute',
+      width: 13,
+      height: 3,
+      borderRadius: 2,
+      backgroundColor: theme.colors.onFill,
+    },
+    coinPlusBarV: {
+      position: 'absolute',
+      width: 3,
+      height: 13,
+      borderRadius: 2,
+      backgroundColor: theme.colors.onFill,
+    },
+    gearButton: {
+      width: 42,
+      height: 42,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    /** Ends where the dock begins, so nothing scrolls underneath it. */
+    scrollFrame: { flex: 1 },
+    body: {
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      gap: spacing.lg,
+    },
+    /**
+     * One viewport tall, so the first view ends on the quick links.
+     *
+     * `space-between` rather than a single `marginTop: auto` on the last child:
+     * both seat the quick links just above the dock, but the margin pools every
+     * point of slack into one gap, which on a tall phone left a hole between the
+     * hunt card and the buttons. Distributed, the same slack reads as breathing
+     * room. `gap` stays as the floor for a short screen, where there is none.
+     */
+    fold: { alignSelf: 'stretch', gap: spacing.lg, justifyContent: 'space-between' },
+    block: { alignSelf: 'stretch' },
+    challengeBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    challengeCopy: { flex: 1, gap: spacing.xs },
+    challengeTitle: { ...typography.heading, fontSize: 19, color: theme.colors.ink },
+    challengeMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    challengeButton: { alignSelf: 'flex-start', marginTop: spacing.xs },
+    huntFrame: { padding: spacing.xs },
+    huntBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.surface,
+    },
+    stripCard: { padding: spacing.md, paddingRight: 0 },
+    sectionHead: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+      paddingRight: spacing.md,
+    },
+    sectionTitle: { ...typography.heading, fontSize: 19, color: theme.colors.ink },
+    seeAll: { ...typography.caption, color: theme.colors.headingGreen },
+    strip: { gap: spacing.sm, paddingRight: spacing.md },
+    thumbWrap: { alignItems: 'center', gap: 4 },
+    thumb: {
+      width: THUMB,
+      height: THUMB,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.paper,
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxShadow: shadow.card,
+    },
+    thumbImage: { width: '100%', height: '100%' },
+    thumbMeta: {
+      ...typography.caption,
+      fontSize: 12,
+      color: theme.colors.inkMuted,
+      paddingHorizontal: 2,
+    },
+    actions: { gap: spacing.md },
+    fullWidth: { alignSelf: 'stretch' },
+    quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch' },
+    quickLink: { flex: 1 },
+    quickLinkInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+    },
+    // `flexShrink` so the label gives way before the clipping face does — see QuickLink.
+    quickLinkLabel: {
+      ...typography.bodyStrong,
+      fontSize: 14,
+      color: theme.colors.ink,
+      flexShrink: 1,
+      // Two points of horizontal slack, which is measurement headroom, not spacing.
+      // Android measures a `Text`'s intrinsic width and draws its glyphs with
+      // slightly different rounding, and an OS font scale makes `fontSize`
+      // fractional (14 x 0.85 = 11.9) which widens the gap. When the drawn string
+      // needs marginally more than the measured box, `numberOfLines={1}` ellipsises
+      // a label that had hundreds of points of room beside it — measured on device:
+      // "My Album" truncated to "My Alb..." inside a card 356px wide.
+      paddingHorizontal: 2,
+    },
+  }),
+);

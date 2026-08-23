@@ -202,6 +202,26 @@ export function isSessionCompatible(
   return session.pieces.every((piece) => knownIds.has(piece.pieceId));
 }
 
+/**
+ * Whether a stored session should be put back on the board.
+ *
+ * Compatibility is necessary but not sufficient: a **completed** session is
+ * compatible with the board it was solved on, and restoring one dropped the player
+ * onto a finished puzzle. The completion effect keys off `status === 'completed'`, so
+ * it then handed straight off to the results screen — "Play Again" bounced results →
+ * game → results and no finished puzzle could be replayed from any entry point.
+ *
+ * Replaying a finished puzzle means starting it over, so a completed session is
+ * deliberately dropped in favour of a fresh board.
+ */
+export function isSessionRestorable(
+  session: GameSession,
+  puzzle: PuzzleDefinition,
+  pieces: readonly PieceGeometry[],
+): boolean {
+  return session.status !== 'completed' && isSessionCompatible(session, puzzle, pieces);
+}
+
 export function findGeometry(pieces: readonly PieceGeometry[], pieceId: string): PieceGeometry {
   const geometry = pieces.find((piece) => piece.id === pieceId);
   if (!geometry) {
