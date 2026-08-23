@@ -37,6 +37,8 @@ describe('parseSettingsRows', () => {
       sound: true,
       music: true,
       haptics: true,
+      showGrid: true,
+      snapAssist: true,
       themeId: 'meadow',
     });
   });

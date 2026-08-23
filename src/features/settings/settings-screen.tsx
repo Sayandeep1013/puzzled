@@ -13,7 +13,7 @@ import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopHeader, PopIcon, PopSurface, PopToggle, Text, ThemeGround } from '@/shared/ui';
 
 /** Only the boolean settings get a switch; the theme has its own picker. */
-type ToggleKey = 'sound' | 'music' | 'haptics';
+type ToggleKey = 'sound' | 'music' | 'haptics' | 'showGrid' | 'snapAssist';
 
 interface ToggleRow {
   key: ToggleKey;
@@ -21,10 +21,38 @@ interface ToggleRow {
   description: string;
 }
 
-const ROWS: ToggleRow[] = [
-  { key: 'sound', label: 'Sound', description: 'Piece pickup, snap, and button taps' },
-  { key: 'music', label: 'Music', description: 'Background music while you play' },
-  { key: 'haptics', label: 'Haptics', description: 'Vibration feedback when a piece snaps' },
+/**
+ * Grouped, because the list stopped being one kind of thing.
+ *
+ * Three audio switches read fine as a single card. Adding two that change how
+ * the board *plays* to the same card would have put "Vibration feedback" and
+ * "Pieces click into place" side by side as though they were the same decision.
+ */
+interface ToggleGroup {
+  title: string;
+  rows: ToggleRow[];
+}
+
+const GROUPS: ToggleGroup[] = [
+  {
+    title: 'Feedback',
+    rows: [
+      { key: 'sound', label: 'Sound', description: 'Piece pickup, snap, and button taps' },
+      { key: 'music', label: 'Music', description: 'Background music while you play' },
+      { key: 'haptics', label: 'Haptics', description: 'Vibration feedback when a piece snaps' },
+    ],
+  },
+  {
+    title: 'Board',
+    rows: [
+      { key: 'showGrid', label: 'Grid', description: 'Faint guide lines under the pieces' },
+      {
+        key: 'snapAssist',
+        label: 'Snap assist',
+        description: 'Pieces click home from a little further away',
+      },
+    ],
+  },
 ];
 
 export function SettingsScreen() {
@@ -67,26 +95,31 @@ export function SettingsScreen() {
         <PopHeader title="Settings" onBack={() => router.back()} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          <PopSurface fill={theme.colors.surface} radius={radii.lg}>
-            <View style={styles.rows}>
-              {ROWS.map((row, index) => (
-                <View key={row.key}>
-                  {index > 0 ? <View style={styles.divider} /> : null}
-                  <View style={styles.row}>
-                    <View style={styles.rowCopy}>
-                      <Text style={styles.rowLabel}>{row.label}</Text>
-                      <Text style={styles.rowDescription}>{row.description}</Text>
+          {GROUPS.map((group) => (
+            <View key={group.title} style={styles.group}>
+              <Text style={styles.groupTitle}>{group.title}</Text>
+              <PopSurface fill={theme.colors.surface} radius={radii.lg}>
+                <View style={styles.rows}>
+                  {group.rows.map((row, index) => (
+                    <View key={row.key}>
+                      {index > 0 ? <View style={styles.divider} /> : null}
+                      <View style={styles.row}>
+                        <View style={styles.rowCopy}>
+                          <Text style={styles.rowLabel}>{row.label}</Text>
+                          <Text style={styles.rowDescription}>{row.description}</Text>
+                        </View>
+                        <PopToggle
+                          value={settings[row.key]}
+                          onChange={onToggle(row.key)}
+                          accessibilityLabel={row.label}
+                        />
+                      </View>
                     </View>
-                    <PopToggle
-                      value={settings[row.key]}
-                      onChange={onToggle(row.key)}
-                      accessibilityLabel={row.label}
-                    />
-                  </View>
+                  ))}
                 </View>
-              ))}
+              </PopSurface>
             </View>
-          </PopSurface>
+          ))}
 
           {/* A link, not the picker. A theme changes the whole app; running that
               from inside a list of audio toggles both undersold it and hid it —
@@ -106,9 +139,9 @@ export function SettingsScreen() {
             </PopSurface>
           </Pressable>
 
-          {/* Three toggles leave a tall blank tail; the mascot closes it off. */}
+          {/* The list still ends well short of the fold; the mascot closes it off. */}
           <View style={styles.footerArt}>
-            <Art name="winking-duck" size={120} />
+            <Art name="winking-duck" size={100} />
           </View>
 
           {version ? <Text style={styles.version}>Version {version}</Text> : null}
@@ -130,6 +163,13 @@ const useStyles = createThemedStyles((theme) =>
       width: '100%',
       maxWidth: 620,
       alignSelf: 'center',
+    },
+    group: { gap: spacing.sm },
+    groupTitle: {
+      ...typography.label,
+      fontSize: 12,
+      color: theme.colors.inkMuted,
+      paddingLeft: spacing.xs,
     },
     rows: { padding: spacing.sm },
     row: {

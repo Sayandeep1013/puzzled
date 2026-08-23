@@ -10,6 +10,19 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/shared/theme-context';
 import { LoadingScreen } from '@/shared/ui';
 
+/**
+ * What sits underneath a screen opened from outside the app.
+ *
+ * Without this the root stack starts empty on a deep link, so `puzzled://themes`
+ * — or any launch straight into a stack screen — leaves the back arrow pointing
+ * at nothing and the Android back button quitting the app from a subscreen. With
+ * it, the tabs are always the floor: back from anywhere lands Home.
+ *
+ * `anchor` is the current name for what used to be `initialRouteName`; SDK 57
+ * accepts either and prefers this one.
+ */
+export const unstable_settings = { anchor: '(tabs)' };
+
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {

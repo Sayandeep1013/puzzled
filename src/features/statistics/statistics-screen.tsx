@@ -31,6 +31,8 @@ interface Stats {
   favouriteGridSize: GridSize | null;
   /** Sum of `totalPieces` across every saved session. */
   totalPieces: number;
+  /** Distinct boards with a saved session, finished or not. */
+  boardsStarted: number;
   /** `piecesPlaced / totalPieces` as a whole percent; 0 with no sessions. */
   percent: number;
 }
@@ -42,6 +44,7 @@ const EMPTY_STATS: Stats = {
   bestTimeMs: null,
   favouriteGridSize: null,
   totalPieces: 0,
+  boardsStarted: 0,
   percent: 0,
 };
 
@@ -91,6 +94,7 @@ export function computeStats(
     bestTimeMs,
     favouriteGridSize,
     totalPieces,
+    boardsStarted: rows.length,
     percent,
   };
 }
@@ -168,8 +172,12 @@ export function StatisticsScreen() {
           >
             <View style={styles.progressCopy}>
               <Text style={styles.progressLabel}>YOUR PROGRESS</Text>
+              {/* Says what the ring beside it is a percentage *of*. It used to read
+                  "164 pieces placed", which was the same number the tile below
+                  repeated verbatim — and left the ring unexplained. */}
               <Text style={styles.progressValue}>
-                {stats.piecesPlaced} {stats.piecesPlaced === 1 ? 'piece' : 'pieces'} placed
+                {stats.piecesPlaced} of {stats.totalPieces}{' '}
+                {stats.totalPieces === 1 ? 'piece' : 'pieces'} placed
               </Text>
               <Text style={styles.progressHint}>Saved on this device, even offline.</Text>
             </View>
@@ -185,8 +193,8 @@ export function StatisticsScreen() {
             />
             <StatTile
               fill={accentAt(1)}
-              value={String(stats.piecesPlaced)}
-              label="PIECES PLACED"
+              value={String(stats.boardsStarted)}
+              label="BOARDS STARTED"
               style={styles.tileHalf}
             />
             <StatTile

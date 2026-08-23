@@ -123,10 +123,12 @@ export function ResultsScreen({
             label="Back Home"
             tone="grass"
             icon={<Art name="quit-home" size={24} />}
-            // `dismissAll` needs a stack to pop; opened directly (a deep link, or
-            // a notification) there is nothing under this screen and it is a no-op
-            // that leaves the button dead.
-            onPress={() => (router.canDismiss() ? router.dismissAll() : router.replace('/'))}
+            // `dismissTo`, not `dismissAll`: popping to the top of the stack lands
+            // on whichever tab was showing when the run started, so a puzzle begun
+            // from the Puzzles tab put "Back Home" on the Puzzles tab. Naming the
+            // route also covers the deep-link case — `dismissTo` replaces when the
+            // href is not in the stack, which `dismissAll` cannot do.
+            onPress={() => router.dismissTo('/')}
           />
         </View>
       </SafeAreaView>

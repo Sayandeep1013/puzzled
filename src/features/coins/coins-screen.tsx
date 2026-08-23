@@ -18,7 +18,7 @@ import { type ArtName } from '@/shared/art';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopIcon, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 /**
  * Where coins come from.
@@ -180,33 +180,58 @@ export function CoinsScreen() {
               <View style={styles.cardCopy}>
                 <Text style={styles.cardTitle}>Daily bonus</Text>
                 <Text style={styles.cardMeta}>
-                  {claimedToday
-                    ? `Claimed. Come back tomorrow for ${dailyBonusFor(streakAfterClaim)} coins.`
-                    : `${amount} coins, waiting for you.`}
+                  {claimedToday ? 'Claimed today.' : `${amount} coins, waiting for you.`}
                 </Text>
               </View>
             </View>
 
+            {/* Never a restatement of the line above it: while both branches said
+                "come back tomorrow", the claimed card spent two of its three lines
+                saying the same sentence twice. This one carries the streak, or
+                the number the streak is worth. */}
             <Text style={styles.streakLine}>
               {streakAfterClaim > 1
                 ? `${streakAfterClaim} days in a row — the bonus grows to ${DAILY_BONUS.cap} coins.`
-                : 'Come back tomorrow and it grows.'}
+                : claimedToday
+                  ? `Tomorrow it is ${dailyBonusFor(streakAfterClaim)} coins.`
+                  : 'Come back tomorrow and it grows.'}
             </Text>
 
-            <PopButton
-              label={claimedToday ? 'Claimed today' : claiming ? 'Claiming…' : `Claim ${amount}`}
-              tone="grass"
-              disabled={claimedToday || claiming}
-              icon={<Art name="coin" size={22} />}
-              onPress={onClaim}
-            />
+            {claimedToday ? (
+              // Done, not broken. A disabled `PopButton` sits at 45% opacity,
+              // which read as a control that had failed rather than as a reward
+              // already collected.
+              <View
+                style={styles.claimed}
+                accessible
+                accessibilityLabel="Daily bonus claimed today"
+              >
+                <PopIcon name="check" size={20} color={theme.colors.grassDeep} />
+                <Text style={styles.claimedLabel} numberOfLines={1}>
+                  Claimed today
+                </Text>
+              </View>
+            ) : (
+              <PopButton
+                label={claiming ? 'Claiming…' : `Claim ${amount}`}
+                tone="grass"
+                disabled={claiming}
+                icon={<Art name="coin" size={22} />}
+                onPress={onClaim}
+              />
+            )}
           </PopSurface>
 
+          {/* `dismissTo`, not `push`: the Puzzles tab is *under* this screen in
+              the stack, and pushing it puts a tab navigator on top of a stack
+              screen — the dock reappears, but so does a back arrow to a coin
+              page the player has finished with. This unwinds to the tab that is
+              already there. */}
           <EarnRow
             art="puzzle-quad"
             title="Finish a puzzle"
             meta={`Bigger boards pay more — up to ${coinsForCompletion(10)} coins for a 10×10.`}
-            onPress={() => router.push('/puzzles')}
+            onPress={() => router.dismissTo('/puzzles')}
           />
           <EarnRow
             art="collection"
@@ -214,20 +239,23 @@ export function CoinsScreen() {
             meta="One picked puzzle a day, with a bonus for finishing it."
             onPress={() => router.push('/daily')}
           />
+          {/* Achievements belongs here, with the other things that pay. It used
+              to sit under a second "Earn more" heading *below* "Spend them",
+              so the page read Earn / Spend / Earn and the reader could not tell
+              whether the last row cost coins or paid them. */}
+          <EarnRow
+            art="my-trophies"
+            title="Achievements"
+            meta={`${ACHIEVEMENT_REWARD} coins each, paid the moment one unlocks.`}
+            onPress={() => router.push('/achievements')}
+          />
+
           <Text style={styles.sectionTitle}>Spend them</Text>
           <EarnRow
             art="sticker-book"
             title="Themes"
             meta="Change how the whole app looks. Unlocking is permanent."
             onPress={() => router.push('/themes')}
-          />
-
-          <Text style={styles.sectionTitle}>Earn more</Text>
-          <EarnRow
-            art="my-trophies"
-            title="Achievements"
-            meta={`${ACHIEVEMENT_REWARD} coins each, paid the moment one unlocks.`}
-            onPress={() => router.push('/achievements')}
           />
 
           <View style={styles.footerArt}>
@@ -295,6 +323,21 @@ const useStyles = createThemedStyles((theme) =>
     cardTitle: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
     cardMeta: { ...typography.caption, color: theme.colors.inkMuted },
     streakLine: { ...typography.caption, color: theme.colors.headingGreen },
+    claimed: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.paper,
+    },
+    claimedLabel: {
+      ...typography.heading,
+      fontSize: 18,
+      color: theme.colors.ink,
+      paddingHorizontal: 2,
+    },
     earnBody: {
       flexDirection: 'row',
       alignItems: 'center',

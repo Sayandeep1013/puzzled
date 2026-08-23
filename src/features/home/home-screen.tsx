@@ -291,7 +291,14 @@ export function HomeScreen() {
             {/* One screenful, ending on the quick links. Everything below is
                 found by scrolling, which is what makes the first view feel
                 finished rather than cut off. */}
-            <View style={[styles.fold, foldHeight > 0 ? { minHeight: foldHeight } : null]}>
+            <View
+              style={[
+                styles.fold,
+                // Less the container padding above it, so the fold is exactly one
+                // screenful rather than one screenful plus 16pt of phantom scroll.
+                foldHeight > 0 ? { minHeight: foldHeight - spacing.md } : null,
+              ]}
+            >
               <EnterView index={0}>
                 <WordmarkTitle />
               </EnterView>
@@ -386,7 +393,15 @@ export function HomeScreen() {
                     label="Daily Puzzle"
                     onPress={() => router.push('/daily')}
                   />
-                  <QuickLink art="album" label="My Album" onPress={() => router.push('/library')} />
+                  {/* `navigate`, not `push`: Home is itself a tab, and pushing a
+                      sibling tab stacks a second copy of the whole tab navigator
+                      on top of this one — same screen, but with a back entry
+                      behind it and a dock that is now steering the copy. */}
+                  <QuickLink
+                    art="album"
+                    label="My Album"
+                    onPress={() => router.navigate('/library')}
+                  />
                 </View>
               </EnterView>
             </View>
@@ -408,7 +423,7 @@ export function HomeScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="See every puzzle"
                       hitSlop={8}
-                      onPress={() => router.push('/puzzles')}
+                      onPress={() => router.navigate('/puzzles')}
                     >
                       <Text style={styles.seeAll}>View All</Text>
                     </Pressable>
@@ -560,8 +575,16 @@ const useStyles = createThemedStyles((theme) =>
       paddingTop: spacing.md,
       gap: spacing.lg,
     },
-    /** One viewport tall, so the first view ends on the quick links. */
-    fold: { alignSelf: 'stretch', gap: spacing.lg },
+    /**
+     * One viewport tall, so the first view ends on the quick links.
+     *
+     * `space-between` rather than a single `marginTop: auto` on the last child:
+     * both seat the quick links just above the dock, but the margin pools every
+     * point of slack into one gap, which on a tall phone left a hole between the
+     * hunt card and the buttons. Distributed, the same slack reads as breathing
+     * room. `gap` stays as the floor for a short screen, where there is none.
+     */
+    fold: { alignSelf: 'stretch', gap: spacing.lg, justifyContent: 'space-between' },
     block: { alignSelf: 'stretch' },
     challengeBody: {
       flexDirection: 'row',
@@ -611,9 +634,7 @@ const useStyles = createThemedStyles((theme) =>
       color: theme.colors.inkMuted,
       paddingHorizontal: 2,
     },
-    // Takes the slack `flexGrow` leaves, which seats the primary action and the
-    // quick links just above the tab bar instead of halfway up the screen.
-    actions: { gap: spacing.md, marginTop: 'auto' },
+    actions: { gap: spacing.md },
     fullWidth: { alignSelf: 'stretch' },
     quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch' },
     quickLink: { flex: 1 },

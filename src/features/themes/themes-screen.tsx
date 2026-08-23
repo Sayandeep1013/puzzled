@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getWalletRepository } from '@/data';
@@ -8,7 +8,7 @@ import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme, useThemeControl } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { THEMES, type Theme } from '@/shared/themes';
-import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopIcon, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 /**
  * The theme store.
@@ -131,48 +131,99 @@ export function ThemesScreen() {
                 radius={radii.lg}
                 contentStyle={styles.card}
               >
-                {/* A swatch built from the theme's own tokens, so the choice is
-                    shown rather than described — and so a new theme needs no
-                    screenshot to advertise itself. */}
+                {/* A swatch built from the theme's own tokens — its ground, its
+                    material, its card and the two inks that go on it — so the
+                    choice is shown rather than described, and a new theme needs
+                    no screenshot to advertise itself.
+
+                    It used to be a card and one accent bar, which rendered the
+                    same green in both rows: accents are deliberately *shared*
+                    between themes so the art set still matches, which makes an
+                    accent the one thing a swatch must not lead with. */}
                 <View style={[styles.swatch, { backgroundColor: entry.backgrounds.default }]}>
-                  <View style={[styles.swatchCard, { backgroundColor: entry.colors.surface }]} />
-                  <View style={[styles.swatchDot, { backgroundColor: entry.colors.grass }]} />
+                  {entry.groundTexture != null ? (
+                    <Image
+                      source={entry.groundTexture}
+                      style={StyleSheet.absoluteFill}
+                      resizeMode="cover"
+                      accessible={false}
+                    />
+                  ) : null}
+                  <View style={[styles.swatchCard, { backgroundColor: entry.colors.surface }]}>
+                    <View
+                      style={[styles.swatchLine, { backgroundColor: entry.colors.headingGreen }]}
+                    />
+                    <View
+                      style={[
+                        styles.swatchLine,
+                        styles.swatchLineShort,
+                        { backgroundColor: entry.colors.inkMuted },
+                      ]}
+                    />
+                  </View>
                 </View>
 
                 <View style={styles.copy}>
                   <Text style={styles.name}>{entry.name}</Text>
-                  <Text style={styles.description}>
-                    {active
-                      ? 'In use'
-                      : owned || affordable
-                        ? entry.description
-                        : `Needs ${entry.price} coins — you have ${coins ?? 0}.`}
+                  {/* Always what the theme *is*. The active row used to say "In
+                      use" here as well as on the control beside it, spending the
+                      one line that could sell the theme on repeating the badge
+                      two inches to its right. */}
+                  <Text style={styles.description} numberOfLines={2}>
+                    {owned || affordable
+                      ? entry.description
+                      : `Needs ${entry.price} coins — you have ${coins ?? 0}.`}
                   </Text>
                 </View>
 
-                <PopButton
-                  label={active ? 'In use' : owned ? 'Use' : String(entry.price)}
-                  tone={active ? 'surface' : owned ? 'grass' : 'honey'}
-                  size="sm"
-                  icon={owned ? undefined : <Art name="coin" size={18} />}
-                  disabled={active || busy || (!owned && !affordable)}
-                  accessibilityLabel={
-                    active
-                      ? `${entry.name} theme, in use`
-                      : owned
+                {active ? (
+                  // A state badge, not a dead button. `PopButton` draws its
+                  // disabled state at 45% opacity, so on the one row the player
+                  // has already chosen it read as broken rather than as done.
+                  <View
+                    style={styles.inUse}
+                    accessible
+                    accessibilityLabel={`${entry.name} theme, in use`}
+                  >
+                    <PopIcon name="check" size={18} color={theme.colors.grassDeep} />
+                    <Text style={styles.inUseLabel} numberOfLines={1}>
+                      In use
+                    </Text>
+                  </View>
+                ) : (
+                  <PopButton
+                    label={owned ? 'Use' : String(entry.price)}
+                    tone={owned ? 'grass' : 'honey'}
+                    size="sm"
+                    icon={owned ? undefined : <Art name="coin" size={18} />}
+                    disabled={busy || (!owned && !affordable)}
+                    accessibilityLabel={
+                      owned
                         ? `Use the ${entry.name} theme`
                         : `Unlock the ${entry.name} theme for ${entry.price} coins`
-                  }
-                  onPress={() => onChoose(entry)}
-                />
+                    }
+                    onPress={() => onChoose(entry)}
+                  />
+                )}
               </PopSurface>
             );
           })}
 
-          <View style={styles.footerArt}>
-            <Art name="sticker-book" size={120} />
-            <Text style={styles.footerNote}>More themes are on the way.</Text>
-          </View>
+          {/* Shaped like the rows above rather than as an illustration floating
+              below them: centred under the list it sat in a band of empty ground
+              that read as a layout fault, and it is in truth just the next row of
+              the same list. */}
+          <PopSurface fill={theme.colors.surface} radius={radii.lg} contentStyle={styles.card}>
+            <View style={[styles.swatch, styles.swatchSoon]}>
+              <Art name="sticker-book" size={44} />
+            </View>
+            <View style={styles.copy}>
+              <Text style={styles.name}>More themes</Text>
+              <Text style={styles.description} numberOfLines={2}>
+                New looks are on the way — your coins keep until they land.
+              </Text>
+            </View>
+          </PopSurface>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -212,14 +263,38 @@ const useStyles = createThemedStyles((theme) =>
       borderRadius: radii.md,
       alignItems: 'center',
       justifyContent: 'center',
+      // The material fills the tile edge to edge; without this the texture draws
+      // square corners over the rounded ground beneath it.
+      overflow: 'hidden',
+    },
+    swatchSoon: { backgroundColor: theme.colors.paper },
+    swatchCard: {
+      width: 38,
+      height: 28,
+      borderRadius: 8,
+      paddingHorizontal: 5,
+      justifyContent: 'center',
       gap: 4,
     },
-    swatchCard: { width: 34, height: 20, borderRadius: 6 },
-    swatchDot: { width: 20, height: 7, borderRadius: 4 },
+    swatchLine: { height: 4, borderRadius: 2, alignSelf: 'stretch' },
+    swatchLineShort: { width: 16, alignSelf: 'flex-start' },
     copy: { flex: 1, gap: 2 },
     name: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
     description: { ...typography.caption, color: theme.colors.inkMuted },
-    footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
-    footerNote: { ...typography.caption, color: theme.colors.inkMuted, textAlign: 'center' },
+    inUse: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.md,
+      borderRadius: radii.sm,
+      backgroundColor: theme.colors.paper,
+    },
+    inUseLabel: {
+      ...typography.heading,
+      fontSize: 15,
+      color: theme.colors.ink,
+      paddingHorizontal: 2,
+    },
   }),
 );

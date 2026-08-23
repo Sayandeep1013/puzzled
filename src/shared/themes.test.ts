@@ -20,6 +20,16 @@ const SRC = path.join(__dirname, '..');
 /** Files exempt from the import ban: they *are* the palette layer. */
 const PALETTE_LAYER = ['shared/tokens.ts', 'shared/themes.ts', 'shared/theme.ts'];
 
+/**
+ * Files allowed to name a colour outright, and why.
+ *
+ * A hex in a screen is a colour no theme can reach. These two are not screen
+ * colours: they describe what a puzzle piece is physically made of — pressed
+ * chipboard, whose cut edge is the same pulp colour on an oak desk as on a
+ * meadow — so they are material constants, like the piece bevel above them.
+ */
+const MATERIAL = ['features/game/piece-depth.tsx'];
+
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
@@ -132,6 +142,22 @@ describe('themes', () => {
     expect(themeById('lunar')).toBe(MEADOW);
     expect(themeById(null)).toBe(MEADOW);
     expect(themeById(undefined)).toBe(MEADOW);
+  });
+
+  it('leaves no colour behind where a theme cannot reach it', () => {
+    // The board play area shipped as `#DCE9CD` — two points off the meadow's
+    // own paper, so it looked right for as long as there was one theme. Under
+    // the wood theme the entire app turned oak and the one surface the player
+    // actually stares at stayed sage.
+    const offenders = sourceFiles(SRC)
+      .filter((file) => {
+        const rel = path.relative(SRC, file).split(path.sep).join('/');
+        return !PALETTE_LAYER.includes(rel) && !MATERIAL.includes(rel);
+      })
+      .filter((file) => /#[0-9a-fA-F]{6}/.test(readFileSync(file, 'utf8')))
+      .map((file) => path.relative(SRC, file).split(path.sep).join('/'));
+
+    expect(offenders).toEqual([]);
   });
 
   it('is the only way the app reads a palette', () => {

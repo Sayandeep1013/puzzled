@@ -52,6 +52,16 @@ export interface AppSettings {
   sound: boolean;
   music: boolean;
   haptics: boolean;
+  /** The faint cell grid under the board. Off is a cleaner, harder board. */
+  showGrid: boolean;
+  /**
+   * How close a piece has to land before it clicks home.
+   *
+   * On is the generous default the game shipped with. Off tightens the catch
+   * radius rather than removing it — a board with no snap at all is not a
+   * harder jigsaw, it is an unfinishable one on a touchscreen.
+   */
+  snapAssist: boolean;
   /**
    * Chosen theme, as a `ThemeId` from `@/shared/themes`.
    *

@@ -220,8 +220,9 @@ export function TreasureScreen() {
                               ? theme.colors.grass
                               : isChest
                                 ? theme.colors.honey
-                                : theme.colors.surface,
+                                : theme.colors.paper,
                           },
+                          !reached && !isChest && styles.nodeLocked,
                           current && styles.nodeCurrent,
                         ]}
                       >
@@ -244,7 +245,10 @@ export function TreasureScreen() {
             label={data.doneToday ? 'Play another puzzle' : 'Play today’s challenge'}
             tone="grass"
             icon={<Art name={data.doneToday ? 'puzzle-quad' : 'play'} size={24} />}
-            onPress={() => router.push(data.doneToday ? '/puzzles' : '/daily')}
+            // `/puzzles` is a tab beneath this screen, so it unwinds to it rather
+            // than stacking a second tab navigator over the map; `/daily` is a
+            // stack screen and pushes normally, so back returns here.
+            onPress={() => (data.doneToday ? router.dismissTo('/puzzles') : router.push('/daily'))}
           />
 
           <Text style={styles.footnote}>
@@ -292,6 +296,14 @@ const useStyles = createThemedStyles((theme) =>
       borderWidth: 3,
       borderColor: theme.colors.surface,
     },
+    /**
+     * An unreached stop is filled with the page ground, not the card ground.
+     * It used to take `surface` — a cream fill, inside a cream card, ringed in
+     * cream — so on device the stops simply were not there, and the six reward
+     * numbers read as digits scattered over the trail. The grey ring is what
+     * makes it a locked stop rather than an unlabelled one.
+     */
+    nodeLocked: { borderColor: theme.colors.locked },
     nodeCurrent: {
       borderColor: theme.colors.honey,
       // Scaled rather than shadowed: a shadow on a themed ground reads as smudge.

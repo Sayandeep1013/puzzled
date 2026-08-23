@@ -39,6 +39,8 @@ import {
   isWithinSnapDistance,
   raisePiece,
   snapThresholdForCellSize,
+  DEFAULT_SNAP_THRESHOLD_RATIO,
+  STRICT_SNAP_THRESHOLD_RATIO,
   type GameSession,
   type GeneratedPuzzle,
   type PieceEdges,
@@ -730,6 +732,16 @@ export function PuzzleBoard({
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [snapFlash, setSnapFlash] = useState<{ id: number; cx: number; cy: number } | null>(null);
+  /**
+   * The two board preferences, seeded from the same read that seeds audio.
+   *
+   * Held as React state rather than pushed into a module the way haptics and
+   * sound are: both of these change what is *drawn* and what the gesture
+   * computes, so the board has to re-render when they arrive. Defaults match
+   * `DEFAULT_SETTINGS`, so the first frame before the read lands is the one the
+   * majority of players keep.
+   */
+  const [boardPrefs, setBoardPrefs] = useState({ showGrid: true, snapAssist: true });
 
   // Finger position of the floating piece, in canvas coordinates.
   const fx = useSharedValue(0);
@@ -789,6 +801,7 @@ export function PuzzleBoard({
           return;
         }
         setHapticsEnabled(settings.haptics);
+        setBoardPrefs({ showGrid: settings.showGrid, snapAssist: settings.snapAssist });
         await initBoardAudio(settings);
         if (!active) {
           // Unmounted while init was in flight (e.g. `ensurePlayersLoaded()`
@@ -813,7 +826,10 @@ export function PuzzleBoard({
   const cellSize = generated.cellSize.width;
   const boardSize = generated.boardSize;
   const imageScale = boardSize.width / generated.crop.width;
-  const snapThreshold = snapThresholdForCellSize(cellSize);
+  const snapThreshold = snapThresholdForCellSize(
+    cellSize,
+    boardPrefs.snapAssist ? DEFAULT_SNAP_THRESHOLD_RATIO : STRICT_SNAP_THRESHOLD_RATIO,
+  );
   const gridSize = generated.puzzle.gridSize;
 
   /** Shared by the frame, its clip and the corner pieces — see `boardCornerRadius`. */
@@ -1621,13 +1637,18 @@ export function PuzzleBoard({
                       color="rgba(58,43,26,0.4)"
                     />
                   </RoundedRect>
+                  {/* The play area takes the screen ground, not a literal. It was
+                      '#DCE9CD' — two points off the meadow's paper, and therefore
+                      invisible as a bug until the wood theme, where the whole app
+                      turned oak and the one surface the player stares at stayed
+                      sage. */}
                   <RoundedRect
                     x={BOARD_PADDING}
                     y={BOARD_PADDING}
                     width={boardSize.width}
                     height={boardSize.height}
                     r={cornerRadius}
-                    color="#DCE9CD"
+                    color={theme.colors.paper}
                   />
 
                   <Group
@@ -1640,27 +1661,33 @@ export function PuzzleBoard({
                     <Group
                       transform={[{ translateX: BOARD_PADDING }, { translateY: BOARD_PADDING }]}
                     >
-                      {/* Faint cell grid to guide placement */}
-                      {gridLines.map((x, i) => (
-                        <Line
-                          key={`v${i}`}
-                          p1={vec(x, 0)}
-                          p2={vec(x, boardSize.height)}
-                          color="rgba(23,33,33,0.07)"
-                          style="stroke"
-                          strokeWidth={1}
-                        />
-                      ))}
-                      {gridLines.map((y, i) => (
-                        <Line
-                          key={`h${i}`}
-                          p1={vec(0, y)}
-                          p2={vec(boardSize.width, y)}
-                          color="rgba(23,33,33,0.07)"
-                          style="stroke"
-                          strokeWidth={1}
-                        />
-                      ))}
+                      {/* Faint cell grid to guide placement. Optional: some players
+                          want the bare picture, and the grid is the one thing on
+                          the board that is scaffolding rather than the puzzle. */}
+                      {boardPrefs.showGrid
+                        ? gridLines.map((x, i) => (
+                            <Line
+                              key={`v${i}`}
+                              p1={vec(x, 0)}
+                              p2={vec(x, boardSize.height)}
+                              color="rgba(23,33,33,0.07)"
+                              style="stroke"
+                              strokeWidth={1}
+                            />
+                          ))
+                        : null}
+                      {boardPrefs.showGrid
+                        ? gridLines.map((y, i) => (
+                            <Line
+                              key={`h${i}`}
+                              p1={vec(0, y)}
+                              p2={vec(boardSize.width, y)}
+                              color="rgba(23,33,33,0.07)"
+                              style="stroke"
+                              strokeWidth={1}
+                            />
+                          ))
+                        : null}
                       {/* Locked pieces are drawn per *cluster*, not per piece: depth
                           belongs to the outline of an assembly. A lone piece is a
                           cluster of one and keeps depth all round, which falls out of

@@ -6,6 +6,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sound: true,
   music: true,
   haptics: true,
+  showGrid: true,
+  snapAssist: true,
   themeId: 'meadow',
 };
 
@@ -46,6 +48,8 @@ export function mergeSettings(current: AppSettings, patch: Partial<AppSettings>)
     sound: patch.sound ?? current.sound,
     music: patch.music ?? current.music,
     haptics: patch.haptics ?? current.haptics,
+    showGrid: patch.showGrid ?? current.showGrid,
+    snapAssist: patch.snapAssist ?? current.snapAssist,
     themeId: patch.themeId ?? current.themeId,
   };
 }
@@ -65,6 +69,8 @@ export function parseSettingsRows(rows: readonly SettingRow[]): AppSettings {
     sound: asBoolean('sound', DEFAULT_SETTINGS.sound),
     music: asBoolean('music', DEFAULT_SETTINGS.music),
     haptics: asBoolean('haptics', DEFAULT_SETTINGS.haptics),
+    showGrid: asBoolean('showGrid', DEFAULT_SETTINGS.showGrid),
+    snapAssist: asBoolean('snapAssist', DEFAULT_SETTINGS.snapAssist),
     themeId: asText('themeId', DEFAULT_SETTINGS.themeId),
   };
 }
