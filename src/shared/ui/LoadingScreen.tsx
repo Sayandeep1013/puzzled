@@ -70,9 +70,20 @@ interface LoadingScreenProps {
    * still shows one full bob instead of a two-frame flash.
    */
   ready?: boolean;
+  /**
+   * Whether the native splash window has actually been torn down — i.e. whether
+   * any of this is on screen yet.
+   *
+   * Nothing here animates until it is. This component mounts well before it is
+   * visible (the app warms up behind the native splash), so an entrance started
+   * on mount plays to an empty room and is finished by the time anyone looks:
+   * measured on device, the first visible frame was already past the spring's
+   * overshoot. Waiting for the reveal is what makes the entrance an entrance.
+   */
+  revealed?: boolean;
 }
 
-export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
+export function LoadingScreen({ onDone, ready = true, revealed = true }: LoadingScreenProps) {
   const { width } = useWindowDimensions();
   // Both from `@/shared/splash`, so the sizes the handoff depends on are testable
   // at widths other than the one an emulator happens to open at.
@@ -84,6 +95,13 @@ export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
   const fade = useSharedValue(1);
 
   useEffect(() => {
+    if (!revealed) {
+      // Still behind the native splash: hold the bear exactly where that splash
+      // is drawing it — same size, centred, perfectly still. Bobbing here would
+      // also mean the handoff caught the bear at an arbitrary point in its bob
+      // rather than on the splash's centre line.
+      return;
+    }
     // Grow into place once, then breathe forever. The intro overshoots via a
     // spring; the idle loop is timed, because a repeating spring drifts.
     intro.value = withSpring(1, springs.pop);
@@ -92,14 +110,16 @@ export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
       -1,
       true,
     );
-  }, [intro, breathe]);
+  }, [revealed, intro, breathe]);
 
   useEffect(() => {
-    if (!ready) {
+    if (!ready || !revealed) {
       return;
     }
     // The floor is applied here rather than in the parent so the parent only has
     // to say "the work is done" and this owns how the screen leaves.
+    // The floor is measured from the reveal, not from mount: time spent behind
+    // the native splash is time nobody saw this screen.
     fade.value = withDelay(
       motion.loaderMinimum,
       withTiming(0, { duration: motion.handoff, easing: Easing.in(Easing.quad) }, (finished) => {
@@ -108,7 +128,7 @@ export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
         }
       }),
     );
-  }, [ready, fade, onDone]);
+  }, [ready, revealed, fade, onDone]);
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
 

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  fallbackPhotoTitle,
   getCompletionsRepository,
   getFavouritesRepository,
   getProgressRepository,
@@ -21,14 +22,13 @@ import {
   latestPerBoard,
   listCatalog,
   resolvePuzzleImageSource,
+  titleForImportedPhoto,
   type PuzzleCompletion,
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
 import { accentAt, colors, radii, shadow, spacing, typography } from '@/shared/theme';
-
-import { fallbackPhotoTitle, titleForImportedPhoto } from './photo-title';
 import { Art, PopChip, PopIcon, PopProgress, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
 type Tab = 'progress' | 'completed' | 'favourites' | 'photos';

@@ -39,13 +39,43 @@ export default function RootLayout() {
   const [loading, setLoading] = useState(true);
   const finishLoading = useCallback(() => setLoading(false), []);
 
+  /**
+   * Whether the native splash window is actually gone.
+   *
+   * `LoadingScreen` mounts before this — deliberately, so the app warms up
+   * underneath — which means it renders, and *animates*, while still completely
+   * hidden behind the native splash. Its entrance was therefore over before
+   * anyone could see it: measured on device, the native bear sat at 149dp and
+   * the very first visible loading-screen frame, 30ms later, was already at
+   * 179.8dp and decaying. The bear appeared to jump, which is precisely the
+   * seam the entrance exists to remove.
+   *
+   * So the reveal is what the animation waits on, not the mount.
+   */
+  const [splashHidden, setSplashHidden] = useState(false);
+
   useEffect(() => {
     // Hide on error too: a missing font must not leave the user on a splash forever.
     // Held until the fonts settle so nothing is seen in a fallback face and then
     // reflowed — the native splash covers the tree while it mounts underneath.
-    if (fontsSettled) {
-      void SplashScreen.hideAsync();
+    if (!fontsSettled) {
+      return;
     }
+    let cancelled = false;
+    void (async () => {
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        // Already hidden, or unavailable. Either way the overlay must proceed —
+        // never leave the launch animation waiting on a promise that failed.
+      }
+      if (!cancelled) {
+        setSplashHidden(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [fontsSettled]);
 
   /*
@@ -88,7 +118,9 @@ export default function RootLayout() {
         {/* Last child, so it overlays the navigator: the app mounts and warms up
             behind it rather than after it. Gated on the fonts so its wordmark is never
             drawn in a fallback face — until then the native splash is still up. */}
-        {fontsSettled && loading ? <LoadingScreen onDone={finishLoading} /> : null}
+        {fontsSettled && loading ? (
+          <LoadingScreen onDone={finishLoading} revealed={splashHidden} />
+        ) : null}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

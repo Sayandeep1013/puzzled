@@ -5,6 +5,7 @@ export * from './local/completions-repository';
 export * from './local/database';
 export * from './local/favourites-repository';
 export * from './local/local-puzzle-repository';
+export * from './local/photo-title';
 export * from './local/puzzle-assets';
 export * from './local/settings-repository';
 export * from './local/sqlite-progress-repository';

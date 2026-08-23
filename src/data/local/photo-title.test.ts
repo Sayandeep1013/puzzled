@@ -69,6 +69,19 @@ describe('isOpaqueFileName', () => {
     expect(isOpaqueFileName('2c2550e4-36fc-4a2b-9e77-1f3c5d9b0e21')).toBe(true);
     expect(isOpaqueFileName('beach sunset')).toBe(false);
   });
+
+  it('matches titles already stored on device, which have spaces not dashes', () => {
+    // The old naming pass replaced separators before storing, so what is in the
+    // database looks like this — and the one-time rename in
+    // `user-puzzle-repository` has to recognise it in that form.
+    expect(isOpaqueFileName('2c2550e4 36fc 4ab7 9e77 1f3c5d9b0e21')).toBe(true);
+    expect(isOpaqueFileName('73ccb926 0c83 4cb1 8f21 5d0a9e7b3c44')).toBe(true);
+  });
+
+  it('leaves a renamed photo alone, so the rename runs at most once', () => {
+    expect(isOpaqueFileName('My photo 1')).toBe(false);
+    expect(isOpaqueFileName('My photo 12')).toBe(false);
+  });
 });
 
 describe('fallbackPhotoTitle', () => {
