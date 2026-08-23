@@ -13,7 +13,7 @@ import { type PuzzleDefinition } from '@/game-engine';
 import { accentAt, radii, shadow, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no pack/category field (see `puzzles-screen.tsx`'s
@@ -79,6 +79,7 @@ export function PackScreen({ packId }: { packId: string }) {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader
           title={pack?.title ?? 'Pack'}

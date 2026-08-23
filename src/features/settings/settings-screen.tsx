@@ -10,7 +10,7 @@ import { DEFAULT_SETTINGS, getSettingsRepository, type AppSettings } from '@/dat
 import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { Art, PopHeader, PopIcon, PopSurface, PopToggle, Text } from '@/shared/ui';
+import { Art, PopHeader, PopIcon, PopSurface, PopToggle, Text, ThemeGround } from '@/shared/ui';
 
 /** Only the boolean settings get a switch; the theme has its own picker. */
 type ToggleKey = 'sound' | 'music' | 'haptics';
@@ -62,6 +62,7 @@ export function SettingsScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <PopHeader title="Settings" onBack={() => router.back()} />
 

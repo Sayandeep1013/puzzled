@@ -15,7 +15,7 @@ import { type PuzzleDefinition } from '@/game-engine';
 import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
@@ -175,6 +175,7 @@ export function DailyScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader title="Daily Puzzle" onBack={() => router.back()} />
         {/* Was a plain View, which is why the page could not scroll and the Play

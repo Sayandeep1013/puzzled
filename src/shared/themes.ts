@@ -53,6 +53,16 @@ export interface Theme {
    * cannot name its background as a string.
    */
   homeBackground: number | null;
+  /**
+   * A material laid over the ground on *every* screen, or null for a flat one.
+   *
+   * Separate from `homeBackground` because it answers a different question:
+   * that one is a picture Home sits on, this one is what the app is made of. A
+   * theme called Wood that renders as a flat tan rectangle everywhere except
+   * Home is not really a wood theme — the grain has to be on the screens the
+   * player actually spends time in.
+   */
+  groundTexture: number | null;
 }
 
 export const MEADOW: Theme = {
@@ -63,6 +73,8 @@ export const MEADOW: Theme = {
   colors: meadowColors,
   backgrounds: meadowBackgrounds,
   homeBackground: require('../../assets/backgrounds/home.png'),
+  // The meadow's ground is flat paper by design — the illustration lives on Home.
+  groundTexture: null,
 };
 
 /**
@@ -79,29 +91,41 @@ export const WOOD: Theme = {
   name: 'Wood',
   description: 'Warm oak, paper cards and a pencil.',
   price: 500,
+  /**
+   * Every value here was chosen against `themes.test.ts`'s contrast table, not
+   * by eye. The first attempt used a deep walnut ground (#B98552) because it
+   * looked like the mockup's desk — and on device its muted body text measured
+   * under 2:1 against it, which is a paragraph you cannot read. The desk is a
+   * light oak now: same material, enough luminance to carry text between the
+   * cards as well as on them.
+   */
   colors: {
     ...meadowColors,
     /** Warmer and deeper than the meadow's ink, to hold against oak. */
     ink: '#402D18',
-    inkMuted: '#8A6842',
+    inkMuted: '#5F4224',
     /** Headings take the wood's own deep amber rather than a green. */
-    headingGreen: '#7A3E12',
+    headingGreen: '#6E3608',
     headingBlue: '#1F5C8F',
     /** The desk. */
-    paper: '#B98552',
+    paper: '#E2CBA8',
     /** Paper cards on the desk — warmer and lighter than the meadow's cream. */
     surface: '#F7E9CB',
   },
   backgrounds: {
-    homeSky: '#B98552',
-    homeGrass: '#9A6B3F',
+    homeSky: '#E2CBA8',
+    homeGrass: '#CBAE87',
     /** The board sits on a paler sheet than the desk. */
-    game: '#E4D2AE',
+    game: '#EFE1C4',
     results: '#2E97D8',
-    pack: '#C9A46E',
-    default: '#B98552',
+    pack: '#D8BC93',
+    default: '#E2CBA8',
   },
-  homeBackground: require('../../assets/backgrounds/home-wood.png'),
+  // No separate Home picture: the grain below covers every screen including
+  // Home, which is what makes the theme read as one material rather than as an
+  // illustrated home screen bolted to a flat app.
+  homeBackground: null,
+  groundTexture: require('../../assets/backgrounds/wood-grain.png'),
 };
 
 export const THEMES: readonly Theme[] = [MEADOW, WOOD];

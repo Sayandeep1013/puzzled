@@ -16,7 +16,7 @@ import { type GridSize } from '@/game-engine';
 import { accentAt, radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { PopHeader, PopSurface, Text } from '@/shared/ui';
+import { PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 interface Stats {
   /** Count of saved sessions with `status === 'completed'` (one per puzzle+size). */
@@ -153,6 +153,7 @@ export function StatisticsScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <PopHeader title="Statistics" onBack={() => router.back()} />
 

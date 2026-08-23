@@ -8,7 +8,7 @@ import { dateKey, getCompletionsRepository, getWalletRepository, listCatalog } f
 import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 import {
   TREASURE_STOPS,
@@ -139,6 +139,7 @@ export function TreasureScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader
           title="Treasure Hunt"

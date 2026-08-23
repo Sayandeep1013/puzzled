@@ -14,7 +14,16 @@ import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { type ThemePalette } from '@/shared/themes';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { Art, PopButton, PopChip, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
+import {
+  Art,
+  PopButton,
+  PopChip,
+  PopIcon,
+  PopSurface,
+  Text,
+  useTabBarSpace,
+  ThemeGround,
+} from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no category/tag field — just id, title, image,
@@ -114,114 +123,124 @@ export function PuzzlesScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
-          <Text style={styles.pageTitle}>Puzzles</Text>
+        {/* The scroll frame stops above the floating dock rather than running
+            under it. Content sliding beneath a bar that does not span the full
+            width reads as two overlapping layers. */}
+        <View style={[styles.scrollFrame, { paddingBottom: tabBarSpace }]}>
+          <ScrollView contentContainerStyle={styles.content}>
+            <Text style={styles.pageTitle}>Puzzles</Text>
 
-          <Pressable
-            onPress={() =>
-              router.push({ pathname: '/pack/[packId]', params: { packId: 'starter' } })
-            }
-            accessibilityRole="button"
-            accessibilityLabel="Browse the Starter Pack"
-          >
-            <PopSurface fill={theme.colors.honey} radius={radii.md} contentStyle={styles.packFrame}>
-              <View style={styles.packBody}>
-                <Art name="collection" size={30} />
-                <View style={styles.packCopy}>
-                  <Text style={styles.packTitle}>Starter Pack</Text>
-                  <Text style={styles.packMeta}>Every puzzle bundled with Puzzled</Text>
-                </View>
-                <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
-              </View>
-            </PopSurface>
-          </Pressable>
-
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Browse</Text>
-            {/* "See all" clears the current filter — a real action, not a dead link. */}
             <Pressable
+              onPress={() =>
+                router.push({ pathname: '/pack/[packId]', params: { packId: 'starter' } })
+              }
               accessibilityRole="button"
-              accessibilityLabel="Clear filter and show every puzzle"
-              onPress={() => setFilter('all')}
+              accessibilityLabel="Browse the Starter Pack"
             >
-              <Text style={styles.seeAll}>See all</Text>
+              <PopSurface
+                fill={theme.colors.honey}
+                radius={radii.md}
+                contentStyle={styles.packFrame}
+              >
+                <View style={styles.packBody}>
+                  <Art name="collection" size={30} />
+                  <View style={styles.packCopy}>
+                    <Text style={styles.packTitle}>Starter Pack</Text>
+                    <Text style={styles.packMeta}>Every puzzle bundled with Puzzled</Text>
+                  </View>
+                  <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
+                </View>
+              </PopSurface>
             </Pressable>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipRow}
-          >
-            {FILTERS.map((item) => (
-              <PopChip
-                key={item.key}
-                label={item.label}
-                tone={theme.colors[item.tone]}
-                selected={filter === item.key}
-                onPress={() => setFilter(item.key)}
-              />
-            ))}
-          </ScrollView>
 
-          {recommended ? (
-            <>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Recommended</Text>
-              </View>
-              <Pressable onPress={() => open(recommended)} accessibilityRole="button">
-                <PopSurface
-                  fill={theme.colors.apricot}
-                  radius={radii.lg}
-                  contentStyle={styles.featureFrame}
-                >
-                  <View style={styles.featureBody}>
-                    <View style={styles.featureImageWrap}>
-                      <Preview puzzle={recommended} />
-                      <View style={styles.newTag}>
-                        <Text style={styles.newTagText}>NEW</Text>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Browse</Text>
+              {/* "See all" clears the current filter — a real action, not a dead link. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear filter and show every puzzle"
+                onPress={() => setFilter('all')}
+              >
+                <Text style={styles.seeAll}>See all</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {FILTERS.map((item) => (
+                <PopChip
+                  key={item.key}
+                  label={item.label}
+                  tone={theme.colors[item.tone]}
+                  selected={filter === item.key}
+                  onPress={() => setFilter(item.key)}
+                />
+              ))}
+            </ScrollView>
+
+            {recommended ? (
+              <>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Recommended</Text>
+                </View>
+                <Pressable onPress={() => open(recommended)} accessibilityRole="button">
+                  <PopSurface
+                    fill={theme.colors.apricot}
+                    radius={radii.lg}
+                    contentStyle={styles.featureFrame}
+                  >
+                    <View style={styles.featureBody}>
+                      <View style={styles.featureImageWrap}>
+                        <Preview puzzle={recommended} />
+                        <View style={styles.newTag}>
+                          <Text style={styles.newTagText}>NEW</Text>
+                        </View>
+                      </View>
+                      <View style={styles.featureCopy}>
+                        <Text style={styles.featureTitle} numberOfLines={1}>
+                          {recommended.title}
+                        </Text>
+                        <Text style={styles.featureMeta}>Tap to choose a difficulty</Text>
                       </View>
                     </View>
-                    <View style={styles.featureCopy}>
-                      <Text style={styles.featureTitle} numberOfLines={1}>
-                        {recommended.title}
-                      </Text>
-                      <Text style={styles.featureMeta}>Tap to choose a difficulty</Text>
-                    </View>
-                  </View>
-                </PopSurface>
-              </Pressable>
-            </>
-          ) : null}
+                  </PopSurface>
+                </Pressable>
+              </>
+            ) : null}
 
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Ready to play?</Text>
-            <Text style={styles.sectionMeta}>
-              {filtered.length} {filtered.length === 1 ? 'puzzle' : 'puzzles'}
-            </Text>
-          </View>
-          {/* Every filtered puzzle, not `slice(1)`. Excluding the recommended one
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Ready to play?</Text>
+              <Text style={styles.sectionMeta}>
+                {filtered.length} {filtered.length === 1 ? 'puzzle' : 'puzzles'}
+              </Text>
+            </View>
+            {/* Every filtered puzzle, not `slice(1)`. Excluding the recommended one
               meant a single-puzzle catalog rendered a header reading "1 puzzle"
               above an empty grid. The Recommended card is a second presentation
               of the same puzzle, which is normal. */}
-          <View style={styles.list}>
-            {filtered.map((puzzle) => (
-              <StarterRow
-                key={puzzle.id}
-                puzzle={puzzle}
-                rows={data.byPuzzle[puzzle.id] ?? []}
-                onPress={() => play(puzzle)}
-              />
-            ))}
-            {filtered.length === 0 ? (
-              <Text style={styles.empty}>
-                {filter === 'user'
-                  ? 'Import a photo from Library to see it here.'
-                  : 'No puzzles to show yet.'}
-              </Text>
-            ) : null}
-          </View>
-        </ScrollView>
+            <View style={styles.list}>
+              {filtered.map((puzzle) => (
+                <StarterRow
+                  key={puzzle.id}
+                  puzzle={puzzle}
+                  rows={data.byPuzzle[puzzle.id] ?? []}
+                  onPress={() => play(puzzle)}
+                />
+              ))}
+              {filtered.length === 0 ? (
+                <Text style={styles.empty}>
+                  {filter === 'user'
+                    ? 'Import a photo from Library to see it here.'
+                    : 'No puzzles to show yet.'}
+                </Text>
+              ) : null}
+            </View>
+          </ScrollView>
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -299,6 +318,8 @@ function Preview({ puzzle }: { puzzle: PuzzleDefinition }) {
 const useStyles = createThemedStyles((theme) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: theme.colors.paper },
+    /** Ends where the dock begins, so nothing scrolls underneath it. */
+    scrollFrame: { flex: 1 },
     safe: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,

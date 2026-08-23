@@ -8,7 +8,7 @@ import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme, useThemeControl } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { THEMES, type Theme } from '@/shared/themes';
-import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 /**
  * The theme store.
@@ -98,6 +98,7 @@ export function ThemesScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader
           title="Themes"

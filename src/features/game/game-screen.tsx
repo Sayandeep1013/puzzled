@@ -33,7 +33,7 @@ import { radii, shadow, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { type ArtName } from '@/shared/art';
-import { Art, PopButton, PopSheet, PopSurface, PopToggle, Text } from '@/shared/ui';
+import { Art, PopButton, PopSheet, PopSurface, PopToggle, Text, ThemeGround } from '@/shared/ui';
 
 import { setMusicEnabled, setSfxEnabled } from './board-audio';
 import { FX, setHapticsEnabled } from './board-fx';
@@ -553,6 +553,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   if (catalog.status === 'missing' || catalog.status === 'missing-art') {
     return (
       <View style={styles.screen}>
+        <ThemeGround />
         <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
           <View style={styles.centered}>
             <Text style={styles.bigTitle}>
@@ -580,6 +581,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   ) {
     return (
       <View style={styles.screen}>
+        <ThemeGround />
         <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
           <View style={styles.centered}>
             <Text style={styles.bigTitle}>Loading puzzle…</Text>
@@ -598,6 +600,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
   return (
     <View style={styles.screen}>
+      <ThemeGround />
       <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
         <View style={styles.content}>
           <View style={styles.header}>

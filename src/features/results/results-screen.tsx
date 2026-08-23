@@ -8,7 +8,7 @@ import { formatClock } from '@/features/game/play-clock';
 import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { Art, PopButton, PopSurface, Text } from '@/shared/ui';
+import { Art, PopButton, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 export function ResultsScreen({
   puzzleId,
@@ -52,6 +52,7 @@ export function ResultsScreen({
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <View style={styles.body}>
           {/* The mockup's celebration screen is the one saturated ground in the

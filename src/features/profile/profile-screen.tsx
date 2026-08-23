@@ -13,7 +13,7 @@ import { radii, spacing, typography } from '@/shared/theme';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { type ArtName } from '@/shared/art';
-import { Art, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
+import { Art, PopIcon, PopSurface, Text, useTabBarSpace, ThemeGround } from '@/shared/ui';
 
 /**
  * There is no accounts system yet (Phase 2). Every player is shown the same
@@ -68,53 +68,59 @@ export function ProfileScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.headerRow}>
           <Text style={styles.pageTitle}>Profile</Text>
         </View>
 
-        <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}>
-          <View style={styles.identity}>
-            {/* No circular surface. `change-avatar` is a sticker that already
+        {/* The scroll frame stops above the floating dock rather than running
+            under it. Content sliding beneath a bar that does not span the full
+            width reads as two overlapping layers. */}
+        <View style={[styles.scrollFrame, { paddingBottom: tabBarSpace }]}>
+          <ScrollView contentContainerStyle={styles.content}>
+            <View style={styles.identity}>
+              {/* No circular surface. `change-avatar` is a sticker that already
                 carries its own white outline, and clipping it to a pill cut the
                 bear's ears off while the fill swamped the art. */}
-            <Art name="change-avatar" size={132} accessibilityLabel="Your avatar" />
-            <Text style={styles.name}>{PLACEHOLDER_NAME}</Text>
-          </View>
+              <Art name="change-avatar" size={132} accessibilityLabel="Your avatar" />
+              <Text style={styles.name}>{PLACEHOLDER_NAME}</Text>
+            </View>
 
-          {/* Two figures, not one. The pieces-placed count was on Home before it
+            {/* Two figures, not one. The pieces-placed count was on Home before it
               moved to Statistics, and Statistics is two taps away — so the
               headline number surfaces here, on a tab, where it is findable. */}
-          <PopSurface fill={theme.colors.surface} radius={radii.lg}>
-            <View style={styles.statRow}>
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{completed}</Text>
-                <Text style={styles.statLabel}>COMPLETED</Text>
+            <PopSurface fill={theme.colors.surface} radius={radii.lg}>
+              <View style={styles.statRow}>
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{completed}</Text>
+                  <Text style={styles.statLabel}>COMPLETED</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.stat}>
+                  <Text style={styles.statValue}>{piecesPlaced}</Text>
+                  <Text style={styles.statLabel}>PIECES PLACED</Text>
+                </View>
               </View>
-              <View style={styles.statDivider} />
-              <View style={styles.stat}>
-                <Text style={styles.statValue}>{piecesPlaced}</Text>
-                <Text style={styles.statLabel}>PIECES PLACED</Text>
-              </View>
-            </View>
-          </PopSurface>
+            </PopSurface>
 
-          <View style={styles.links}>
-            {links.map((link) => (
-              <Pressable key={link.label} accessibilityRole="button" onPress={link.onPress}>
-                <PopSurface fill={theme.colors.surface} radius={radii.md}>
-                  <View style={styles.linkRow}>
-                    <Art name={link.art} size={28} />
-                    <Text style={styles.linkLabel}>{link.label}</Text>
-                    {/* The art set has no chevron; Phosphor stays for neutral
+            <View style={styles.links}>
+              {links.map((link) => (
+                <Pressable key={link.label} accessibilityRole="button" onPress={link.onPress}>
+                  <PopSurface fill={theme.colors.surface} radius={radii.md}>
+                    <View style={styles.linkRow}>
+                      <Art name={link.art} size={28} />
+                      <Text style={styles.linkLabel}>{link.label}</Text>
+                      {/* The art set has no chevron; Phosphor stays for neutral
                         affordances like this, where flat is the right register. */}
-                    <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
-                  </View>
-                </PopSurface>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
+                      <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
+                    </View>
+                  </PopSurface>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -123,6 +129,8 @@ export function ProfileScreen() {
 const useStyles = createThemedStyles((theme) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: theme.colors.paper },
+    /** Ends where the dock begins, so nothing scrolls underneath it. */
+    scrollFrame: { flex: 1 },
     safe: { flex: 1 },
     headerRow: {
       paddingHorizontal: spacing.lg,

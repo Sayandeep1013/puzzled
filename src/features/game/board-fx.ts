@@ -22,19 +22,62 @@ export function setHapticsEnabled(on: boolean): void {
   hapticsEnabled = on;
 }
 
-/** A short impact — `light` when a piece is picked up, `medium` when it snaps home. */
-export function impact(kind: 'light' | 'medium'): void {
+/**
+ * Shortest gap between two haptics, in ms.
+ *
+ * Android coalesces vibrations that arrive on top of each other: the second one
+ * is dropped, or both merge into a single longer buzz that feels like neither.
+ * Placing a piece fires a snap while a pickup may still be playing, which is
+ * exactly the overlap that made the feedback feel intermittent. Anything closer
+ * than this is skipped rather than queued — a haptic that arrives late is worse
+ * than one that does not arrive.
+ */
+const MIN_HAPTIC_GAP_MS = 45;
+
+let lastHapticAt = 0;
+
+function canFire(now: number): boolean {
   if (!HAPTICS_ENABLED || !hapticsEnabled) {
+    return false;
+  }
+  if (now - lastHapticAt < MIN_HAPTIC_GAP_MS) {
+    return false;
+  }
+  lastHapticAt = now;
+  return true;
+}
+
+/**
+ * Picking a piece up.
+ *
+ * `selectionAsync`, not a light impact. Android maps
+ * `ImpactFeedbackStyle.Light` to a very short, very weak buzz that a good many
+ * devices barely render at all — which reads as the haptic being unreliable
+ * rather than gentle. Selection feedback is the platform's own "you have picked
+ * this up" tick: crisper, and consistently produced.
+ */
+export function pickup(): void {
+  if (!canFire(Date.now())) {
+    return;
+  }
+  // Fire-and-forget; a rejected promise (unsupported device) must not surface.
+  void Haptics.selectionAsync().catch(() => {});
+}
+
+/** A short impact — `light` for a nudge, `medium` when a piece snaps home. */
+export function impact(kind: 'light' | 'medium'): void {
+  if (!canFire(Date.now())) {
     return;
   }
   const style =
     kind === 'medium' ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light;
-  // Fire-and-forget; a rejected promise (unsupported device) must not surface.
   void Haptics.impactAsync(style).catch(() => {});
 }
 
 /** The success buzz played once when the final piece locks. */
 export function success(): void {
+  // Deliberately not rate-limited: the completion buzz is the one haptic that
+  // must never be skipped, and nothing else fires at the same moment.
   if (!HAPTICS_ENABLED || !hapticsEnabled) {
     return;
   }

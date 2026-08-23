@@ -14,7 +14,7 @@ import { type ArtName } from '@/shared/art';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 /** Difficulty word for a grid size, mirroring the tiers in the mockup. */
 function tierFor(size: GridSize): string {
@@ -66,6 +66,7 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader title="Select Difficulty" onBack={() => router.back()} />
 

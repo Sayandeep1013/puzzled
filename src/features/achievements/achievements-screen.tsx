@@ -15,7 +15,7 @@ import { useTheme } from '@/shared/theme-context';
 import { type Theme } from '@/shared/themes';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { radii, spacing, typography } from '@/shared/theme';
-import { Art, PopHeader, PopProgress, PopSurface, Text } from '@/shared/ui';
+import { Art, PopHeader, PopProgress, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
 /**
  * The data layer emits `tone` as a semantic token name and `icon` as a plain
@@ -118,6 +118,7 @@ export function AchievementsScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <PopHeader title="Achievements" onBack={() => router.back()} />
         <ScrollView contentContainerStyle={styles.content}>

@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { colors as meadowColors } from './tokens';
-import { DEFAULT_THEME_ID, MEADOW, THEMES, themeById } from './themes';
+import { DEFAULT_THEME_ID, MEADOW, THEMES, themeById, type ThemePalette } from './themes';
 
 /**
  * Guards the theme refactor.
@@ -44,6 +44,53 @@ function importsStaticPalette(source: string): boolean {
     .some((name) => name === 'colors' || name === 'backgrounds');
 }
 
+/** Relative luminance per WCAG 2.1. */
+function luminance(hex: string): number {
+  const channels = [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * Every pairing a screen actually renders, with the bar each one has to clear.
+ *
+ * WCAG AA is 4.5:1 for body text and 3.0:1 for large text (headings here are
+ * 19pt and up). Both grounds matter: text sits on `surface` inside cards and
+ * directly on `paper` between them, and the second is the one that broke — the
+ * wood theme's first ground was dark enough that `inkMuted` on it measured
+ * under 2:1, which on device was a paragraph you could not read.
+ */
+const PAIRINGS: { name: string; on: keyof ThemePalette; text: keyof ThemePalette; min: number }[] =
+  [
+    { name: 'body on a card', on: 'surface', text: 'ink', min: 4.5 },
+    { name: 'muted body on a card', on: 'surface', text: 'inkMuted', min: 4.5 },
+    { name: 'body on the page', on: 'paper', text: 'ink', min: 4.5 },
+    { name: 'muted body on the page', on: 'paper', text: 'inkMuted', min: 4.5 },
+    { name: 'heading on a card', on: 'surface', text: 'headingGreen', min: 3 },
+    { name: 'heading on the page', on: 'paper', text: 'headingGreen', min: 3 },
+  ];
+
+describe('theme contrast', () => {
+  it.each(
+    THEMES.flatMap((theme) =>
+      PAIRINGS.map((pairing) => ({
+        label: `${theme.name}: ${pairing.name}`,
+        ratio: contrast(theme.colors[pairing.text], theme.colors[pairing.on]),
+        min: pairing.min,
+      })),
+    ),
+  )('$label clears its bar', ({ ratio, min }) => {
+    expect(ratio).toBeGreaterThanOrEqual(min);
+  });
+});
+
 describe('themes', () => {
   it('ships at least two, or the picker has nothing to pick', () => {
     expect(THEMES.length).toBeGreaterThanOrEqual(2);
@@ -60,6 +107,15 @@ describe('themes', () => {
       for (const key of Object.keys(meadowColors)) {
         expect(typeof (theme.colors as Record<string, unknown>)[key]).toBe('string');
       }
+    }
+  });
+
+  it('gives every theme a ground, whether flat or a material', () => {
+    // A theme with neither a Home picture nor a texture is a flat rectangle,
+    // which is what the wood theme was on every screen but Home.
+    for (const theme of THEMES) {
+      const hasMaterial = theme.groundTexture != null || theme.homeBackground != null;
+      expect(hasMaterial).toBe(true);
     }
   });
 

@@ -53,7 +53,7 @@ import { useTheme } from '@/shared/theme-context';
 import { type Theme } from '@/shared/themes';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
-import { FX, impact, setHapticsEnabled, success } from './board-fx';
+import { FX, impact, pickup, setHapticsEnabled, success } from './board-fx';
 import { clusterCacheKey, clusterLockedPieces } from './cluster-geometry';
 import { bakeOverlay, overlayCacheKey, type BakedOverlay } from './piece-overlay';
 import {
@@ -125,18 +125,20 @@ function confettiColors(theme: Theme): string[] {
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
 /**
- * How far a finger must travel on a tray piece before its intent is read, in points.
+ * Fraction of a tray slot that counts as "on the piece", for grabbing.
  *
- * Below this, nothing happens at all — no lift, no scroll. Above it, the larger
- * axis wins: mostly sideways scrolls the strip, mostly up or down lifts the piece.
+ * The slot is 92pt and the piece drawn inside it fills `TRAY_SLOT_FILL` of that,
+ * so the rest of the slot is visibly empty — and treating the *whole* slot as
+ * the piece is what left nowhere to scroll from: the strip could only be moved
+ * by its slider. Hit-testing the piece instead turns the leftover margin, plus
+ * the gap between slots, into a free channel either side of every piece.
  *
- * The tray used to grab on touch, which left nowhere to drag from: slots are
- * 92pt and the pieces nearly fill them, so the "empty slot space" that was meant
- * to scroll barely existed and the slider was the only way to move the strip.
- * Eight points is far enough not to fire on the wobble of a tap and short enough
- * that a lift still feels immediate.
+ * Slightly larger than `TRAY_SLOT_FILL` on purpose. Matching it exactly makes
+ * the edge of a piece the edge of its target, and a finger is not a pixel — a
+ * little forgiveness here is the difference between "grabs when I touch it" and
+ * "hit or miss", while still leaving roughly 15pt of channel between pieces.
  */
-const TRAY_INTENT_SLOP = 8;
+const TRAY_GRAB_FILL = 0.92;
 
 interface PuzzleBoardProps {
   generated: GeneratedPuzzle;
@@ -742,10 +744,11 @@ export function PuzzleBoard({
    * camera (a one-finger touch on empty board space) · 4 dragging the tray's
    * slider · 5 undecided, on a tray piece.
    *
-   * Modes 1-4 are decided instantly in onBegin. Mode 5 is not: a touch that
-   * lands on a tray piece cannot know yet whether the player means to lift that
-   * piece or to scroll the strip, so it waits for the first real movement and
-   * decides from its direction. See `TRAY_INTENT_SLOP`.
+   * All decided instantly in onBegin, including the tray: a touch on a piece
+   * grabs it, a touch in the space around one scrolls. Reading the intent from
+   * the drag direction instead was tried and was worse — a piece meant for the
+   * board slid the tray whenever the first few points of movement happened to
+   * be sideways, which is most of the time when reaching across.
    */
   const mode = useSharedValue(0);
   /** Index into the current tray render order, or -1 when the grab isn't from the tray. */
@@ -1138,9 +1141,13 @@ export function PuzzleBoard({
     (source: 0 | 1, index: number) => {
       const id = resolveGrabbedId(source, index);
       if (id) {
-        setDraggingId(id);
-        impact('light');
+        // Feedback before the state update. `setDraggingId` re-renders the board
+        // — a Skia tree — and firing the haptic afterwards puts it behind that
+        // work on the same thread, which is what made the buzz arrive late or,
+        // once another haptic had started, not at all.
+        pickup();
         playSfx('pickup');
+        setDraggingId(id);
       }
     },
     [resolveGrabbedId],
@@ -1378,19 +1385,32 @@ export function PuzzleBoard({
           // a piece you did not want in order to move the strip.
           mode.value = 4;
         } else {
-          // Tray grid: a slot waits to learn what the finger means; anywhere
-          // else in the strip scrolls immediately. Column-major, matching how
-          // the pieces are laid out.
+          // Tray grid: on a piece grabs it, the space around one scrolls.
+          // Column-major, matching how the pieces are laid out.
           const localX = e.x - trayScroll.value;
           const column = Math.floor((localX - TRAY_PAD) / slotW);
           const row = Math.floor((e.y - boardZoneH - TRAY_PAD) / (TRAY_SLOT + SLOT_GAP));
           const slot =
             row >= 0 && row < FX.tray.rows && column >= 0 ? column * FX.tray.rows + row : -1;
-          if (slot >= 0 && slot < count) {
-            mode.value = 5;
+
+          // Centre of that slot, and how far from it still counts as the piece.
+          const slotCentreX = TRAY_PAD + column * slotW + slotW / 2 + trayScroll.value;
+          const slotCentreY = boardZoneH + TRAY_PAD + row * (TRAY_SLOT + SLOT_GAP) + TRAY_SLOT / 2;
+          const grabHalf = (TRAY_SLOT * TRAY_GRAB_FILL) / 2;
+          const onPiece =
+            slot >= 0 &&
+            slot < count &&
+            Math.abs(e.x - slotCentreX) <= grabHalf &&
+            Math.abs(e.y - slotCentreY) <= grabHalf;
+
+          if (onPiece) {
+            mode.value = 1;
             grabSlot.value = slot;
+            scaleBoost.value = FX.liftScale;
+            tiltDeg.value = 0;
             fx.value = e.x;
             fy.value = e.y;
+            runOnJS(beginGrab)(0, slot);
           } else {
             mode.value = 2;
           }
@@ -1398,30 +1418,6 @@ export function PuzzleBoard({
       })
       .onChange((e) => {
         'worklet';
-        if (mode.value === 5) {
-          // Undecided on a tray piece: read the intent from the larger axis once
-          // the finger has actually travelled. Sideways scrolls the strip;
-          // up or down lifts the piece out of it.
-          const dx = e.translationX;
-          const dy = e.translationY;
-          if (Math.abs(dx) > Math.abs(dy)) {
-            if (Math.abs(dx) > TRAY_INTENT_SLOP) {
-              mode.value = 2;
-              grabSlot.value = -1;
-              // Apply this frame's movement too, or the strip visibly lurches by
-              // the slop distance the moment it starts following the finger.
-              trayScroll.value = Math.min(0, Math.max(minScroll, trayScroll.value + e.changeX));
-            }
-          } else if (Math.abs(dy) > TRAY_INTENT_SLOP) {
-            mode.value = 1;
-            scaleBoost.value = FX.liftScale;
-            tiltDeg.value = 0;
-            fx.value = e.x;
-            fy.value = e.y;
-            runOnJS(beginGrab)(0, grabSlot.value);
-          }
-          return;
-        }
         if (mode.value === 1) {
           fx.value = e.x;
           fy.value = e.y;
@@ -1448,14 +1444,6 @@ export function PuzzleBoard({
       })
       .onFinalize(() => {
         'worklet';
-        if (mode.value === 5) {
-          // Touched a piece and never moved far enough to mean anything. Nothing
-          // was lifted, so there is nothing to put down.
-          mode.value = 0;
-          grabSlot.value = -1;
-          grabLoose.value = -1;
-          return;
-        }
         if (mode.value === 1) {
           const source: 0 | 1 = grabSlot.value >= 0 ? 0 : 1;
           const index = source === 0 ? grabSlot.value : grabLoose.value;

@@ -31,7 +31,16 @@ import { type ArtName } from '@/shared/art';
 import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { accentAt, radii, shadow, spacing, typography } from '@/shared/theme';
-import { Art, PopChip, PopIcon, PopProgress, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
+import {
+  Art,
+  PopChip,
+  PopIcon,
+  PopProgress,
+  PopSurface,
+  Text,
+  useTabBarSpace,
+  ThemeGround,
+} from '@/shared/ui';
 
 type Tab = 'progress' | 'completed' | 'favourites' | 'photos';
 
@@ -298,6 +307,7 @@ export function LibraryScreen() {
 
   return (
     <View style={styles.root}>
+      <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.titleRow}>
           <Text style={styles.pageTitle} numberOfLines={1}>
@@ -344,27 +354,29 @@ export function LibraryScreen() {
           ))}
         </ScrollView>
 
-        <ScrollView
-          style={styles.list}
-          contentContainerStyle={[styles.content, { paddingBottom: tabBarSpace }]}
-        >
-          {visible.length === 0 ? (
-            <EmptyState art={emptyCopy.art} text={emptyCopy.text} sub={emptyCopy.sub} />
-          ) : (
-            visible.map((item, index) => (
-              <LibraryRow
-                key={item.progress ? `${item.puzzleId}-${item.progress.gridSize}` : item.puzzleId}
-                puzzleId={item.puzzleId}
-                puzzle={item.puzzle}
-                progress={item.progress}
-                accent={accentAt(index)}
-                isFavourite={data.favouriteIds.has(item.puzzleId)}
-                onToggleFavourite={onToggleFavourite}
-                onDelete={onDeletePhoto}
-              />
-            ))
-          )}
-        </ScrollView>
+        {/* The list stops above the floating dock rather than running under it.
+            Content sliding beneath a bar that does not span the full width reads
+            as two overlapping layers. */}
+        <View style={[styles.scrollFrame, { paddingBottom: tabBarSpace }]}>
+          <ScrollView style={styles.list} contentContainerStyle={styles.content}>
+            {visible.length === 0 ? (
+              <EmptyState art={emptyCopy.art} text={emptyCopy.text} sub={emptyCopy.sub} />
+            ) : (
+              visible.map((item, index) => (
+                <LibraryRow
+                  key={item.progress ? `${item.puzzleId}-${item.progress.gridSize}` : item.puzzleId}
+                  puzzleId={item.puzzleId}
+                  puzzle={item.puzzle}
+                  progress={item.progress}
+                  accent={accentAt(index)}
+                  isFavourite={data.favouriteIds.has(item.puzzleId)}
+                  onToggleFavourite={onToggleFavourite}
+                  onDelete={onDeletePhoto}
+                />
+              ))
+            )}
+          </ScrollView>
+        </View>
       </SafeAreaView>
     </View>
   );
@@ -544,6 +556,8 @@ const useStyles = createThemedStyles((theme) =>
      */
     tabsRow: { flexGrow: 0 },
     tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+    /** Ends where the dock begins, so nothing scrolls underneath it. */
+    scrollFrame: { flex: 1 },
     /** Takes the rest of the column, so the list scrolls within it rather than being cut off. */
     list: { flex: 1 },
     content: {

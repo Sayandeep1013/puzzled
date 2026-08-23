@@ -1,6 +1,13 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ImageBackground,
+  LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -24,6 +31,7 @@ import {
   PopButton,
   PopSurface,
   Text,
+  ThemeGround,
   useTabBarSpace,
   WordmarkTitle,
 } from '@/shared/ui';
@@ -197,6 +205,19 @@ export function HomeScreen() {
     })();
   }, [dailyDone, today]);
 
+  /**
+   * Height of the scroll viewport, which is what one "screenful" means here.
+   *
+   * Measured rather than derived from the window: the frame already has the top
+   * bar above it and the dock's reservation below, and reproducing that
+   * arithmetic would drift the moment either changes.
+   */
+  const [foldHeight, setFoldHeight] = useState(0);
+  const onScrollLayout = useCallback((event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    setFoldHeight((current) => (Math.abs(current - height) < 1 ? current : height));
+  }, []);
+
   const resume = data.continuePlaying[0] ?? null;
 
   const openBoard = useCallback(
@@ -219,6 +240,9 @@ export function HomeScreen() {
       resizeMode="cover"
       style={styles.root}
     >
+      {/* Behind everything, and only drawn by a theme that has a material.
+          A theme with a `homeBackground` has already painted this screen. */}
+      <ThemeGround />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.topBar}>
           {/* The pill is a button now. A balance you can see and not act on is
@@ -254,147 +278,159 @@ export function HomeScreen() {
           </Pressable>
         </View>
 
-        <ScrollView
-          // `flexGrow` so short content still fills the screen. Without it the
-          // dashboard stacked from the top and left the Continue button and the
-          // quick links stranded in mid-air with a tab bar's worth of empty
-          // meadow beneath them.
-          contentContainerStyle={[styles.body, { paddingBottom: tabBarSpace, flexGrow: 1 }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <EnterView index={0}>
-            <WordmarkTitle />
-          </EnterView>
+        {/* The scroll frame stops above the floating dock rather than running
+            under it. Content sliding beneath a bar that does not span the full
+            width reads as two overlapping layers, which is what the quick links
+            were doing to the tab bar. */}
+        <View style={[styles.scrollFrame, { paddingBottom: tabBarSpace }]}>
+          <ScrollView
+            contentContainerStyle={styles.body}
+            onLayout={onScrollLayout}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* One screenful, ending on the quick links. Everything below is
+                found by scrolling, which is what makes the first view feel
+                finished rather than cut off. */}
+            <View style={[styles.fold, foldHeight > 0 ? { minHeight: foldHeight } : null]}>
+              <EnterView index={0}>
+                <WordmarkTitle />
+              </EnterView>
 
-          {data.daily ? (
-            <EnterView index={1} style={styles.block}>
-              <PopSurface
-                fill={theme.colors.surface}
-                radius={radii.lg}
-                contentStyle={styles.challengeBody}
-              >
-                <View style={styles.challengeCopy}>
-                  <Text style={styles.challengeTitle}>Today&apos;s Challenge</Text>
-                  <Text style={styles.challengeMeta}>
-                    {data.daily.doneToday
-                      ? `Done! ${DAILY_CHALLENGE_REWARD} coins earned.`
-                      : `Complete “${data.daily.puzzle.title}” and earn ${DAILY_CHALLENGE_REWARD} coins.`}
-                  </Text>
-                  <PopButton
-                    label={data.daily.doneToday ? 'Play again' : 'Play Now'}
-                    tone="grass"
-                    size="sm"
-                    icon={<Art name="play" size={20} />}
-                    style={styles.challengeButton}
+              {data.daily ? (
+                <EnterView index={1} style={styles.block}>
+                  <PopSurface
+                    fill={theme.colors.surface}
+                    radius={radii.lg}
+                    contentStyle={styles.challengeBody}
+                  >
+                    <View style={styles.challengeCopy}>
+                      <Text style={styles.challengeTitle}>Today&apos;s Challenge</Text>
+                      <Text style={styles.challengeMeta}>
+                        {data.daily.doneToday
+                          ? `Done! ${DAILY_CHALLENGE_REWARD} coins earned.`
+                          : `Complete “${data.daily.puzzle.title}” and earn ${DAILY_CHALLENGE_REWARD} coins.`}
+                      </Text>
+                      <PopButton
+                        label={data.daily.doneToday ? 'Play again' : 'Play Now'}
+                        tone="grass"
+                        size="sm"
+                        icon={<Art name="play" size={20} />}
+                        style={styles.challengeButton}
+                        onPress={() => router.push('/daily')}
+                      />
+                    </View>
+                    {/* The bear lives here now rather than standing alone above the
+                      buttons — which is what makes room for the rest of the page. */}
+                    <IdleBob distance={6} sway={2}>
+                      <Art name="bear" size={CARD_BEAR} />
+                    </IdleBob>
+                  </PopSurface>
+                </EnterView>
+              ) : null}
+
+              <EnterView index={2} style={styles.block}>
+                {/* An accent frame around a cream body, the pattern the rows use: it
+                  gives the card its own colour without putting caption text on a
+                  saturated fill, which fails contrast on half the palette. */}
+                <PopSurface
+                  fill={theme.colors.berry}
+                  radius={radii.lg}
+                  contentStyle={styles.huntFrame}
+                >
+                  <View style={styles.huntBody}>
+                    <Art name="chest" size={54} />
+                    <View style={styles.challengeCopy}>
+                      <Text style={styles.challengeTitle}>Daily Treasure Hunt</Text>
+                      <Text style={styles.challengeMeta}>
+                        Seven stops, one a day. The last one is the chest.
+                      </Text>
+                    </View>
+                    <PopButton
+                      label="Open"
+                      tone="berry"
+                      size="sm"
+                      accessibilityLabel="Open the daily treasure hunt"
+                      onPress={() => router.push('/treasure')}
+                    />
+                  </View>
+                </PopSurface>
+              </EnterView>
+
+              <EnterView index={3} style={[styles.block, styles.actions]}>
+                <PopButton
+                  // The label follows the destination: "Play" opening a half-finished
+                  // board would be as wrong as "Continue" starting a new one.
+                  label={resume ? 'Continue' : 'Play'}
+                  tone="grass"
+                  size="lg"
+                  icon={<Art name={resume ? 'resume' : 'play'} size={28} />}
+                  style={styles.fullWidth}
+                  disabled={!resume && !data.firstPlayable}
+                  onPress={() => {
+                    if (resume) {
+                      openBoard(resume.puzzleId, resume.gridSize);
+                      return;
+                    }
+                    if (data.firstPlayable) {
+                      router.push({
+                        pathname: '/difficulty/[puzzleId]',
+                        params: { puzzleId: data.firstPlayable.id },
+                      });
+                    }
+                  }}
+                />
+
+                <View style={styles.quickRow}>
+                  <QuickLink
+                    art="calendar"
+                    label="Daily Puzzle"
                     onPress={() => router.push('/daily')}
                   />
+                  <QuickLink art="album" label="My Album" onPress={() => router.push('/library')} />
                 </View>
-                {/* The bear lives here now rather than standing alone above the
-                    buttons — which is what makes room for the rest of the page. */}
-                <IdleBob distance={6} sway={2}>
-                  <Art name="bear" size={CARD_BEAR} />
-                </IdleBob>
-              </PopSurface>
-            </EnterView>
-          ) : null}
-
-          <EnterView index={2} style={styles.block}>
-            {/* An accent frame around a cream body, the pattern the rows use: it
-                gives the card its own colour without putting caption text on a
-                saturated fill, which fails contrast on half the palette. */}
-            <PopSurface fill={theme.colors.berry} radius={radii.lg} contentStyle={styles.huntFrame}>
-              <View style={styles.huntBody}>
-                <Art name="chest" size={54} />
-                <View style={styles.challengeCopy}>
-                  <Text style={styles.challengeTitle}>Daily Treasure Hunt</Text>
-                  <Text style={styles.challengeMeta}>
-                    Seven stops, one a day. The last one is the chest.
-                  </Text>
-                </View>
-                <PopButton
-                  label="Open"
-                  tone="berry"
-                  size="sm"
-                  accessibilityLabel="Open the daily treasure hunt"
-                  onPress={() => router.push('/treasure')}
-                />
-              </View>
-            </PopSurface>
-          </EnterView>
-
-          {data.continuePlaying.length > 0 ? (
-            <EnterView index={3} style={styles.block}>
-              {/* On a card, not straight on the meadow. White copy over a
-                  photographic sky is unreadable wherever a cloud sits behind it —
-                  measured on device, the heading and the percentages both
-                  disappeared into the bright band above the hills. */}
-              <PopSurface
-                fill={theme.colors.surface}
-                radius={radii.lg}
-                contentStyle={styles.stripCard}
-              >
-                <View style={styles.sectionHead}>
-                  <Text style={styles.sectionTitle}>Continue Playing</Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="See every puzzle"
-                    hitSlop={8}
-                    onPress={() => router.push('/puzzles')}
-                  >
-                    <Text style={styles.seeAll}>View All</Text>
-                  </Pressable>
-                </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.strip}
-                >
-                  {data.continuePlaying.map((item) => (
-                    <ContinueThumb
-                      key={`${item.puzzleId}-${item.gridSize}`}
-                      item={item}
-                      onPress={() => openBoard(item.puzzleId, item.gridSize)}
-                    />
-                  ))}
-                </ScrollView>
-              </PopSurface>
-            </EnterView>
-          ) : null}
-
-          <EnterView index={4} style={[styles.block, styles.actions]}>
-            <PopButton
-              // The label follows the destination: "Play" opening a half-finished
-              // board would be as wrong as "Continue" starting a new one.
-              label={resume ? 'Continue' : 'Play'}
-              tone="grass"
-              size="lg"
-              icon={<Art name={resume ? 'resume' : 'play'} size={28} />}
-              style={styles.fullWidth}
-              disabled={!resume && !data.firstPlayable}
-              onPress={() => {
-                if (resume) {
-                  openBoard(resume.puzzleId, resume.gridSize);
-                  return;
-                }
-                if (data.firstPlayable) {
-                  router.push({
-                    pathname: '/difficulty/[puzzleId]',
-                    params: { puzzleId: data.firstPlayable.id },
-                  });
-                }
-              }}
-            />
-
-            <View style={styles.quickRow}>
-              <QuickLink
-                art="calendar"
-                label="Daily Puzzle"
-                onPress={() => router.push('/daily')}
-              />
-              <QuickLink art="album" label="My Album" onPress={() => router.push('/library')} />
+              </EnterView>
             </View>
-          </EnterView>
-        </ScrollView>
+
+            {data.continuePlaying.length > 0 ? (
+              <EnterView index={4} style={styles.block}>
+                {/* On a card, not straight on the meadow. White copy over a
+                    photographic sky is unreadable wherever a cloud sits behind it —
+                    measured on device, the heading and the percentages both
+                    disappeared into the bright band above the hills. */}
+                <PopSurface
+                  fill={theme.colors.surface}
+                  radius={radii.lg}
+                  contentStyle={styles.stripCard}
+                >
+                  <View style={styles.sectionHead}>
+                    <Text style={styles.sectionTitle}>Continue Playing</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="See every puzzle"
+                      hitSlop={8}
+                      onPress={() => router.push('/puzzles')}
+                    >
+                      <Text style={styles.seeAll}>View All</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.strip}
+                  >
+                    {data.continuePlaying.map((item) => (
+                      <ContinueThumb
+                        key={`${item.puzzleId}-${item.gridSize}`}
+                        item={item}
+                        onPress={() => openBoard(item.puzzleId, item.gridSize)}
+                      />
+                    ))}
+                  </ScrollView>
+                </PopSurface>
+              </EnterView>
+            ) : null}
+          </ScrollView>
+        </View>
       </SafeAreaView>
     </ImageBackground>
   );
@@ -516,14 +552,16 @@ const useStyles = createThemedStyles((theme) =>
       backgroundColor: theme.colors.surface,
       boxShadow: shadow.card,
     },
-    // Scrolls now: the dashboard carries more than one viewport on a short phone,
-    // and pinning it meant the quick links sat under the tab bar.
+    /** Ends where the dock begins, so nothing scrolls underneath it. */
+    scrollFrame: { flex: 1 },
     body: {
       alignItems: 'center',
       paddingHorizontal: spacing.lg,
       paddingTop: spacing.md,
       gap: spacing.lg,
     },
+    /** One viewport tall, so the first view ends on the quick links. */
+    fold: { alignSelf: 'stretch', gap: spacing.lg },
     block: { alignSelf: 'stretch' },
     challengeBody: {
       flexDirection: 'row',
