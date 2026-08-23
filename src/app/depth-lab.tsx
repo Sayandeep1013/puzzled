@@ -1,4 +1,5 @@
 import { Canvas, Group, Image as SkiaImage, useImage } from '@shopify/react-native-skia';
+import { Redirect } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,7 +42,23 @@ const TREATMENTS: { key: DepthTreatment | 'baked'; label: string; note: string }
   { key: 'cardboard', label: 'Cardboard (live)', note: 'unbaked — note the grey wash' },
 ];
 
-export default function DepthLabScreen() {
+/**
+ * The route itself, closed in a release build.
+ *
+ * expo-router builds its routes from the filesystem, so deleting the
+ * `Stack.Screen` entry would not have removed this — `puzzled://depth-lab`
+ * still resolved in a shipped APK and handed anyone who found it a developer
+ * screen. The comparison is still one deep link away in development, where it
+ * is useful, and lands Home everywhere else.
+ */
+export default function DepthLabRoute() {
+  if (!__DEV__) {
+    return <Redirect href="/" />;
+  }
+  return <DepthLab />;
+}
+
+function DepthLab() {
   const styles = useStyles();
   const image = useImage(getPuzzleImageModule('first-light') ?? 0);
 

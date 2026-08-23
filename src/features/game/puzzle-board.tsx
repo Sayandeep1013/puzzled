@@ -1580,17 +1580,24 @@ export function PuzzleBoard({
       <GestureDetector gesture={gesture}>
         <Animated.View style={{ width: viewport.width, height: viewport.height }}>
           <Canvas style={{ width: viewport.width, height: viewport.height }}>
-            {/* Tray backdrop, a rounded strip so it reads as its own shelf. The
-                board shell is cream, so the tray takes the screen's own pale
-                green — matching the mockup, where loose pieces sit on the page
-                rather than on the board card. */}
+            {/* Tray backdrop, a rounded strip so it reads as its own shelf.
+
+                The page ground, matching the mockup, where loose pieces sit on
+                the page rather than on the board card — and matching the board
+                play area above it, which is the same idea through a different
+                hole in the same cream shell.
+
+                It took `backgrounds.game` before, which *is* the page in the
+                meadow and is a pale cream under the wood — the same cream as the
+                shell around it, so the shelf disappeared and the loose pieces
+                floated on the card. */}
             <RoundedRect
               x={TRAY_PAD / 2}
               y={boardZoneH}
               width={Math.max(vw - TRAY_PAD, 1)}
               height={TRAY_HEIGHT}
               r={TRAY_RADIUS}
-              color={theme.backgrounds.game}
+              color={theme.colors.paper}
               opacity={0.95}
             />
 
