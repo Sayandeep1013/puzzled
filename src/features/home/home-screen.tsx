@@ -298,35 +298,70 @@ export function HomeScreen() {
             </EnterView>
           ) : null}
 
-          {data.continuePlaying.length > 0 ? (
-            <EnterView index={2} style={styles.block}>
-              <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Continue Playing</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="See every puzzle"
-                  onPress={() => router.push('/puzzles')}
-                >
-                  <Text style={styles.seeAll}>View All</Text>
-                </Pressable>
+          <EnterView index={2} style={styles.block}>
+            {/* An accent frame around a cream body, the pattern the rows use: it
+                gives the card its own colour without putting caption text on a
+                saturated fill, which fails contrast on half the palette. */}
+            <PopSurface fill={theme.colors.berry} radius={radii.lg} contentStyle={styles.huntFrame}>
+              <View style={styles.huntBody}>
+                <Art name="chest" size={54} />
+                <View style={styles.challengeCopy}>
+                  <Text style={styles.challengeTitle}>Daily Treasure Hunt</Text>
+                  <Text style={styles.challengeMeta}>
+                    Seven stops, one a day. The last one is the chest.
+                  </Text>
+                </View>
+                <PopButton
+                  label="Open"
+                  tone="berry"
+                  size="sm"
+                  accessibilityLabel="Open the daily treasure hunt"
+                  onPress={() => router.push('/treasure')}
+                />
               </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.strip}
+            </PopSurface>
+          </EnterView>
+
+          {data.continuePlaying.length > 0 ? (
+            <EnterView index={3} style={styles.block}>
+              {/* On a card, not straight on the meadow. White copy over a
+                  photographic sky is unreadable wherever a cloud sits behind it —
+                  measured on device, the heading and the percentages both
+                  disappeared into the bright band above the hills. */}
+              <PopSurface
+                fill={theme.colors.surface}
+                radius={radii.lg}
+                contentStyle={styles.stripCard}
               >
-                {data.continuePlaying.map((item) => (
-                  <ContinueThumb
-                    key={`${item.puzzleId}-${item.gridSize}`}
-                    item={item}
-                    onPress={() => openBoard(item.puzzleId, item.gridSize)}
-                  />
-                ))}
-              </ScrollView>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Continue Playing</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="See every puzzle"
+                    hitSlop={8}
+                    onPress={() => router.push('/puzzles')}
+                  >
+                    <Text style={styles.seeAll}>View All</Text>
+                  </Pressable>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.strip}
+                >
+                  {data.continuePlaying.map((item) => (
+                    <ContinueThumb
+                      key={`${item.puzzleId}-${item.gridSize}`}
+                      item={item}
+                      onPress={() => openBoard(item.puzzleId, item.gridSize)}
+                    />
+                  ))}
+                </ScrollView>
+              </PopSurface>
             </EnterView>
           ) : null}
 
-          <EnterView index={3} style={[styles.block, styles.actions]}>
+          <EnterView index={4} style={[styles.block, styles.actions]}>
             <PopButton
               // The label follows the destination: "Play" opening a half-finished
               // board would be as wrong as "Continue" starting a new one.
@@ -500,16 +535,25 @@ const useStyles = createThemedStyles((theme) =>
     challengeTitle: { ...typography.heading, fontSize: 19, color: theme.colors.ink },
     challengeMeta: { ...typography.caption, color: theme.colors.inkMuted },
     challengeButton: { alignSelf: 'flex-start', marginTop: spacing.xs },
+    huntFrame: { padding: spacing.xs },
+    huntBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.surface,
+    },
+    stripCard: { padding: spacing.md, paddingRight: 0 },
     sectionHead: {
       flexDirection: 'row',
       alignItems: 'baseline',
       justifyContent: 'space-between',
       marginBottom: spacing.sm,
+      paddingRight: spacing.md,
     },
-    // On the meadow rather than on a card, so these need the outlined treatment
-    // the pack screen uses on its saturated ground.
-    sectionTitle: { ...typography.heading, fontSize: 19, color: theme.colors.onFill },
-    seeAll: { ...typography.caption, color: theme.colors.onFill },
+    sectionTitle: { ...typography.heading, fontSize: 19, color: theme.colors.ink },
+    seeAll: { ...typography.caption, color: theme.colors.headingGreen },
     strip: { gap: spacing.sm, paddingRight: spacing.md },
     thumbWrap: { alignItems: 'center', gap: 4 },
     thumb: {

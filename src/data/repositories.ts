@@ -83,6 +83,7 @@ export type LedgerReason =
   | 'hint-purchase'
   | 'achievement-unlock'
   | 'theme-unlock'
+  | 'treasure-stop'
   | 'coin-purchase'
   | 'starter-grant';
 
