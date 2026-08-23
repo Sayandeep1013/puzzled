@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -12,19 +12,31 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { backgrounds, colors, motion, springs, typography } from '@/shared/theme';
+import { loadingBearSize, loadingBearStartScale } from '@/shared/splash';
+import { colors, motion, splash, springs, typography } from '@/shared/theme';
 
 import { Art } from './Art';
 import { WordmarkTitle } from './WordmarkTitle';
+import { Text } from './Text';
 
 /**
- * The loading screen, and the only place the bear is ever seen whole.
+ * The launch screen. The native splash is its first frame, not a screen before it.
  *
- * Android 12+ masks the native splash icon to a 192dp circle and offers no way
- * to opt out (see `src/shared/splash.test.ts`), so the native splash can only
- * ever show a small, static, circle-cropped bear. This takes over the instant
- * that splash hides, on the same `#8AE3F5` sky, so the two read as one screen —
- * the bear appears to grow out of the circle rather than being replaced.
+ * Android draws a splash window from the tap until React Native has a frame, and
+ * it cannot be removed — only made indistinguishable from what replaces it. So
+ * this opens with its bear at exactly `splash.iconWidth`, dead centre, on
+ * exactly `splash.background`: the same bear, the same size, the same place, on
+ * the same sky. Nothing visibly changes at the handoff.
+ *
+ * *Then* it animates. The bear grows to its full size and starts breathing while
+ * the wordmark, dots and caption rise in beneath it — so the moment reads as the
+ * splash coming alive, which is the whole point of having an animated one.
+ *
+ * The previous version skipped the first half. It drew the bear at
+ * `min(width * 0.52, 240)` immediately, which equals the native 176 only on a
+ * 360dp phone; on a 412dp phone the bear jumped 22% larger at the exact instant
+ * a wordmark, three dots and a caption appeared around it. That is two screens,
+ * and it is what people saw.
  *
  * Everything here is Reanimated, which the app already ships and which runs the
  * animation on the UI thread — so the bear keeps bobbing smoothly while the
@@ -62,16 +74,17 @@ interface LoadingScreenProps {
 
 export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
   const { width } = useWindowDimensions();
-  // The bear scales with the screen so it fills a phone without overflowing a
-  // small one, but never grows past the size the @3x art can carry.
-  const bearSize = Math.min(width * 0.52, 240);
+  // Both from `@/shared/splash`, so the sizes the handoff depends on are testable
+  // at widths other than the one an emulator happens to open at.
+  const bearSize = loadingBearSize(width);
+  const startScale = loadingBearStartScale(width);
 
   const intro = useSharedValue(0);
   const breathe = useSharedValue(0);
   const fade = useSharedValue(1);
 
   useEffect(() => {
-    // Rise into place once, then breathe forever. The intro overshoots via a
+    // Grow into place once, then breathe forever. The intro overshoots via a
     // spring; the idle loop is timed, because a repeating spring drifts.
     intro.value = withSpring(1, springs.pop);
     breathe.value = withRepeat(
@@ -100,23 +113,27 @@ export function LoadingScreen({ onDone, ready = true }: LoadingScreenProps) {
   const overlayStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
 
   /*
-   * The bear does **not** animate in — it is already on screen.
+   * The bear does not *appear* — it grows.
    *
-   * Android shows its splash window from the moment the icon is tapped until RN
-   * has a frame, and that window carries this same bear, centred. So this bear is
-   * a continuation of one already being displayed, not an entrance: rising or
-   * scaling it here would make the handoff read as a second screen appearing,
-   * which is the whole complaint. It starts at rest and only breathes.
+   * It is already on screen when this mounts, drawn by the native splash window
+   * at `splash.iconWidth`. So there is no entrance to play: starting anywhere
+   * other than that size, or moving it, makes the handoff read as a second
+   * screen arriving. It starts exactly where the splash left it and swells to
+   * full size, which is a continuation rather than a replacement.
    *
-   * Everything below it still animates in, which is what makes the moment feel
-   * alive without moving the one element the eye is already locked onto.
+   * The bob is scaled with it, so the breathing does not visibly change
+   * amplitude as the bear grows.
    */
-  const bearStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: -breathe.value * BOB_DISTANCE },
-      { rotateZ: `${(breathe.value * 2 - 1) * SWAY_DEGREES}deg` },
-    ],
-  }));
+  const bearStyle = useAnimatedStyle(() => {
+    const grow = startScale + (1 - startScale) * intro.value;
+    return {
+      transform: [
+        { translateY: -breathe.value * BOB_DISTANCE * grow },
+        { rotateZ: `${(breathe.value * 2 - 1) * SWAY_DEGREES}deg` },
+        { scale: grow },
+      ],
+    };
+  });
 
   const wordmarkStyle = useAnimatedStyle(() => ({
     opacity: intro.value,
@@ -198,7 +215,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     // Must equal the native splash's backgroundColor — that identity is what
     // makes the handoff invisible, and `splash.test.ts` asserts the two match.
-    backgroundColor: backgrounds.homeSky,
+    backgroundColor: splash.background,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -1,6 +1,6 @@
 import { Canvas, Group, Image as SkiaImage, useImage } from '@shopify/react-native-skia';
 import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getPuzzleImageModule } from '@/data/local/puzzle-assets';
@@ -9,6 +9,7 @@ import { commandsToSkPath } from '@/game-engine/rendering';
 import { PieceDepth, type DepthTreatment } from '@/features/game/piece-depth';
 import { bakeOverlay } from '@/features/game/piece-overlay';
 import { colors, spacing, typography } from '@/shared/theme';
+import { Text } from '@/shared/ui';
 
 /**
  * Dev-only comparison of the three piece-depth treatments.

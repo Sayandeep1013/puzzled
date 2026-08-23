@@ -1,8 +1,10 @@
 import { type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { colors, radii, shadow, spacing, springs, typography } from '@/shared/theme';
+
+import { Text } from './Text';
 
 export type PopTone =
   'grass' | 'leaf' | 'sky' | 'berry' | 'blossom' | 'honey' | 'apricot' | 'cherry' | 'surface';
@@ -125,7 +127,15 @@ export function PopButton({
         ]}
       >
         {icon}
-        <Text style={[styles.label, { color: TONE_LABEL[tone], fontSize: metrics.fontSize }]}>
+        {/* `numberOfLines` with a shrinkable label, or the button loses letters.
+            Buttons sit in fixed-width rows and inside clipping `PopSurface` faces,
+            so a label that outgrows its face — a long word, a narrow phone, or the
+            reader's font scale — was simply cut off mid-word. Shrinking degrades
+            to an ellipsis instead, which is legible and obviously deliberate. */}
+        <Text
+          numberOfLines={1}
+          style={[styles.label, { color: TONE_LABEL[tone], fontSize: metrics.fontSize }]}
+        >
           {label}
         </Text>
       </Animated.View>
@@ -141,6 +151,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     boxShadow: shadow.button,
   },
-  label: { fontFamily: typography.heading.fontFamily },
+  // `flexShrink` so the label gives way before the row (or a clipping ancestor)
+  // does; `textAlign` keeps it centred once it has narrowed. See the label above.
+  label: { fontFamily: typography.heading.fontFamily, flexShrink: 1, textAlign: 'center' },
   disabled: { opacity: 0.45 },
 });

@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -11,7 +11,7 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { accentAt, backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no pack/category field (see `puzzles-screen.tsx`'s
@@ -178,7 +178,10 @@ function PackPuzzleRow({
           label={done ? 'Play again' : started ? 'Continue' : 'Start'}
           tone="grass"
           size="sm"
-          accessibilityLabel={`${started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
+          // Must track the visible label — it read "Start"/"Continue" while the
+          // button said "Play again", so screen-reader users were told the wrong
+          // action on every completed puzzle.
+          accessibilityLabel={`${done ? 'Play again' : started ? 'Continue' : 'Start'} ${puzzle.title} puzzle`}
           onPress={() => router.push(href)}
         />
       </View>

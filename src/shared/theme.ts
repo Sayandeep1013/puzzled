@@ -9,6 +9,7 @@ export {
   radii,
   shadow,
   spacing,
+  splash,
   springs,
 } from './tokens';
 

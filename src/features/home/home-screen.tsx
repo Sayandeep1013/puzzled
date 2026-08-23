@@ -1,10 +1,10 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ImageBackground, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getWalletRepository, listCatalog } from '@/data';
-import { type PuzzleDefinition } from '@/game-engine';
+import { getProgressRepository, getWalletRepository, listCatalog } from '@/data';
+import { type GridSize, type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
 import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
 import {
@@ -13,30 +13,50 @@ import {
   IdleBob,
   PopButton,
   PopSurface,
-  WordmarkTitle,
+  Text,
   useTabBarSpace,
+  WordmarkTitle,
 } from '@/shared/ui';
 
 const HOME_BACKGROUND = require('../../../assets/backgrounds/home.png');
 
 /**
- * Bear size, in points. Kept equal to `imageWidth` on the splash screen in
- * `app.json`, so the mascot is the same size before and after the app loads and
- * does not visibly re-draw on launch.
+ * Bear size, in points. Sized for this screen alone.
+ *
+ * It used to claim it was kept equal to the splash's `imageWidth` — it was not
+ * (176), and it should not be: `LoadingScreen` owns the launch handoff now and
+ * cross-fades into Home rather than handing a bear straight over to it. Matching
+ * the splash here would only make Home's mascot small.
  */
 const MASCOT_SIZE = 254;
 
+/** The board Play resumes, when there is one. */
+interface ResumeTarget {
+  puzzleId: string;
+  gridSize: GridSize;
+}
+
 interface HomeData {
-  /** First puzzle the Play button can start. */
+  /** First puzzle the Play button can start when there is nothing to resume. */
   firstPlayable: PuzzleDefinition | null;
+  /**
+   * Most recently played unfinished board.
+   *
+   * Home's Play button used to ignore progress entirely and always open the
+   * difficulty picker for `bundled[0]` — while Puzzles, Library and Pack all
+   * resumed the last session. So the most prominent button in the app was the
+   * one that could not get you back to the puzzle you were in the middle of.
+   */
+  resume: ResumeTarget | null;
   /** Null rather than a fabricated zero when the wallet cannot be read. */
   coins: number | null;
 }
 
-const EMPTY: HomeData = { firstPlayable: null, coins: null };
+const EMPTY: HomeData = { firstPlayable: null, resume: null, coins: null };
 
 async function loadHomeData(): Promise<HomeData> {
   const { bundled, user } = await listCatalog();
+  const known = new Set([...bundled, ...user].map((puzzle) => puzzle.id));
 
   let coins: number | null = null;
   try {
@@ -45,7 +65,21 @@ async function loadHomeData(): Promise<HomeData> {
     // Same contract as the shop: no balance is better than a wrong one.
   }
 
-  return { firstPlayable: bundled[0] ?? user[0] ?? null, coins };
+  let resume: ResumeTarget | null = null;
+  try {
+    // Summaries arrive most-recent-first, so the first match is the board the
+    // player was last on. Rows for puzzles no longer in the catalog are skipped
+    // rather than offered — following one would land on "Puzzle not found".
+    const rows = await (await getProgressRepository()).listSummaries();
+    const latest = rows.find(
+      (row) => row.status !== 'completed' && row.lockedPieces > 0 && known.has(row.puzzleId),
+    );
+    resume = latest ? { puzzleId: latest.puzzleId, gridSize: latest.gridSize } : null;
+  } catch {
+    // Progress is best-effort; without it Play simply starts something new.
+  }
+
+  return { firstPlayable: bundled[0] ?? user[0] ?? null, resume, coins };
 }
 
 /**
@@ -116,13 +150,25 @@ export function HomeScreen() {
 
           <EnterView index={2} style={styles.actions}>
             <PopButton
-              label="Play"
+              // The label follows the destination: "Play" opening a half-finished
+              // board would be as wrong as "Continue" starting a new one.
+              label={data.resume ? 'Continue' : 'Play'}
               tone="grass"
               size="lg"
-              icon={<Art name="play" size={28} />}
+              icon={<Art name={data.resume ? 'resume' : 'play'} size={28} />}
               style={styles.fullWidth}
-              disabled={!firstPlayable}
+              disabled={!data.resume && !firstPlayable}
               onPress={() => {
+                if (data.resume) {
+                  router.push({
+                    pathname: '/game/[puzzleId]',
+                    params: {
+                      puzzleId: data.resume.puzzleId,
+                      size: String(data.resume.gridSize),
+                    },
+                  });
+                  return;
+                }
                 if (firstPlayable) {
                   router.push({
                     pathname: '/difficulty/[puzzleId]',

@@ -1,10 +1,11 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Image as RNImage, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image as RNImage, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   coinsForCompletion,
+  getCompletionsRepository,
   getProgressRepository,
   getPuzzleById,
   getSettingsRepository,
@@ -31,11 +32,13 @@ import {
 } from '@/game-engine';
 import { backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
 import { type ArtName } from '@/shared/art';
-import { Art, PopButton, PopSheet, PopSurface, PopToggle } from '@/shared/ui';
+import { Art, PopButton, PopSheet, PopSurface, PopToggle, Text } from '@/shared/ui';
 
 import { setMusicEnabled, setSfxEnabled } from './board-audio';
 import { FX, setHapticsEnabled } from './board-fx';
+import { formatClock } from './play-clock';
 import { BOARD_TRAY_RESERVE, PuzzleBoard } from './puzzle-board';
+import { usePlayClock } from './use-play-clock';
 
 type OverlayKind = 'none' | 'pause' | 'hint' | 'preview';
 
@@ -48,12 +51,6 @@ function buildPlayable(puzzle: PuzzleDefinition, gridSize: GridSize): PlayablePu
     cellSize: cellSizeForGrid(gridSize),
     layoutMode: 'tray',
   });
-}
-
-function formatClock(totalSeconds: number): string {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 /**
@@ -86,7 +83,6 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   const [session, setSession] = useState<GameSession | null>(null);
   /** Bumped on reset to force a fresh board with a freshly measured world. */
   const [generation, setGeneration] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
   const [overlay, setOverlay] = useState<OverlayKind>('none');
   const [sound, setSound] = useState(true);
   const [music, setMusic] = useState(true);
@@ -95,6 +91,52 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
   /** Measured width of the board shell, used to cap its height. */
   const [shellWidth, setShellWidth] = useState(0);
   const [wallet, setWallet] = useState<Wallet | null>(null);
+
+  /**
+   * Whether this screen is the one on top of the stack.
+   *
+   * The play clock must stop when it is not — pushing the Shop from the hint
+   * sheet, or Results after the last piece, leaves this screen mounted and
+   * otherwise still counting.
+   */
+  const [focused, setFocused] = useState(true);
+
+  /**
+   * Read by the focus callback below without being in its dependencies.
+   *
+   * `useFocusEffect` re-subscribes whenever its callback changes identity, so
+   * depending on `complete`/`onReset` directly would make it re-run on ordinary
+   * re-renders instead of only on a focus transition — which is the one thing it
+   * must be keyed on.
+   */
+  const onFocusReturn = useRef<() => void>(() => {});
+
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      onFocusReturn.current();
+      return () => setFocused(false);
+    }, []),
+  );
+
+  const complete = session?.status === 'completed';
+
+  /**
+   * The one play clock.
+   *
+   * Time accrues only while there is a board, it is unfinished, this screen is
+   * on top, and the pause sheet is closed — plus, inside the hook, only while
+   * the app is foregrounded. Both of the clocks this replaces got some part of
+   * that wrong: the visible one restarted from zero on every mount, and the
+   * persisted one counted pauses, sheets and background time alike.
+   */
+  const running = playable != null && !complete && focused && overlay !== 'pause';
+  const { elapsedMs, getElapsedMs, reset: resetClock } = usePlayClock(running);
+
+  // Debounced write-behind: dragging produces a session object per drop.
+  const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The newest session worth writing. Never cleared — a write is an upsert. */
+  const latestSession = useRef<GameSession | null>(null);
 
   // Tracks whether the component is still mounted, for async work (like the
   // hint spend below) that must not call state setters after unmount.
@@ -168,14 +210,22 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
       }
 
       if (!active) return;
+      // Drop any write still owed by the board being replaced: it belongs to the
+      // previous puzzle/size, and persisting it after this point would stamp the
+      // new board's clock onto the old board's row.
+      latestSession.current = null;
       setPlayable(built);
       setSession(restored ?? built.session);
+      // Resume the clock where the saved session left it. This is the half that
+      // made the timer look like it "just reset": the board came back
+      // half-finished while the clock came back at 00:00.
+      resetClock(restored?.elapsedMs ?? 0);
     })();
 
     return () => {
       active = false;
     };
-  }, [catalog, gridSize]);
+  }, [catalog, gridSize, resetClock]);
 
   // Load the persisted Sound/Music/Haptics settings once to seed the pause
   // menu's toggle state. The toggles themselves push every change straight
@@ -217,44 +267,70 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     };
   }, []);
 
-  // Debounced write-behind: dragging produces a session object per drop.
-  const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Write the board's state, stamped with the play clock as it stands *now*.
+   *
+   * Elapsed time is stamped here rather than kept in `session` state on purpose.
+   * It used to reach storage only as a side effect of placing a piece, so a long
+   * think — or a pause, or walking away — was simply not recorded: the row still
+   * held whatever the clock read at the last placement. Stamping at write time
+   * makes every write carry the real figure without a render per second.
+   */
+  const persist = useCallback(() => {
+    const pending = latestSession.current;
+    if (!pending) {
+      return;
+    }
+    const stamped: GameSession = {
+      ...pending,
+      elapsedMs: getElapsedMs(),
+      updatedAt: new Date().toISOString(),
+    };
+    latestSession.current = stamped;
+    void (async () => {
+      try {
+        await (await getProgressRepository()).saveSession(stamped);
+      } catch {
+        // Progress is best-effort; a failed write should never interrupt play.
+      }
+    })();
+  }, [getElapsedMs]);
+
   useEffect(() => {
     if (!session || session.status === 'not-started') {
       return;
     }
 
+    latestSession.current = session;
     if (pendingSave.current) {
       clearTimeout(pendingSave.current);
     }
-
-    pendingSave.current = setTimeout(() => {
-      void (async () => {
-        try {
-          await (await getProgressRepository()).saveSession(session);
-        } catch {
-          // Progress is best-effort; a failed write should never interrupt play.
-        }
-      })();
-    }, 400);
+    pendingSave.current = setTimeout(persist, 400);
 
     return () => {
       if (pendingSave.current) {
         clearTimeout(pendingSave.current);
       }
     };
-  }, [session]);
+  }, [session, persist]);
 
-  const complete = session?.status === 'completed';
-
-  // Tick a play clock while the board is live, unfinished, and not paused.
+  /**
+   * Write once more whenever the clock stops — paused, backgrounded, or this
+   * screen pushed under another — and once on the way out.
+   *
+   * The debounce above cancels its pending timer on cleanup, so leaving the
+   * board inside the 400ms window used to discard that write entirely: place the
+   * last piece you have time for, hit back, and it was never saved. These are
+   * the only writes that are not debounced.
+   */
   useEffect(() => {
-    if (!playable || complete || overlay === 'pause') {
+    if (running) {
       return;
     }
-    const id = setInterval(() => setElapsed((v) => v + 1), 1000);
-    return () => clearInterval(id);
-  }, [playable, complete, generation, overlay]);
+    persist();
+  }, [running, persist]);
+
+  useEffect(() => persist, [persist]);
 
   // On completion, hand off to the results screen once — but only after a short
   // beat so the board's celebration (confetti + success haptic) is actually seen.
@@ -274,8 +350,29 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
     handedOff.current = true;
     const completedPuzzleId = catalog.puzzle.id;
     const earnedCoins = coinsForCompletion(gridSize);
+    // Read once, here: by the time the hand-off timer fires the clock has
+    // already stopped (`complete` clears `running`), and Results must show the
+    // same figure Statistics will.
+    const elapsedAtCompletion = getElapsedMs();
 
     void (async () => {
+      try {
+        // Recorded before the coin credit, and separately from the session row:
+        // the session is overwritten the moment this board is replayed, so it
+        // cannot be the record of having finished it. Unlike the credit this is
+        // *not* deduped — finishing the same puzzle twice is two completions.
+        await (
+          await getCompletionsRepository()
+        ).record({
+          puzzleId: completedPuzzleId,
+          gridSize,
+          elapsedMs: elapsedAtCompletion,
+          completedAt: new Date().toISOString(),
+        });
+      } catch {
+        // Best-effort: a failed write must not block the trip to results.
+      }
+
       try {
         await (
           await getWalletRepository()
@@ -296,13 +393,13 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         params: {
           puzzleId: completedPuzzleId,
           size: String(gridSize),
-          time: String(elapsed),
+          timeMs: String(elapsedAtCompletion),
           coins: String(earnedCoins),
         },
       });
     }, FX.celebrateMs);
     return () => clearTimeout(timer);
-  }, [complete, catalog, gridSize, elapsed, router]);
+  }, [complete, catalog, gridSize, getElapsedMs, router]);
 
   const onSessionChange = useCallback((next: GameSession) => {
     setSession(next);
@@ -317,12 +414,15 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
       clearTimeout(pendingSave.current);
       pendingSave.current = null;
     }
+    // The saved row is about to be deleted; without this the unmount flush would
+    // write the old session straight back and undo the restart.
+    latestSession.current = null;
 
     const fresh = buildPlayable(catalog.puzzle, gridSize);
     setPlayable(fresh);
     setSession(fresh.session);
     setGeneration((value) => value + 1);
-    setElapsed(0);
+    resetClock(0);
     handedOff.current = false;
 
     void (async () => {
@@ -332,7 +432,28 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         // Local board is already reset; a stale row is overwritten on the next save.
       }
     })();
-  }, [catalog, gridSize]);
+  }, [catalog, gridSize, resetClock]);
+
+  /**
+   * Returning to a finished board starts it over.
+   *
+   * Results' "Play Again" dismisses back to this screen rather than pushing a
+   * second copy of it (see `results-screen.tsx`), so the board it lands on is the
+   * one that was just solved. Without this the player arrives at a completed
+   * puzzle with nothing left to place.
+   *
+   * It hangs off the focus transition rather than off `complete` because the
+   * board stays focused for `FX.celebrateMs` after the last piece lands —
+   * resetting on `complete` alone would wipe the confetti that delay exists to
+   * show.
+   */
+  useEffect(() => {
+    onFocusReturn.current = () => {
+      if (complete) {
+        onReset();
+      }
+    };
+  }, [complete, onReset]);
 
   // Reorders only the pieces still waiting in the tray, leaving locked and
   // loose-on-board pieces exactly where they are. `PuzzleBoard` derives tray
@@ -553,7 +674,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                 contentStyle={styles.clockInner}
               >
                 <Art name="clock" size={20} />
-                <Text style={styles.clock}>{formatClock(elapsed)}</Text>
+                <Text style={styles.clock}>{formatClock(elapsedMs)}</Text>
               </PopSurface>
               <Pressable
                 accessibilityRole="button"
@@ -587,6 +708,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
               session={session}
               imageSource={catalog.imageSource}
               onSessionChange={onSessionChange}
+              getElapsedMs={getElapsedMs}
               highlightEdges={highlightEdges}
             />
           </View>
@@ -676,7 +798,21 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
                 disabled={hintCount <= 0}
                 onPress={onSpendHint}
               />
-              {hintCount <= 0 ? <Text style={styles.hintOutText}>Get more in the Shop</Text> : null}
+              {/* A button, not a sentence. This read "Get more in the Shop" as
+                  static text with nothing to tap — the one moment the player is
+                  told they need something and the one screen that sells it was
+                  four taps away, through Profile. */}
+              {hintCount <= 0 ? (
+                <PopButton
+                  label="Get more in the Shop"
+                  tone="honey"
+                  icon={<Art name="coin" size={22} />}
+                  onPress={() => {
+                    setOverlay('none');
+                    router.push('/shop');
+                  }}
+                />
+              ) : null}
               <PopButton
                 label={highlightEdges ? 'Hide edges' : 'Highlight edges'}
                 tone="sky"
@@ -765,7 +901,9 @@ function ToolButton({
             </View>
           ) : null}
         </View>
-        <Text style={[styles.toolLabel, disabled && styles.toolLabelDisabled]}>{label}</Text>
+        <Text numberOfLines={1} style={[styles.toolLabel, disabled && styles.toolLabelDisabled]}>
+          {label}
+        </Text>
       </PopSurface>
     </Pressable>
   );
@@ -890,7 +1028,6 @@ const styles = StyleSheet.create({
   settingLabel: { ...typography.heading, fontSize: 18, color: colors.ink },
   hintHero: { alignItems: 'center', paddingVertical: spacing.sm },
   hintBalance: { ...typography.bodyStrong, color: colors.inkMuted, textAlign: 'center' },
-  hintOutText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
   previewFrame: { padding: spacing.xs },
   previewImageWrap: {
     height: 240,

@@ -1,12 +1,12 @@
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getSettingsRepository, type AppSettings } from '@/data';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopHeader, PopSurface, PopToggle } from '@/shared/ui';
+import { Art, PopHeader, PopSurface, PopToggle, Text } from '@/shared/ui';
 
 /** Matches `DEFAULT_SETTINGS` in the settings repository — all on until loaded. */
 const DEFAULT_SETTINGS: AppSettings = { sound: true, music: true, haptics: true };

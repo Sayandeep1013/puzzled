@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getPuzzleById, resolvePuzzleImageSource } from '@/data';
@@ -12,7 +12,7 @@ import {
 } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 /** Difficulty word for a grid size, mirroring the tiers in the mockup. */
 function tierFor(size: GridSize): string {
@@ -111,7 +111,10 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                     <Text style={[styles.tileCount, active && styles.tileCountActive]}>
                       {expectedPieceCount(size)}
                     </Text>
-                    <Text style={[styles.tileTier, active && styles.tileTierActive]}>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.tileTier, active && styles.tileTierActive]}
+                    >
                       {tierFor(size)} · {size}×{size}
                     </Text>
                   </PopSurface>

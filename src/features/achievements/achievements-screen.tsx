@@ -1,17 +1,12 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  deriveAchievements,
-  getProgressRepository,
-  type AchievementState,
-  type PuzzleProgressSummary,
-} from '@/data';
+import { deriveAchievements, getCompletionsRepository, type AchievementState } from '@/data';
 import { type ArtName } from '@/shared/art';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopHeader, PopProgress, PopSurface } from '@/shared/ui';
+import { Art, PopHeader, PopProgress, PopSurface, Text } from '@/shared/ui';
 
 /**
  * The data layer emits `tone` as a semantic token name and `icon` as a plain
@@ -41,12 +36,11 @@ function resolveArt(icon: string): ArtName {
 
 async function loadAchievements(): Promise<AchievementState[]> {
   try {
-    const summaries = await (await getProgressRepository()).listSummaries();
-    return deriveAchievements(summaries);
+    return deriveAchievements(await (await getCompletionsRepository()).list());
   } catch {
-    // Progress is best-effort; an unreadable database still shows every
-    // achievement honestly at 0 progress rather than crashing the screen.
-    return deriveAchievements([] as PuzzleProgressSummary[]);
+    // Best-effort; an unreadable database still shows every achievement
+    // honestly at 0 progress rather than crashing the screen.
+    return deriveAchievements([]);
   }
 }
 
@@ -106,7 +100,7 @@ function AchievementRow({ achievement }: { achievement: AchievementState }) {
         {achievement.unlocked ? (
           <Art name="coin-check" size={26} accessibilityLabel="Unlocked" />
         ) : (
-          <Text style={styles.count}>
+          <Text numberOfLines={1} style={styles.count}>
             {achievement.current}/{achievement.goal}
           </Text>
         )}

@@ -8,33 +8,28 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  getCompletionsRepository,
   getFavouritesRepository,
   getProgressRepository,
   getUserPuzzleRepository,
+  isUserPuzzle,
+  latestPerBoard,
   listCatalog,
   resolvePuzzleImageSource,
+  type PuzzleCompletion,
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
 import { accentAt, colors, radii, shadow, spacing, typography } from '@/shared/theme';
-import { Art, PopChip, PopIcon, PopProgress, PopSurface, useTabBarSpace } from '@/shared/ui';
 
-/** Turn a picked file name into a friendly title. */
-function titleFromFileName(fileName: string | null | undefined): string {
-  if (!fileName) {
-    return 'My puzzle';
-  }
-  const withoutExt = fileName.replace(/\.[^.]+$/, '');
-  const cleaned = withoutExt.replace(/[_-]+/g, ' ').trim();
-  return cleaned.length > 0 ? cleaned.slice(0, 40) : 'My puzzle';
-}
+import { fallbackPhotoTitle, titleForImportedPhoto } from './photo-title';
+import { Art, PopChip, PopIcon, PopProgress, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
 type Tab = 'progress' | 'completed' | 'favourites' | 'photos';
 
@@ -78,6 +73,14 @@ interface VisibleItem {
 interface LibraryData {
   /** Every saved session, most recently played first (mirrors HomeScreen's loader). */
   rows: (PuzzleProgressSummary & { puzzle?: PuzzleDefinition })[];
+  /**
+   * Boards ever finished, newest first, one entry per board.
+   *
+   * Separate from `rows` because a session row is *current* state: replaying a
+   * finished puzzle turns its row back into an in-progress one, which used to
+   * drop it out of the Completed tab entirely.
+   */
+  completions: PuzzleCompletion[];
   /** Sessions grouped per puzzle id, so Favourites/Photos can show the latest one. */
   byPuzzle: Record<string, PuzzleProgressSummary[]>;
   catalogById: Map<string, PuzzleDefinition>;
@@ -87,6 +90,7 @@ interface LibraryData {
 
 const EMPTY_DATA: LibraryData = {
   rows: [],
+  completions: [],
   byPuzzle: {},
   catalogById: new Map(),
   userPuzzles: [],
@@ -94,10 +98,11 @@ const EMPTY_DATA: LibraryData = {
 };
 
 async function loadLibraryData(): Promise<LibraryData> {
-  const [{ bundled, user }, summaries, favouriteIds] = await Promise.all([
+  const [{ bundled, user }, summaries, favouriteIds, completions] = await Promise.all([
     listCatalog(),
     (await getProgressRepository()).listSummaries().catch(() => [] as PuzzleProgressSummary[]),
     (await getFavouritesRepository()).list().catch(() => [] as string[]),
+    (await getCompletionsRepository()).list().catch(() => [] as PuzzleCompletion[]),
   ]);
 
   const catalogById = new Map<string, PuzzleDefinition>();
@@ -110,6 +115,7 @@ async function loadLibraryData(): Promise<LibraryData> {
 
   return {
     rows: summaries.map((s) => ({ ...s, puzzle: catalogById.get(s.puzzleId) })),
+    completions: latestPerBoard(completions),
     byPuzzle,
     catalogById,
     userPuzzles: user,
@@ -122,6 +128,9 @@ export function LibraryScreen() {
   const [data, setData] = useState<LibraryData>(EMPTY_DATA);
   const [importing, setImporting] = useState(false);
   const tabBarSpace = useTabBarSpace();
+
+  /** Numbers the fallback title, so successive imports stay distinguishable. */
+  const photoCount = data.userPuzzles.length;
 
   // Refetch on focus so progress, favourites, and imported photos reflect
   // whatever changed on the board or on Home since this screen last showed.
@@ -187,7 +196,10 @@ export function LibraryScreen() {
       await (
         await getUserPuzzleRepository()
       ).add({
-        title: titleFromFileName(asset.fileName),
+        // Cropping in the picker (which this flow always asks for) makes Android
+        // return a fresh file named with a UUID, so the old "tidy up the file
+        // name" pass produced puzzles literally titled `2c2550e4 36fc 4a2b ...`.
+        title: titleForImportedPhoto(asset.fileName, fallbackPhotoTitle(photoCount)),
         sourceUri: asset.uri,
         pixelSize: { width: asset.width, height: asset.height },
       });
@@ -200,10 +212,57 @@ export function LibraryScreen() {
     } finally {
       setImporting(false);
     }
-  }, [importing]);
+  }, [importing, photoCount]);
+
+  /**
+   * Delete an imported photo, its board(s), and the copied image file.
+   *
+   * Importing was one-way: `UserPuzzleRepository.remove` and
+   * `ProgressRepository.deleteSessionsForPuzzle` both existed and neither had a
+   * caller, so a mis-picked photo stayed in Library, in Puzzles, and in the
+   * daily pool permanently. Only imported photos are removable — bundled
+   * puzzles are read-only.
+   */
+  const onDeletePhoto = useCallback((puzzleId: string, title: string, wasFavourite: boolean) => {
+    Alert.alert(
+      `Delete “${title}”?`,
+      'This also deletes any progress on it. It cannot be undone.',
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                // Sessions first: a puzzle row removed while its boards survive
+                // would leave rows Library cannot resolve a title for.
+                await (await getProgressRepository()).deleteSessionsForPuzzle(puzzleId);
+                // And its history — a completions row for a puzzle that no
+                // longer exists would keep counting toward achievements and
+                // stats with nothing left to point at.
+                await (await getCompletionsRepository()).deleteForPuzzle(puzzleId);
+                // The favourites table keys on puzzle id with nothing pointing
+                // back at it, so a starred photo would leave a row that can never
+                // be reached again — invisible (Favourites resolves ids through
+                // the catalog) but accumulating.
+                if (wasFavourite) {
+                  await (await getFavouritesRepository()).toggle(puzzleId);
+                }
+                await (await getUserPuzzleRepository()).remove(puzzleId);
+              } catch {
+                // Best-effort; the refresh below shows whatever actually survived
+                // rather than asserting a delete that may not have happened.
+              }
+              setData(await loadLibraryData());
+            })();
+          },
+        },
+      ],
+    );
+  }, []);
 
   const inProgress = data.rows.filter((r) => r.status !== 'completed' && r.lockedPieces > 0);
-  const completed = data.rows.filter((r) => r.status === 'completed');
   const favouritePuzzles = Array.from(data.favouriteIds)
     .map((id) => data.catalogById.get(id))
     .filter((puzzle): puzzle is PuzzleDefinition => puzzle != null);
@@ -212,7 +271,13 @@ export function LibraryScreen() {
     tab === 'progress'
       ? inProgress.map((row) => ({ puzzleId: row.puzzleId, puzzle: row.puzzle, progress: row }))
       : tab === 'completed'
-        ? completed.map((row) => ({ puzzleId: row.puzzleId, puzzle: row.puzzle, progress: row }))
+        ? data.completions.map((entry) => ({
+            puzzleId: entry.puzzleId,
+            puzzle: data.catalogById.get(entry.puzzleId),
+            // The board's *current* row, so a replayed puzzle shows its live
+            // progress bar under a card that is here because it was finished once.
+            progress: data.byPuzzle[entry.puzzleId]?.find((r) => r.gridSize === entry.gridSize),
+          }))
         : tab === 'favourites'
           ? favouritePuzzles.map((puzzle) => ({
               puzzleId: puzzle.id,
@@ -231,7 +296,9 @@ export function LibraryScreen() {
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.titleRow}>
-          <Text style={styles.pageTitle}>My Library</Text>
+          <Text style={styles.pageTitle} numberOfLines={1}>
+            My Library
+          </Text>
           {/* Pinned beside the title rather than only inside the My Photos tab.
               Buried on one tab it was unfindable — the whole point of the feature
               is that it is the way puzzles get added. */}
@@ -289,6 +356,7 @@ export function LibraryScreen() {
                 accent={accentAt(index)}
                 isFavourite={data.favouriteIds.has(item.puzzleId)}
                 onToggleFavourite={onToggleFavourite}
+                onDelete={onDeletePhoto}
               />
             ))
           )}
@@ -305,6 +373,7 @@ function LibraryRow({
   accent,
   isFavourite,
   onToggleFavourite,
+  onDelete,
 }: {
   puzzleId: string;
   puzzle?: PuzzleDefinition;
@@ -313,11 +382,14 @@ function LibraryRow({
   accent: string;
   isFavourite: boolean;
   onToggleFavourite: (puzzleId: string) => void;
+  /** Offered only for imported photos; bundled puzzles are read-only. */
+  onDelete: (puzzleId: string, title: string, wasFavourite: boolean) => void;
 }) {
   const router = useRouter();
   const done = progress?.status === 'completed';
   const source = puzzle ? resolvePuzzleImageSource(puzzle) : null;
   const title = puzzle?.title ?? puzzleId;
+  const removable = puzzle != null && isUserPuzzle(puzzle);
 
   // A puzzle with a saved session resumes straight onto the board; anything
   // else (favourited or imported but never played) starts at difficulty pick.
@@ -369,8 +441,25 @@ function LibraryRow({
               />
             ) : null}
           </View>
-          <PopIcon name="chevron" size={20} color={colors.inkMuted} />
+          {/* The chevron is decoration — it says "this row opens", which the
+              whole row already says. On an imported photo that space earns its
+              keep as the only way to remove one: importing used to be one-way,
+              so a mis-picked photo stayed in Library, in Puzzles and in the
+              daily pool forever. */}
+          {removable ? null : <PopIcon name="chevron" size={20} color={colors.inkMuted} />}
         </Pressable>
+        {removable ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${title}`}
+            accessibilityHint="Also deletes any progress on this puzzle"
+            hitSlop={10}
+            onPress={() => onDelete(puzzleId, title, isFavourite)}
+            style={styles.deleteButton}
+          >
+            <PopIcon name="trash" size={20} color={colors.inkMuted} />
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
@@ -411,6 +500,8 @@ const styles = StyleSheet.create({
     color: colors.headingGreen,
     marginTop: spacing.sm,
     paddingHorizontal: spacing.lg,
+    // Gives way to the Add button beside it rather than pushing it off the row.
+    flexShrink: 1,
   },
   titleRow: {
     flexDirection: 'row',
@@ -477,6 +568,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
+  },
+  // Narrower than the heart's padding: two full-width targets side by side left
+  // the title with nowhere to go on a narrow phone.
+  deleteButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingRight: spacing.md,
+    paddingLeft: spacing.xs,
   },
   thumb: {
     width: 56,

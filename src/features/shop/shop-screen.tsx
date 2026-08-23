@@ -1,12 +1,12 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getWalletRepository, type Wallet } from '@/data';
 import { type ArtName } from '@/shared/art';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 interface HintBundle {
   key: string;
@@ -29,7 +29,16 @@ const HINT_BUNDLES: HintBundle[] = [
   { key: 'large', hints: 30, price: 450, art: 'gold-chest' },
 ];
 
-const EMPTY_WALLET: Wallet = { coins: 0, hints: 0 };
+/**
+ * Null until the first read lands.
+ *
+ * The file's own contract is "never a fabricated zero", and Home honours it by
+ * showing an em dash — but this screen seeded state with `{ coins: 0 }` and so
+ * displayed a hard 0 for the moment before the balance arrived, and permanently
+ * if the read failed. Two screens disagreeing about the same wallet is worse
+ * than either answer.
+ */
+const UNKNOWN_WALLET = null;
 
 /** Best-effort balance read. Returns `null` (never a fabricated zero) on failure. */
 async function fetchWallet(): Promise<Wallet | null> {
@@ -42,7 +51,7 @@ async function fetchWallet(): Promise<Wallet | null> {
 
 export function ShopScreen() {
   const router = useRouter();
-  const [wallet, setWallet] = useState<Wallet>(EMPTY_WALLET);
+  const [wallet, setWallet] = useState<Wallet | null>(UNKNOWN_WALLET);
   const [purchasing, setPurchasing] = useState<string | null>(null);
 
   // Refetch on focus so coins earned from a just-finished puzzle show up here.
@@ -60,7 +69,7 @@ export function ShopScreen() {
 
   const onBuy = useCallback(
     async (bundle: HintBundle) => {
-      if (purchasing || wallet.coins < bundle.price) {
+      if (purchasing || wallet == null || wallet.coins < bundle.price) {
         return;
       }
       setPurchasing(bundle.key);
@@ -82,7 +91,7 @@ export function ShopScreen() {
         setPurchasing(null);
       }
     },
-    [purchasing, wallet.coins],
+    [purchasing, wallet],
   );
 
   return (
@@ -94,7 +103,7 @@ export function ShopScreen() {
           right={
             <View style={styles.balance}>
               <Art name="coin" size={22} />
-              <Text style={styles.balanceText}>{wallet.coins}</Text>
+              <Text style={styles.balanceText}>{wallet?.coins ?? '—'}</Text>
             </View>
           }
         />
@@ -102,7 +111,9 @@ export function ShopScreen() {
           <View style={styles.sectionHeading}>
             <Text style={styles.sectionTitle}>Hint Bundles</Text>
             <Text style={styles.sectionMeta}>
-              {wallet.hints} {wallet.hints === 1 ? 'hint' : 'hints'} on hand
+              {wallet == null
+                ? 'Checking your hints…'
+                : `${wallet.hints} ${wallet.hints === 1 ? 'hint' : 'hints'} on hand`}
             </Text>
           </View>
 
@@ -110,7 +121,9 @@ export function ShopScreen() {
             <HintBundleRow
               key={bundle.key}
               bundle={bundle}
-              affordable={wallet.coins >= bundle.price}
+              // Unknown balance reads as "cannot afford yet" rather than as
+              // affordable — an enabled Buy that then silently no-ops is worse.
+              affordable={wallet != null && wallet.coins >= bundle.price}
               purchasing={purchasing === bundle.key}
               onBuy={() => onBuy(bundle)}
             />

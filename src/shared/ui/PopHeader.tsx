@@ -1,9 +1,10 @@
 import { type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
 
 import { Art } from './Art';
+import { Text } from './Text';
 
 interface PopHeaderProps {
   title: string;

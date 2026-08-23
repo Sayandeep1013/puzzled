@@ -1,28 +1,29 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getPuzzleById, resolvePuzzleImageSource } from '@/data';
+import { formatClock } from '@/features/game/play-clock';
 import { backgrounds, colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopSurface } from '@/shared/ui';
-
-function formatClock(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '—';
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+import { Art, PopButton, PopSurface, Text } from '@/shared/ui';
 
 export function ResultsScreen({
   puzzleId,
   size,
-  time,
+  timeMs,
   coins = 0,
 }: {
   puzzleId: string;
   size: number;
-  time: number;
+  /**
+   * Play time in **milliseconds** — the same figure written to
+   * `session.elapsedMs`, so this screen and Statistics can no longer disagree
+   * about how long the puzzle took. It used to be a count of seconds ticked on
+   * this screen's own mount, which meant a resumed puzzle reported only the
+   * final sitting.
+   */
+  timeMs: number;
   /** Coins credited for this completion (Task 14), shown when positive. */
   coins?: number;
 }) {
@@ -75,7 +76,7 @@ export function ResultsScreen({
           )}
 
           <View style={styles.stats}>
-            <Stat label="TIME" value={formatClock(time)} />
+            <Stat label="TIME" value={timeMs > 0 ? formatClock(timeMs) : '—'} />
             <View style={styles.statDivider} />
             <Stat label="PIECES" value={String(pieces)} />
             {coins > 0 ? (
@@ -94,8 +95,20 @@ export function ResultsScreen({
             label="Play Again"
             tone="honey"
             icon={<Art name="restart" size={24} />}
+            /*
+             * `dismissTo`, not `replace`.
+             *
+             * The Game screen this was pushed from is still in the stack, so
+             * replacing Results with a Game put a *second* Game on top of the
+             * first — and a third on the next replay, each one a mounted board
+             * with its own Skia canvas, all of them reachable by pressing back.
+             * `dismissTo` pops back to the Game that is already there (and falls
+             * back to a replace if there isn't one, e.g. a deep link straight to
+             * Results). The board itself starts over: see the game screen's
+             * "returning to a finished board" effect.
+             */
             onPress={() =>
-              router.replace({
+              router.dismissTo({
                 pathname: '/game/[puzzleId]',
                 params: { puzzleId, size: String(size) },
               })
@@ -105,7 +118,10 @@ export function ResultsScreen({
             label="Back Home"
             tone="grass"
             icon={<Art name="quit-home" size={24} />}
-            onPress={() => router.dismissAll()}
+            // `dismissAll` needs a stack to pop; opened directly (a deep link, or
+            // a notification) there is nothing under this screen and it is a no-op
+            // that leaves the button dead.
+            onPress={() => (router.canDismiss() ? router.dismissAll() : router.replace('/'))}
           />
         </View>
       </SafeAreaView>
@@ -151,6 +167,10 @@ const styles = StyleSheet.create({
   mascot: { marginTop: spacing.xs },
   stats: {
     flexDirection: 'row',
+    // Wraps rather than running off both screen edges: the row is centred and
+    // nothing clips it, so three cards at a raised font scale simply left the
+    // screen. Wrapping drops COINS onto a second line instead of hiding it.
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,

@@ -1,10 +1,11 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { colors, radii, spacing, typography } from '@/shared/theme';
 
 import { Art } from './Art';
 import { PopSurface } from './PopSurface';
 import { type PopIconName, PopIcon } from './PopIcon';
+import { Text } from './Text';
 import { type ArtName } from '@/shared/art';
 
 interface PopChipProps {
@@ -50,7 +51,11 @@ export function PopChip({
       >
         {art ? <Art name={art} size={18} /> : null}
         {!art && icon ? <PopIcon name={icon} size={16} color={contentColor} /> : null}
-        <Text style={[styles.label, { color: contentColor }]}>{label}</Text>
+        {/* Single line, shrinkable: `PopSurface`'s face clips, so a chip label
+            that outgrows it loses its end rather than wrapping. */}
+        <Text numberOfLines={1} style={[styles.label, { color: contentColor }]}>
+          {label}
+        </Text>
       </PopSurface>
     </Pressable>
   );
@@ -64,5 +69,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
-  label: { ...typography.caption },
+  label: { ...typography.caption, flexShrink: 1 },
 });

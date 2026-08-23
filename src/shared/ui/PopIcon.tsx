@@ -28,6 +28,7 @@ import {
   Sparkle,
   Star,
   Storefront,
+  Trash,
   Trophy,
   User,
   X,
@@ -74,6 +75,7 @@ const ICONS = {
   sparkle: Sparkle,
   star: Star,
   streak: Fire,
+  trash: Trash,
   trophy: Trophy,
 } satisfies Record<string, ComponentType<IconProps>>;
 

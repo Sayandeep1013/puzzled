@@ -115,6 +115,15 @@ interface PuzzleBoardProps {
   /** Bundled `require` module id, or a `file://` uri for an imported photo. */
   imageSource: number | string;
   onSessionChange: (session: GameSession) => void;
+  /**
+   * Live play time in ms, read at the instant a piece is placed.
+   *
+   * The board used to keep its own `baselineElapsedMs + (Date.now() - startedAtMs)`,
+   * which is raw wall clock — it counted pauses, sheets and time spent in the
+   * background, and so disagreed with the clock on screen. The screen owns the
+   * one clock now (`use-play-clock.ts`) and the board reads it.
+   */
+  getElapsedMs: () => number;
   /** When true, unplaced border pieces are outlined in the tray (edges-first helper). */
   highlightEdges?: boolean;
 }
@@ -679,12 +688,11 @@ export function PuzzleBoard({
   session,
   imageSource,
   onSessionChange,
+  getElapsedMs,
   highlightEdges = false,
 }: PuzzleBoardProps) {
   const image = useImage(imageSource);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
-  const [startedAtMs] = useState(() => Date.now());
-  const [baselineElapsedMs] = useState(() => session.elapsedMs);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [snapFlash, setSnapFlash] = useState<{ id: number; cx: number; cy: number } | null>(null);
 
@@ -711,6 +719,7 @@ export function PuzzleBoard({
 
   const sessionRef = useRef(session);
   const onSessionChangeRef = useRef(onSessionChange);
+  const getElapsedMsRef = useRef(getElapsedMs);
   const trayIdsRef = useRef<string[]>([]);
   const looseIdsRef = useRef<string[]>([]);
   const celebratedRef = useRef(false);
@@ -721,6 +730,11 @@ export function PuzzleBoard({
   useEffect(() => {
     onSessionChangeRef.current = onSessionChange;
   }, [onSessionChange]);
+  // Read through a ref, like `onSessionChange` above, so a caller passing an
+  // inline function cannot force the (expensive) gesture memo to rebuild.
+  useEffect(() => {
+    getElapsedMsRef.current = getElapsedMs;
+  }, [getElapsedMs]);
 
   // Read the persisted Sound/Music/Haptics settings once per mount and wire
   // them into the board-fx/board-audio modules. The pause-menu toggles
@@ -1218,7 +1232,7 @@ export function PuzzleBoard({
 
       const now = new Date().toISOString();
       const raised = raisePiece(sessionRef.current, id, now);
-      const elapsedMs = baselineElapsedMs + (Date.now() - startedAtMs);
+      const elapsedMs = getElapsedMsRef.current();
       const common = { session: raised, pieceId: id, solvedPosition: solved, now, elapsedMs };
 
       const placeThreshold = snapThreshold;
@@ -1404,8 +1418,6 @@ export function PuzzleBoard({
     snapThreshold,
     // Decides the tray/board boundary a returned piece is parked on.
     boardSize.height,
-    baselineElapsedMs,
-    startedAtMs,
     beginGrab,
     resolveGrabbedId,
     settleFloatingPiece,

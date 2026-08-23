@@ -7,7 +7,13 @@ import path from 'node:path';
 
 import appJson from '../../app.json';
 
-import { backgrounds } from './tokens';
+import {
+  LOADING_BEAR_MAX,
+  loadingBearSize,
+  loadingBearStartScale,
+  nativeSplashRenderedWidth,
+} from './splash';
+import { splash } from './tokens';
 
 /**
  * Keeps the launch reading as **one** screen.
@@ -18,18 +24,34 @@ import { backgrounds } from './tokens';
  * `LoadingScreen` that replaces it. Three things have to agree for that:
  *
  * 1. **The same background**, or the handoff is a flash of the wrong sky.
- * 2. **The same bear**, centred. Android centres `windowSplashScreenAnimatedIcon`,
- *    so `LoadingScreen` centres its bear too and anchors the wordmark and dots
- *    below that centre instead of stacking them in a column that pushes the bear up.
+ * 2. **The same bear**, centred, *at the same size*. Android centres
+ *    `windowSplashScreenAnimatedIcon`, so `LoadingScreen` centres its bear too
+ *    and anchors the wordmark and dots below that centre instead of stacking
+ *    them in a column that pushes the bear up — and it opens at the native
+ *    icon's width before growing, so the size does not jump either.
  * 3. **A bear that survives the mask.** Android 12+ renders the icon on a 288dp
  *    canvas and masks it to a 192dp circle, and nothing in the plugin config turns
  *    that off — so an oversized icon loses its arm, ears and feet.
  *
- * Both failure modes here have shipped before: a bear at `imageWidth: 254` clipped
- * by the mask, and later no bear at all, which merely moved the seam rather than
- * removing it — and, because the plugin writes the drawable reference into
- * `styles.xml` unconditionally, broke the Android build outright.
+ * Three failure modes here have shipped: a bear at `imageWidth: 254` clipped by
+ * the mask; no bear at all, which merely moved the seam rather than removing it
+ * — and, because the plugin writes the drawable reference into `styles.xml`
+ * unconditionally, broke the Android build outright; and a size mismatch that
+ * this file's own test could not see, because it compared the two bears at a
+ * hardcoded 360dp screen width, which is the one width at which they nearly
+ * agreed. The width table below is the fix for that.
  */
+
+/**
+ * Screen widths in dp, spanning what this app actually runs on: a small budget
+ * phone, the long-standing 360dp baseline, a Pixel, a large Android flagship, an
+ * iPhone Pro Max, and a tablet.
+ *
+ * The old assertion used 360 alone. On the 393–412dp devices most people hold,
+ * the loading bear was 16–22% larger than the native one and the test passed
+ * anyway.
+ */
+const DEVICE_WIDTHS_DP = [320, 360, 384, 393, 412, 428, 768];
 
 const ANDROID_SPLASH_CANVAS_DP = 288;
 const ANDROID_SPLASH_SAFE_CIRCLE_DP = 192;
@@ -101,17 +123,43 @@ describe('native splash', () => {
     expect(Number(config.imageWidth)).toBeLessThanOrEqual(ANDROID_SPLASH_CANVAS_DP);
   });
 
-  it('is close in size to the loading screen bear it hands over to', () => {
-    // `LoadingScreen` renders at `min(width * 0.52, 240)` dp — about 187dp on a
-    // 360dp-wide phone. A large mismatch would make the bear visibly jump size at
-    // the handoff, which reads as two screens even when both are centred.
-    const loadingScreenBearDp = Math.min(360 * 0.52, 240);
-    const ratio = Number(config.imageWidth) / loadingScreenBearDp;
-    expect(ratio).toBeGreaterThan(0.85);
-    expect(ratio).toBeLessThan(1.15);
+  it('is the width the loading screen was built against', () => {
+    // `app.json` cannot import from `tokens.ts`, so the two are pinned to each
+    // other here instead. Changing one without the other reopens the seam.
+    expect(Number(config.imageWidth)).toBe(splash.iconWidth);
   });
 
   it('shares its background with the loading screen that replaces it', () => {
-    expect(String(config.backgroundColor).toUpperCase()).toBe(backgrounds.homeSky.toUpperCase());
+    expect(String(config.backgroundColor).toUpperCase()).toBe(splash.background.toUpperCase());
+  });
+
+  it('hands over at exactly the same bear size on every device width', () => {
+    // Not "close enough on one phone" — identical, on all of them. The loading
+    // screen opens at the native icon's width and grows from there, so its first
+    // painted frame has to measure the same as the splash window's last one
+    // whatever the screen is.
+    for (const width of DEVICE_WIDTHS_DP) {
+      const startsAt = loadingBearSize(width) * loadingBearStartScale(width);
+      // Against what Android *renders*, not against the `imageWidth` requested —
+      // the two differ by ~3%, which is a visible residual on a 175dp bear.
+      expect(startsAt).toBeCloseTo(nativeSplashRenderedWidth(), 5);
+    }
+  });
+
+  it('grows into place rather than shrinking, on every device width', () => {
+    // The bear ends larger than it starts everywhere, including the narrow
+    // phones where `width * 0.52` alone would have fallen below the icon width
+    // and turned the handoff into a visible shrink.
+    for (const width of DEVICE_WIDTHS_DP) {
+      expect(loadingBearStartScale(width)).toBeGreaterThan(0);
+      expect(loadingBearStartScale(width)).toBeLessThanOrEqual(1);
+      expect(loadingBearSize(width)).toBeGreaterThanOrEqual(nativeSplashRenderedWidth());
+    }
+  });
+
+  it('never draws the bear larger than the @3x art can carry', () => {
+    for (const width of DEVICE_WIDTHS_DP) {
+      expect(loadingBearSize(width)).toBeLessThanOrEqual(LOADING_BEAR_MAX);
+    }
   });
 });

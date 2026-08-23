@@ -105,6 +105,40 @@ export interface WalletRepository {
   history(limit?: number): Promise<LedgerEntry[]>;
 }
 
+/** One finished board, recorded the moment it was solved. */
+export interface PuzzleCompletion {
+  puzzleId: string;
+  gridSize: GridSize;
+  /** Play time for that solve, in ms. */
+  elapsedMs: number;
+  completedAt: string;
+}
+
+export type NewPuzzleCompletion = PuzzleCompletion;
+
+/**
+ * Append-only record of every puzzle ever finished.
+ *
+ * Completions used to be read off the live session row — `status === 'completed'`
+ * on the one row per (puzzle, size). That row is overwritten the moment the same
+ * board is replayed, so finishing a puzzle and starting it again *un-finished*
+ * it: "Puzzles completed" fell back to zero, the Completed tab emptied, and
+ * First Puzzle / Speed Master re-locked. The daily streak lost its mark the same
+ * way. A player replaying their favourite puzzle is the most likely player there
+ * is, so this was reachable by doing the obvious thing.
+ *
+ * Append-only for the same reason the wallet ledger is: history is a fact, and a
+ * mutable counter derived from current state cannot represent it. Replays each
+ * add a row rather than replacing one.
+ */
+export interface CompletionsRepository {
+  /** Every completion, most recent first. */
+  list(): Promise<PuzzleCompletion[]>;
+  record(entry: NewPuzzleCompletion): Promise<void>;
+  /** Remove every completion for a puzzle, e.g. when an imported photo is deleted. */
+  deleteForPuzzle(puzzleId: string): Promise<void>;
+}
+
 /**
  * Puzzle ids the player has starred. Backed by a single-column table keyed
  * on `puzzleId`, so membership doubles as the favourite flag — no separate

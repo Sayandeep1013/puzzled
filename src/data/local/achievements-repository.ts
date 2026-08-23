@@ -1,4 +1,6 @@
-import type { PuzzleProgressSummary } from '../repositories';
+import type { PuzzleCompletion } from '../repositories';
+
+import { latestPerBoard } from './completions-repository';
 
 /**
  * Data-layer description of an achievement. `icon` is a plain string and
@@ -22,7 +24,12 @@ export interface AchievementState extends AchievementDefinition {
 }
 
 interface Measured extends AchievementDefinition {
-  measure: (completed: readonly PuzzleProgressSummary[]) => number;
+  /**
+   * `boards` is one entry per distinct (puzzle, size) — what "complete N
+   * puzzles" means. `attempts` is every completion including replays, for goals
+   * about a single performance rather than a count.
+   */
+  measure: (boards: readonly PuzzleCompletion[], attempts: readonly PuzzleCompletion[]) => number;
 }
 
 const DEFINITIONS: readonly Measured[] = [
@@ -33,7 +40,7 @@ const DEFINITIONS: readonly Measured[] = [
     goal: 1,
     icon: 'check',
     tone: 'grass',
-    measure: (completed) => completed.length,
+    measure: (boards) => boards.length,
   },
   {
     key: 'collector',
@@ -42,7 +49,9 @@ const DEFINITIONS: readonly Measured[] = [
     goal: 50,
     icon: 'puzzle',
     tone: 'berry',
-    measure: (completed) => completed.length,
+    // Distinct boards. "Complete 50 puzzles" should not be satisfiable by
+    // finishing the same puzzle fifty times.
+    measure: (boards) => boards.length,
   },
   {
     key: 'hard-worker',
@@ -51,7 +60,7 @@ const DEFINITIONS: readonly Measured[] = [
     goal: 10,
     icon: 'medal',
     tone: 'blossom',
-    measure: (completed) => completed.filter((s) => s.gridSize >= 8).length,
+    measure: (boards) => boards.filter((entry) => entry.gridSize >= 8).length,
   },
   {
     key: 'speed-master',
@@ -60,23 +69,30 @@ const DEFINITIONS: readonly Measured[] = [
     goal: 1,
     icon: 'sparkle',
     tone: 'honey',
-    measure: (completed) => completed.filter((s) => s.elapsedMs < 10 * 60 * 1000).length,
+    // Every attempt, not distinct boards: this is about one fast solve, and a
+    // replay that finally beats ten minutes should count.
+    measure: (_boards, attempts) => attempts.filter((e) => e.elapsedMs < 10 * 60 * 1000).length,
   },
 ] as const;
 
 export const ACHIEVEMENTS: readonly AchievementDefinition[] = DEFINITIONS;
 
 /**
- * Pure: computes progress from completed puzzles only. In-progress sessions
- * never count. Every `current` is clamped to its `goal`, and results come
- * back one-per-definition in `ACHIEVEMENTS` order.
+ * Pure: computes progress from the completions log.
+ *
+ * It used to take progress summaries and filter for `status === 'completed'` —
+ * the *current* state of the one session row per board. Replaying a finished
+ * puzzle overwrites that row, so every achievement earned on it silently
+ * re-locked. Progress you have made cannot be undone by playing more, so this
+ * reads the append-only record instead.
+ *
+ * Every `current` is clamped to its `goal`, and results come back
+ * one-per-definition in `ACHIEVEMENTS` order.
  */
-export function deriveAchievements(
-  summaries: readonly PuzzleProgressSummary[],
-): AchievementState[] {
-  const completed = summaries.filter((s) => s.status === 'completed');
+export function deriveAchievements(completions: readonly PuzzleCompletion[]): AchievementState[] {
+  const boards = latestPerBoard(completions);
   return DEFINITIONS.map(({ measure, ...definition }) => {
-    const current = Math.min(measure(completed), definition.goal);
+    const current = Math.min(measure(boards, completions), definition.goal);
     return { ...definition, current, unlocked: current >= definition.goal };
   });
 }

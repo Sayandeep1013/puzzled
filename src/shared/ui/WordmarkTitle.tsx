@@ -1,6 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
+
+import { Text } from './Text';
 
 /**
  * The "PUZZLE JOURNEY" logo.

@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -11,7 +11,7 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopChip, PopIcon, PopSurface, useTabBarSpace } from '@/shared/ui';
+import { Art, PopButton, PopChip, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
 /**
  * `PuzzleDefinition` has no category/tag field — just id, title, image,

@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { type ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type ArtName } from '@/shared/art';
@@ -8,6 +8,7 @@ import { colors, radii, spacing, typography } from '@/shared/theme';
 
 import { Art } from './Art';
 import { PopSurface } from './PopSurface';
+import { Text } from './Text';
 
 // `Tabs.tabBar` receives BottomTabBarProps; derive it without a subpath import
 // (expo-router does not re-export the type from its top-level entry point).
@@ -101,7 +102,15 @@ export function PopTabBar({ state, navigation }: TabBarProps) {
                   unfocused tabs dim their art rather than recolouring it. */}
               {focused ? <View style={styles.pill} /> : null}
               <Art name={meta.art} size={26} style={focused ? undefined : styles.dimmed} />
-              <Text style={[styles.label, { color: focused ? meta.tint : colors.inkMuted }]}>
+              {/* One line. The bar is four `flex: 1` items inside a `PopSurface`
+                  face that clips, so a label wider than its quarter of the bar
+                  loses its end rather than wrapping. (`adjustsFontSizeToFit` is
+                  not the answer here — RN marks it iOS-only, and this bug is
+                  Android's.) */}
+              <Text
+                numberOfLines={1}
+                style={[styles.label, { color: focused ? meta.tint : colors.inkMuted }]}
+              >
                 {meta.label}
               </Text>
             </Pressable>

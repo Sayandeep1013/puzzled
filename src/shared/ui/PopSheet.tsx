@@ -1,10 +1,11 @@
 import { type ReactNode, useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { colors, radii, spacing, springs, typography } from '@/shared/theme';
 
 import { PopSurface } from './PopSurface';
+import { Text } from './Text';
 
 interface PopSheetProps {
   children: ReactNode;

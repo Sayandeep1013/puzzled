@@ -1,12 +1,20 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getProgressRepository, type PuzzleProgressSummary } from '@/data';
+import {
+  getCompletionsRepository,
+  getProgressRepository,
+  latestPerBoard,
+  type PuzzleCompletion,
+  type PuzzleProgressSummary,
+} from '@/data';
+import { formatClock } from '@/features/game/play-clock';
 import { type GridSize } from '@/game-engine';
 import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
-import { PopHeader, PopSurface } from '@/shared/ui';
+import { PopHeader, PopSurface, Text } from '@/shared/ui';
 
 interface Stats {
   /** Count of saved sessions with `status === 'completed'` (one per puzzle+size). */
@@ -35,19 +43,28 @@ const EMPTY_STATS: Stats = {
   percent: 0,
 };
 
-function computeStats(rows: PuzzleProgressSummary[]): Stats {
-  if (rows.length === 0) {
+/**
+ * `rows` is the live board state — pieces placed, time on the current attempt.
+ * `completions` is the append-only history. The two are separate because a
+ * replay overwrites the row: reading "puzzles completed" and "best time" off
+ * `rows` meant both fell back the moment a finished puzzle was started again.
+ */
+export function computeStats(
+  rows: PuzzleProgressSummary[],
+  completions: PuzzleCompletion[],
+): Stats {
+  if (rows.length === 0 && completions.length === 0) {
     return EMPTY_STATS;
   }
 
-  const completed = rows.filter((row) => row.status === 'completed').length;
+  // Distinct boards finished — replaying one is not a second puzzle completed.
+  const completed = latestPerBoard(completions).length;
   const piecesPlaced = rows.reduce((sum, row) => sum + row.lockedPieces, 0);
   const totalTimeMs = rows.reduce((sum, row) => sum + row.elapsedMs, 0);
 
-  const completedTimes = rows
-    .filter((row) => row.status === 'completed')
-    .map((row) => row.elapsedMs);
-  const bestTimeMs = completedTimes.length > 0 ? Math.min(...completedTimes) : null;
+  // Every attempt counts toward the best time, including a faster replay.
+  const bestTimeMs =
+    completions.length > 0 ? Math.min(...completions.map((entry) => entry.elapsedMs)) : null;
 
   const sizeCounts = new Map<GridSize, number>();
   for (const row of rows) {
@@ -76,19 +93,16 @@ function computeStats(rows: PuzzleProgressSummary[]): Stats {
   };
 }
 
-/** mm:ss (or h:mm:ss past an hour) — for a single completion time. */
-function formatClock(ms: number | null): string {
-  if (ms == null || !Number.isFinite(ms) || ms < 0) {
-    return '—';
-  }
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  }
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+/**
+ * mm:ss (or h:mm:ss past an hour) — for a single completion time.
+ *
+ * Delegates to the board's formatter rather than repeating it: this screen and
+ * Results are two views of the same `session.elapsedMs`, and two copies of the
+ * arithmetic is how they drifted apart in the first place. Only the "no data"
+ * case is local, since a lifetime best time can genuinely be absent.
+ */
+function formatBestTime(ms: number | null): string {
+  return ms == null || !Number.isFinite(ms) || ms < 0 ? '—' : formatClock(ms);
 }
 
 /** Coarser h/m readout — for a lifetime total across every session. */
@@ -122,7 +136,10 @@ export function StatisticsScreen() {
         )
           .listSummaries()
           .catch(() => [] as PuzzleProgressSummary[]);
-        if (active) setStats(computeStats(rows));
+        const completions = await getCompletionsRepository()
+          .then((repository) => repository.list())
+          .catch(() => [] as PuzzleCompletion[]);
+        if (active) setStats(computeStats(rows, completions));
       })();
       return () => {
         active = false;
@@ -147,9 +164,7 @@ export function StatisticsScreen() {
               </Text>
               <Text style={styles.progressHint}>Saved on this device, even offline.</Text>
             </View>
-            <View style={styles.progressRing}>
-              <Text style={styles.progressPercent}>{stats.percent}%</Text>
-            </View>
+            <ProgressRing percent={stats.percent} />
           </PopSurface>
 
           <View style={styles.grid}>
@@ -167,7 +182,7 @@ export function StatisticsScreen() {
             />
             <StatTile
               fill={accentAt(2)}
-              value={formatClock(stats.bestTimeMs)}
+              value={formatBestTime(stats.bestTimeMs)}
               label="BEST TIME"
               style={styles.tileHalf}
             />
@@ -200,6 +215,63 @@ export function StatisticsScreen() {
   );
 }
 
+/**
+ * The completion ring.
+ *
+ * It used to be a `View` with a plain 5px green `borderWidth` — a full circle,
+ * always, with the real figure printed inside it. So a player at 4% saw what
+ * looks like a completed ring next to the number 4%, which is worse than having
+ * no ring at all: the one graphical element on the screen contradicted the data
+ * beside it. `react-native-svg` is already a dependency (the board uses Skia,
+ * but this is flat vector work), so the arc can simply be drawn.
+ */
+const RING_SIZE = 72;
+const RING_STROKE = 6;
+
+function ProgressRing({ percent }: { percent: number }) {
+  const radius = (RING_SIZE - RING_STROKE) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const fraction = Math.min(1, Math.max(0, percent / 100));
+
+  return (
+    <View
+      style={styles.progressRing}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+    >
+      <Svg width={RING_SIZE} height={RING_SIZE}>
+        <Circle
+          cx={RING_SIZE / 2}
+          cy={RING_SIZE / 2}
+          r={radius}
+          fill="none"
+          // The same sunken groove `PopProgress` uses, so the two read as one system.
+          stroke="rgba(90, 62, 24, 0.14)"
+          strokeWidth={RING_STROKE}
+        />
+        {fraction > 0 ? (
+          <Circle
+            cx={RING_SIZE / 2}
+            cy={RING_SIZE / 2}
+            r={radius}
+            fill="none"
+            stroke={colors.grass}
+            strokeWidth={RING_STROKE}
+            strokeLinecap="round"
+            strokeDasharray={`${circumference * fraction} ${circumference}`}
+            // Rotate so the arc starts at twelve o'clock rather than three.
+            transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
+          />
+        ) : null}
+      </Svg>
+      <Text style={styles.progressPercent} numberOfLines={1}>
+        {percent}%
+      </Text>
+    </View>
+  );
+}
+
 function StatTile({
   fill,
   value,
@@ -214,7 +286,9 @@ function StatTile({
   return (
     <PopSurface fill={fill} radius={radii.lg} contentStyle={styles.tileFrame} style={style}>
       <View style={styles.tileBody}>
-        <Text style={styles.tileValue}>{value}</Text>
+        <Text numberOfLines={1} style={styles.tileValue}>
+          {value}
+        </Text>
         <Text style={styles.tileLabel}>{label}</Text>
       </View>
     </PopSurface>
@@ -243,15 +317,18 @@ const styles = StyleSheet.create({
   progressValue: { ...typography.heading, color: colors.ink },
   progressHint: { ...typography.caption, color: colors.inkMuted },
   progressRing: {
-    width: 72,
-    height: 72,
+    width: RING_SIZE,
+    height: RING_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 5,
-    borderColor: colors.grass,
-    borderRadius: radii.pill,
   },
-  progressPercent: { ...typography.heading, fontSize: 17, color: colors.ink },
+  // Absolute, so it centres over the SVG rather than being laid out beside it.
+  progressPercent: {
+    ...typography.heading,
+    fontSize: 17,
+    color: colors.ink,
+    position: 'absolute',
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

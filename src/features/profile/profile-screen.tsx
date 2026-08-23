@@ -1,12 +1,17 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getProgressRepository, type PuzzleProgressSummary } from '@/data';
+import {
+  getCompletionsRepository,
+  getProgressRepository,
+  latestPerBoard,
+  type PuzzleProgressSummary,
+} from '@/data';
 import { colors, radii, spacing, typography } from '@/shared/theme';
 import { type ArtName } from '@/shared/art';
-import { Art, PopIcon, PopSurface, useTabBarSpace } from '@/shared/ui';
+import { Art, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
 /**
  * There is no accounts system yet (Phase 2). Every player is shown the same
@@ -29,8 +34,17 @@ export function ProfileScreen() {
         )
           .listSummaries()
           .catch(() => [] as PuzzleProgressSummary[]);
+        // Completions come from the append-only log, not from the live session
+        // rows: replaying a finished puzzle overwrites its row, and this figure
+        // used to fall back down when it did.
+        const completions = await getCompletionsRepository()
+          .then((repository) => repository.list())
+          .catch(() => []);
         if (active) {
-          setCompleted(rows.filter((r) => r.status === 'completed').length);
+          // Distinct boards finished, so replaying one does not inflate the count
+          // the way it would on the achievements screen (where a replay is a
+          // genuine second completion).
+          setCompleted(latestPerBoard(completions).length);
           setPiecesPlaced(rows.reduce((sum, row) => sum + row.lockedPieces, 0));
         }
       })();

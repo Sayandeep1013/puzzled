@@ -90,6 +90,34 @@ export const backgrounds = {
 } as const;
 
 /**
+ * The launch screen — the one moment two separate renderers have to agree.
+ *
+ * Android draws a splash *window* from the moment the icon is tapped until React
+ * Native has a frame (measured on this app: `am start -W` reports ~1076ms), and
+ * that window cannot be removed, only dressed. So there will always be two
+ * things on screen in sequence, and the only question is whether the seam shows.
+ *
+ * It did. The native splash drew the bear at `imageWidth` while `LoadingScreen`
+ * drew it at `min(width * 0.52, 240)` — equal only on a 360dp-wide phone, which
+ * is the width the test happened to check. On the 393–412dp phones most people
+ * actually hold, the bear jumped 16–22% larger at the handoff, and a wordmark,
+ * three dots and a caption appeared around it at the same instant. Two screens.
+ *
+ * These numbers are the contract that stops that: `LoadingScreen` opens with its
+ * bear at exactly `iconWidth` on exactly `background`, so its first frame is
+ * indistinguishable from the native window's last one, and *then* animates. The
+ * native splash becomes the first frame of the loading screen rather than a
+ * different screen shown before it. `src/shared/splash.test.ts` pins both values
+ * against `app.json`, which cannot import from here.
+ */
+export const splash = {
+  /** Must equal `imageWidth` in app.json's `expo-splash-screen` config. */
+  iconWidth: 176,
+  /** Must equal `backgroundColor` in the same config. */
+  background: backgrounds.homeSky,
+} as const;
+
+/**
  * Ordered brights. Lists index into this so colour assignment is deterministic
  * across renders — a card must not change colour when the list re-sorts.
  */

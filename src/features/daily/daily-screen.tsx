@@ -1,11 +1,11 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   dateKey,
-  getProgressRepository,
+  getCompletionsRepository,
   listCatalog,
   pickDailyPuzzle,
   resolvePuzzleImageSource,
@@ -13,7 +13,7 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { colors, radii, spacing, typography } from '@/shared/theme';
-import { Art, PopButton, PopHeader, PopSurface } from '@/shared/ui';
+import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = [
@@ -59,16 +59,16 @@ async function loadDailyData(key: string): Promise<DailyData> {
 
   let playedToday = false;
   try {
-    const rows = await (await getProgressRepository()).listSummaries();
-    playedToday = rows.some(
-      (row) =>
-        row.puzzleId === puzzle.id &&
-        row.status === 'completed' &&
-        dateKey(new Date(row.updatedAt)) === key,
+    // The completions log, not the live session row. Finishing today's daily and
+    // then replaying it overwrote that row with an in-progress one, which took
+    // the day's tick — and the streak with it — straight back off the calendar.
+    const completions = await (await getCompletionsRepository()).list();
+    playedToday = completions.some(
+      (entry) => entry.puzzleId === puzzle.id && dateKey(new Date(entry.completedAt)) === key,
     );
   } catch {
-    // Progress is best-effort; an unreadable database still shows today's
-    // puzzle, it just cannot confirm a completion to build a streak on.
+    // Best-effort; an unreadable database still shows today's puzzle, it just
+    // cannot confirm a completion to build a streak on.
   }
 
   return { puzzle, playedToday };
@@ -81,14 +81,32 @@ export function DailyScreen() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [pool, setPool] = useState<PuzzleDefinition[]>([]);
 
-  // Computed once at mount — a UI-layer "now", not something the pure daily
-  // helpers (`dateKey`/`pickDailyPuzzle`/`streakFrom`) ever read themselves.
-  const today = useMemo(() => new Date(), []);
+  // A UI-layer "now" — not something the pure daily helpers
+  // (`dateKey`/`pickDailyPuzzle`/`streakFrom`) ever read themselves.
+  const [today, setToday] = useState(() => new Date());
   const todayKey = useMemo(() => dateKey(today), [today]);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
+
+      // Re-read the clock on every focus. This was captured once at mount, so an
+      // app left open overnight still called yesterday "today": the calendar
+      // highlighted the wrong cell, the pick was yesterday's, and the new day
+      // could not be started at all. Guarded on the day actually changing, so
+      // the ordinary focus does not churn state.
+      const now = new Date();
+      const nowKey = dateKey(now);
+      if (nowKey !== todayKey) {
+        setToday(now);
+        // Also drop any day the player had selected: it was an offset into the
+        // previous month's grid and means something different now.
+        setSelectedDay(null);
+        return () => {
+          active = false;
+        };
+      }
+
       loadDailyData(todayKey).then((next) => {
         if (active) setData(next);
       });
@@ -324,6 +342,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   daySelected: { backgroundColor: colors.grass },
+  /**
+   * Cancels `daySelected`'s fill under the completion coin.
+   *
+   * Applied after it, deliberately: today's cell draws `coin-check` art instead
+   * of its number once the daily is finished, and a grass disc behind that coin
+   * reads as a smudge rather than as a selection. Not dead style — removing it
+   * puts the disc back.
+   */
   dayPlayed: { backgroundColor: 'transparent' },
   dayText: { ...typography.body, color: colors.ink },
   dayTextSelected: { ...typography.bodyStrong, color: colors.onFill },
