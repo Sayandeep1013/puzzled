@@ -1,22 +1,16 @@
 import Constants from 'expo-constants';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // `DEFAULT_SETTINGS` is imported rather than restated: a local copy drifted the
 // moment a non-boolean setting was added, and the compiler cannot keep one honest.
-import {
-  DEFAULT_SETTINGS,
-  getSettingsRepository,
-  getWalletRepository,
-  type AppSettings,
-} from '@/data';
+import { DEFAULT_SETTINGS, getSettingsRepository, type AppSettings } from '@/data';
 import { radii, spacing, typography } from '@/shared/theme';
-import { useTheme, useThemeControl } from '@/shared/theme-context';
+import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
-import { THEMES, type Theme } from '@/shared/themes';
-import { Art, PopButton, PopHeader, PopSurface, PopToggle, Text } from '@/shared/ui';
+import { Art, PopHeader, PopIcon, PopSurface, PopToggle, Text } from '@/shared/ui';
 
 /** Only the boolean settings get a switch; the theme has its own picker. */
 type ToggleKey = 'sound' | 'music' | 'haptics';
@@ -35,78 +29,9 @@ const ROWS: ToggleRow[] = [
 
 export function SettingsScreen() {
   const theme = useTheme();
-  const { setThemeId } = useThemeControl();
   const styles = useStyles();
   const router = useRouter();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [coins, setCoins] = useState<number | null>(null);
-  /** Theme ids already paid for. A free theme is never in here — it needs no row. */
-  const [unlocked, setUnlocked] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-
-  const refreshWallet = useCallback(async () => {
-    try {
-      const wallet = await getWalletRepository();
-      const [balance, history] = await Promise.all([wallet.balance(), wallet.history()]);
-      setCoins(balance.coins);
-      setUnlocked(
-        new Set(
-          history
-            .filter((entry) => entry.reason === 'theme-unlock' && entry.ref != null)
-            .map((entry) => entry.ref as string),
-        ),
-      );
-    } catch {
-      // Best-effort: an unreadable wallet leaves the paid themes locked rather
-      // than handing them out.
-    }
-  }, []);
-
-  // On focus rather than on mount: coins earned on the coin page should be
-  // spendable here the moment the player comes back, without a reload.
-  useFocusEffect(
-    useCallback(() => {
-      void refreshWallet();
-    }, [refreshWallet]),
-  );
-
-  const onChooseTheme = useCallback(
-    (target: Theme) => {
-      const owned = target.price === 0 || unlocked.has(target.id);
-      if (busy) {
-        return;
-      }
-      if (owned) {
-        setThemeId(target.id);
-        return;
-      }
-      if ((coins ?? 0) < target.price) {
-        return;
-      }
-      setBusy(true);
-      void (async () => {
-        try {
-          // `recordOnce` keyed on the theme, so a double tap cannot charge twice
-          // — and re-selecting a theme you already own is always free.
-          await (
-            await getWalletRepository()
-          ).recordOnce({
-            deltaCoins: -target.price,
-            deltaHints: 0,
-            reason: 'theme-unlock',
-            ref: target.id,
-          });
-          setThemeId(target.id);
-        } catch {
-          // Best-effort; the refresh below shows whatever actually landed.
-        }
-        await refreshWallet();
-        setBusy(false);
-      })();
-    },
-    [busy, coins, unlocked, setThemeId, refreshWallet],
-  );
-
   useEffect(() => {
     let active = true;
     (async () => {
@@ -162,53 +87,23 @@ export function SettingsScreen() {
             </View>
           </PopSurface>
 
-          <Text style={styles.sectionTitle}>Theme</Text>
-          {THEMES.map((entry) => {
-            const owned = entry.price === 0 || unlocked.has(entry.id);
-            const active = entry.id === theme.id;
-            const affordable = (coins ?? 0) >= entry.price;
-            return (
-              <PopSurface
-                key={entry.id}
-                fill={theme.colors.surface}
-                radius={radii.lg}
-                contentStyle={styles.themeRow}
-              >
-                {/* A swatch of the theme's own ground and card, so the choice is
-                    visible rather than described. */}
-                <View style={[styles.swatch, { backgroundColor: entry.backgrounds.default }]}>
-                  <View style={[styles.swatchCard, { backgroundColor: entry.colors.surface }]} />
-                </View>
-                <View style={styles.rowCopy}>
-                  <Text style={styles.rowLabel}>{entry.name}</Text>
-                  <Text style={styles.rowDescription}>
-                    {active
-                      ? 'In use'
-                      : owned
-                        ? entry.description
-                        : affordable
-                          ? entry.description
-                          : `Needs ${entry.price} coins — you have ${coins ?? 0}.`}
-                  </Text>
-                </View>
-                <PopButton
-                  label={active ? 'In use' : owned ? 'Use' : `${entry.price}`}
-                  tone={active ? 'surface' : owned ? 'grass' : 'honey'}
-                  size="sm"
-                  icon={!owned ? <Art name="coin" size={18} /> : undefined}
-                  disabled={active || busy || (!owned && !affordable)}
-                  accessibilityLabel={
-                    active
-                      ? `${entry.name} theme, in use`
-                      : owned
-                        ? `Use the ${entry.name} theme`
-                        : `Unlock the ${entry.name} theme for ${entry.price} coins`
-                  }
-                  onPress={() => onChooseTheme(entry)}
-                />
-              </PopSurface>
-            );
-          })}
+          {/* A link, not the picker. A theme changes the whole app; running that
+              from inside a list of audio toggles both undersold it and hid it —
+              it has its own screen now, reachable from here and from Profile. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Themes"
+            onPress={() => router.push('/themes')}
+          >
+            <PopSurface fill={theme.colors.surface} radius={radii.lg} contentStyle={styles.linkRow}>
+              <Art name="sticker-book" size={34} />
+              <View style={styles.rowCopy}>
+                <Text style={styles.rowLabel}>Themes</Text>
+                <Text style={styles.rowDescription}>Currently using {theme.name}</Text>
+              </View>
+              <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
+            </PopSurface>
+          </Pressable>
 
           {/* Three toggles leave a tall blank tail; the mascot closes it off. */}
           <View style={styles.footerArt}>
@@ -227,8 +122,10 @@ const useStyles = createThemedStyles((theme) =>
     root: { flex: 1, backgroundColor: theme.colors.paper },
     safeArea: { flex: 1 },
     content: {
-      padding: spacing.lg,
-      gap: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
       width: '100%',
       maxWidth: 620,
       alignSelf: 'center',
@@ -252,25 +149,12 @@ const useStyles = createThemedStyles((theme) =>
       backgroundColor: 'rgba(90, 62, 24, 0.14)',
       marginHorizontal: spacing.sm,
     },
-    sectionTitle: {
-      ...typography.heading,
-      color: theme.colors.ink,
-      marginTop: spacing.sm,
-    },
-    themeRow: {
+    linkRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
       padding: spacing.md,
     },
-    swatch: {
-      width: 52,
-      height: 52,
-      borderRadius: radii.md,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    swatchCard: { width: 30, height: 22, borderRadius: 7 },
     footerArt: { alignItems: 'center', paddingTop: spacing.lg },
     version: { ...typography.caption, color: theme.colors.inkMuted, textAlign: 'center' },
   }),

@@ -233,8 +233,13 @@ export function HomeScreen() {
             <Text style={styles.coinText} numberOfLines={1}>
               {data.coins ?? '—'}
             </Text>
+            {/* Two bars, not a "+" glyph. A glyph is positioned by its font's
+                baseline and side bearings, so inside a 26pt disc it sits high and
+                slightly left however the box is aligned — and it moves again with
+                the reader's font scale. Two absolutely-centred bars cannot. */}
             <View style={styles.coinPlus}>
-              <Text style={styles.coinPlusGlyph}>+</Text>
+              <View style={styles.coinPlusBarH} />
+              <View style={styles.coinPlusBarV} />
             </View>
           </Pressable>
 
@@ -250,7 +255,11 @@ export function HomeScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={[styles.body, { paddingBottom: tabBarSpace }]}
+          // `flexGrow` so short content still fills the screen. Without it the
+          // dashboard stacked from the top and left the Continue button and the
+          // quick links stranded in mid-air with a tab bar's worth of empty
+          // meadow beneath them.
+          contentContainerStyle={[styles.body, { paddingBottom: tabBarSpace, flexGrow: 1 }]}
           showsVerticalScrollIndicator={false}
         >
           <EnterView index={0}>
@@ -449,11 +458,19 @@ const useStyles = createThemedStyles((theme) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    coinPlusGlyph: {
-      ...typography.heading,
-      fontSize: 20,
-      lineHeight: 24,
-      color: theme.colors.onFill,
+    coinPlusBarH: {
+      position: 'absolute',
+      width: 13,
+      height: 3,
+      borderRadius: 2,
+      backgroundColor: theme.colors.onFill,
+    },
+    coinPlusBarV: {
+      position: 'absolute',
+      width: 3,
+      height: 13,
+      borderRadius: 2,
+      backgroundColor: theme.colors.onFill,
     },
     gearButton: {
       width: 42,
@@ -512,7 +529,9 @@ const useStyles = createThemedStyles((theme) =>
       color: theme.colors.inkMuted,
       paddingHorizontal: 2,
     },
-    actions: { gap: spacing.md },
+    // Takes the slack `flexGrow` leaves, which seats the primary action and the
+    // quick links just above the tab bar instead of halfway up the screen.
+    actions: { gap: spacing.md, marginTop: 'auto' },
     fullWidth: { alignSelf: 'stretch' },
     quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch' },
     quickLink: { flex: 1 },

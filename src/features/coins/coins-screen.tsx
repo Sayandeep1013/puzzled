@@ -213,6 +213,15 @@ export function CoinsScreen() {
             meta="One picked puzzle a day, with a bonus for finishing it."
             onPress={() => router.push('/daily')}
           />
+          <Text style={styles.sectionTitle}>Spend them</Text>
+          <EarnRow
+            art="sticker-book"
+            title="Themes"
+            meta="Change how the whole app looks. Unlocking is permanent."
+            onPress={() => router.push('/themes')}
+          />
+
+          <Text style={styles.sectionTitle}>Earn more</Text>
           <EarnRow
             art="my-trophies"
             title="Achievements"
@@ -264,6 +273,7 @@ const useStyles = createThemedStyles((theme) =>
     safe: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
       paddingBottom: spacing.xl,
       gap: spacing.md,
       width: '100%',

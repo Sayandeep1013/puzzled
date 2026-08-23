@@ -323,8 +323,9 @@ const useStyles = createThemedStyles((theme) =>
     // one viewport height and defeat scrolling, which is the bug being fixed.
     content: {
       paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.xxl,
-      gap: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
       width: '100%',
       maxWidth: 560,
       alignSelf: 'center',

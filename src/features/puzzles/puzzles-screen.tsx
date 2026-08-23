@@ -302,12 +302,14 @@ const useStyles = createThemedStyles((theme) =>
     safe: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
       gap: spacing.md,
       width: '100%',
       maxWidth: 720,
       alignSelf: 'center',
     },
-    pageTitle: { ...typography.title, color: theme.colors.headingGreen, marginTop: spacing.sm },
+    pageTitle: { ...typography.title, color: theme.colors.headingGreen },
     // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
     // as a frame around the white row body nested inside it (the
     // `pack-screen.tsx` row / `home-screen.tsx` `PuzzleCard` pattern).

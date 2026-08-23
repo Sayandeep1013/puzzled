@@ -61,6 +61,7 @@ export function ProfileScreen() {
   const links: { art: ArtName; label: string; onPress: () => void }[] = [
     { art: 'my-trophies', label: 'Achievements', onPress: () => router.push('/achievements') },
     { art: 'coin', label: 'Coins', onPress: () => router.push('/coins') },
+    { art: 'sticker-book', label: 'Themes', onPress: () => router.push('/themes') },
     { art: 'bars', label: 'Statistics', onPress: () => router.push('/statistics') },
     { art: 'gear', label: 'Settings', onPress: () => router.push('/settings') },
   ];
@@ -129,14 +130,16 @@ const useStyles = createThemedStyles((theme) =>
     },
     pageTitle: { ...typography.title, color: theme.colors.headingGreen },
     content: {
-      padding: spacing.lg,
-      gap: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
       width: '100%',
       maxWidth: 620,
       alignSelf: 'center',
     },
     identity: { alignItems: 'center', gap: spacing.xs },
-    name: { ...typography.title, color: theme.colors.ink, marginTop: spacing.sm },
+    name: { ...typography.title, color: theme.colors.ink },
     statRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg },
     stat: { flex: 1, alignItems: 'center', gap: 4 },
     statDivider: { width: 1, height: 44, backgroundColor: 'rgba(90, 62, 24, 0.14)' },

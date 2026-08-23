@@ -136,6 +136,7 @@ function ThemedStack() {
       <Stack.Screen name="pack/[packId]" />
       <Stack.Screen name="daily" />
       <Stack.Screen name="coins" />
+      <Stack.Screen name="themes" />
       <Stack.Screen name="achievements" />
       <Stack.Screen name="statistics" />
       <Stack.Screen name="settings" />

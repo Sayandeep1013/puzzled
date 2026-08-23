@@ -503,11 +503,13 @@ const useStyles = createThemedStyles((theme) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: theme.colors.paper },
     safe: { flex: 1 },
+    // Spacing lives on the row, not on the title. The title used to carry its
+    // own `marginTop` and `paddingHorizontal` inside a centred row, so it sat
+    // eight points lower than the button beside it — which read as the button
+    // being too high — and the row's padding was left-heavy as a result.
     pageTitle: {
       ...typography.title,
       color: theme.colors.headingGreen,
-      marginTop: spacing.sm,
-      paddingHorizontal: spacing.lg,
       // Gives way to the Add button beside it rather than pushing it off the row.
       flexShrink: 1,
     },
@@ -515,7 +517,9 @@ const useStyles = createThemedStyles((theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingRight: spacing.lg,
+      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      marginTop: spacing.sm,
     },
     addButton: {
       flexDirection: 'row',
@@ -543,8 +547,9 @@ const useStyles = createThemedStyles((theme) =>
     /** Takes the rest of the column, so the list scrolls within it rather than being cut off. */
     list: { flex: 1 },
     content: {
-      padding: spacing.lg,
-      paddingTop: 0,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
       gap: spacing.md,
       width: '100%',
       maxWidth: 720,

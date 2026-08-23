@@ -173,6 +173,7 @@ const useStyles = createThemedStyles((theme) =>
     safe: { flex: 1 },
     content: {
       paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
       paddingBottom: spacing.xl,
       gap: spacing.md,
       width: '100%',

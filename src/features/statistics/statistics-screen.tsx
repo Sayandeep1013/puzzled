@@ -311,8 +311,10 @@ const useStyles = createThemedStyles((theme) =>
     root: { flex: 1, backgroundColor: theme.colors.paper },
     safeArea: { flex: 1 },
     content: {
-      padding: spacing.lg,
-      gap: spacing.lg,
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
       width: '100%',
       maxWidth: 620,
       alignSelf: 'center',
