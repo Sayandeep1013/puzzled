@@ -73,6 +73,17 @@ function createClockStore(): {
 }
 
 export interface PlayClockHandle {
+  /**
+   * Whether time is actually accruing — the caller's `running` *and* the app
+   * being foregrounded.
+   *
+   * Exposed because the caller cannot derive it: foregroundedness is tracked in
+   * here. A caller that persists "when the clock stops" has to watch this, not
+   * its own `running`, or backgrounding the app stops the clock without ever
+   * banking the time — which is exactly how the first version of this lost
+   * every minute between the last piece placed and the app being swiped away.
+   */
+  active: boolean;
   /** Whole milliseconds played. Changes about once per displayed second. */
   elapsedMs: number;
   /**
@@ -145,5 +156,5 @@ export function usePlayClock(running: boolean): PlayClockHandle {
   // store never changes identity), which matters downstream: the board's gesture
   // memo takes `getElapsedMs` and is expensive to rebuild — see
   // `puzzle-board.tsx`'s note about Skia objects in `runOnJS` closures.
-  return { elapsedMs, getElapsedMs, reset };
+  return { active, elapsedMs, getElapsedMs, reset };
 }

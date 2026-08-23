@@ -131,7 +131,12 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
    * persisted one counted pauses, sheets and background time alike.
    */
   const running = playable != null && !complete && focused && overlay !== 'pause';
-  const { elapsedMs, getElapsedMs, reset: resetClock } = usePlayClock(running);
+  const {
+    active: clockRunning,
+    elapsedMs,
+    getElapsedMs,
+    reset: resetClock,
+  } = usePlayClock(running);
 
   // Debounced write-behind: dragging produces a session object per drop.
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -318,17 +323,23 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
    * Write once more whenever the clock stops — paused, backgrounded, or this
    * screen pushed under another — and once on the way out.
    *
+   * Keyed on the clock's own `active`, not on `running`: `running` says nothing
+   * about the app being foregrounded, so keying on it meant backgrounding
+   * stopped the clock without banking it, and anything since the last placement
+   * was lost when the app was swiped away. Caught on device — a board run to
+   * 01:07 came back at 00:20.
+   *
    * The debounce above cancels its pending timer on cleanup, so leaving the
    * board inside the 400ms window used to discard that write entirely: place the
    * last piece you have time for, hit back, and it was never saved. These are
    * the only writes that are not debounced.
    */
   useEffect(() => {
-    if (running) {
+    if (clockRunning) {
       return;
     }
     persist();
-  }, [running, persist]);
+  }, [clockRunning, persist]);
 
   useEffect(() => persist, [persist]);
 
