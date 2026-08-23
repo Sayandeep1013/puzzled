@@ -1,92 +1,57 @@
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
-import { colors, typography } from '@/shared/theme';
-
-import { Text } from './Text';
+import { getArtModule } from '@/shared/art';
 
 /**
- * The "PUZZLED" logo.
+ * The "PUZZLE JOURNEY" logo.
  *
- * It used to read "PUZZLE JOURNEY", which is not the name of the app. The store
- * listing, the launcher icon and the window title all say Puzzled, so the one
- * place the name is actually drawn said something else — paired with the bear
- * above it on Home, this is the app's lockup, and it should agree with itself.
+ * Real art now. This was built letter by letter from `<Text>` — seven coloured
+ * nodes, each drawn twice to fake an outline React Native cannot stroke, arched
+ * by per-letter rotation — because the team had not delivered a wordmark. They
+ * have (`puzzle assets/new mockup and assets.svg`), so the reconstruction goes.
  *
- * Built from text rather than art because the team has not delivered a wordmark
- * (see `assets/art-source/README.md`). Keeping it behind this component means
- * swapping in real art later touches one file, not the Home screen.
+ * That is not just tidier, it removes a whole class of bug. The text version
+ * scaled with the reader's font setting, so the lockup grew past the screen
+ * width at large accessibility sizes; its letters were laid out by a formula
+ * that had to be kept in sync with the word; and the "cream border" the mockup
+ * shows was approximated with a wide white `textShadow`, which is a blur, not a
+ * border. An image has none of those problems and matches the mockup exactly.
  *
- * Three things make it read as a logo rather than a heading, all of which the
- * mockup does and a plain `<Text>` cannot:
- *
- * 1. **An arch.** Each letter is rotated and lifted along a curve, so the word
- *    bows upward in the middle instead of sitting on a flat baseline.
- * 2. **A thick outline.** React Native has no text stroke, and a single
- *    `textShadow` is too thin to read as one. Each letter is therefore drawn
- *    twice: a white copy behind with a wide shadow radius acts as the outline,
- *    and the coloured copy sits on top carrying its own drop shadow.
- * 3. **A colour per letter**, from an explicit list rather than `accentRamp` —
- *    the logo wants a specific playful sequence, not the palette's list order.
+ * The aspect ratio is baked from the trimmed asset (1317x607) so the lockup
+ * reserves the right height before the image decodes — without it the content
+ * below jumps once the art loads.
  */
-const WORD = 'PUZZLED';
 
-/** One bright per letter of PUZZLED, chosen to alternate warm and cool. */
-export const LETTER_COLORS = [
-  colors.cherry,
-  colors.apricot,
-  colors.honey,
-  colors.grass,
-  colors.sky,
-  colors.berry,
-  colors.blossom,
-];
+/** Width of the lockup at `scale` 1, in points. */
+const BASE_WIDTH = 300;
+/** From the trimmed source art; keep in step if the asset is re-exported. */
+const ASPECT = 1317 / 607;
 
-/** Degrees the outermost letters tilt; the middle stays upright. */
-const MAX_TILT = 13;
-/** Points the outermost letters drop below the centre, forming the arch. */
-const ARCH_DROP = 17;
+interface WordmarkTitleProps {
+  /** Multiplier on the lockup's width. The height follows the aspect ratio. */
+  scale?: number;
+}
 
-export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
-  const letters = [...WORD];
-  const lastIndex = letters.length - 1;
-  const fontSize = 62 * scale;
+export function WordmarkTitle({ scale = 1 }: WordmarkTitleProps) {
+  const width = BASE_WIDTH * scale;
 
   return (
-    <View style={styles.wrap} accessible accessibilityRole="header" accessibilityLabel="Puzzled">
-      <View style={styles.row}>
-        {letters.map((letter, index) => {
-          // -1 at the left edge, 0 in the middle, +1 at the right edge.
-          const t = lastIndex === 0 ? 0 : (index / lastIndex) * 2 - 1;
-          const tilt = t * MAX_TILT;
-          // Squared so the drop is gentle near the middle and steep at the ends.
-          const drop = t * t * ARCH_DROP * scale;
-
-          return (
-            <View
-              key={`${letter}-${index}`}
-              testID={`wordmark-letter-${index}`}
-              style={{
-                transform: [{ translateY: drop }, { rotateZ: `${tilt}deg` }],
-              }}
-            >
-              {/* Outline layer: white, blurred wide, sitting exactly behind.
-                  `allowFontScaling={false}` on both copies: this is a logo, not
-                  copy. Seven letters laid out at a reader's font scale would run
-                  off a phone's width, and a logo that changes size with the
-                  system text setting is not a logo. */}
-              <Text allowFontScaling={false} style={[styles.letter, styles.outline, { fontSize }]}>
-                {letter}
-              </Text>
-              <Text
-                allowFontScaling={false}
-                style={[styles.letter, { fontSize, color: LETTER_COLORS[index] }]}
-              >
-                {letter}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+    <View
+      style={styles.wrap}
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel="Puzzle Journey"
+      testID="wordmark"
+    >
+      <Image
+        source={getArtModule('wordmark')}
+        style={{ width, height: width / ASPECT }}
+        // `contain`, so the lockup is never cropped or stretched at any scale.
+        resizeMode="contain"
+        // The View above carries the label; the image itself is decorative, or
+        // screen readers announce the logo twice.
+        accessible={false}
+      />
     </View>
   );
 }
@@ -95,33 +60,11 @@ const styles = StyleSheet.create({
   /**
    * The lockup sits directly on whatever is behind it — no panel.
    *
-   * It used to carry a translucent white rounded panel with a white border, on the
-   * theory that the letters needed something holding them together over a photographic
-   * background. On the meadow it read as a frosted box pasted over the art, and the
-   * hard border cut the sky in half. The letters do not need it: each is already drawn
-   * twice, with a wide white outline copy behind that separates it from any ground.
+   * It used to carry a translucent white rounded panel, on the theory that the
+   * letters needed something holding them together over a photographic
+   * background. On the meadow it read as a frosted box pasted over the art. The
+   * art carries its own cream border, which is what actually separates it from
+   * any ground.
    */
   wrap: { alignItems: 'center' },
-  // `flex-end` so the arch's dropped outer letters hang below a shared top edge
-  // rather than each letter centring on its own box.
-  row: { flexDirection: 'row', alignItems: 'flex-end' },
-  letter: {
-    fontFamily: typography.hero.fontFamily,
-    // Wider: the letters previously sat almost touching, which read as a word
-    // rather than as a logo.
-    letterSpacing: 2,
-    // A warm drop shadow under the colour gives the letters weight.
-    textShadowColor: 'rgba(58, 43, 26, 0.35)',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 3,
-  },
-  outline: {
-    position: 'absolute',
-    color: colors.onFill,
-    textShadowColor: colors.onFill,
-    textShadowOffset: { width: 0, height: 0 },
-    // Wide enough to read as a sticker outline once the coloured glyph covers
-    // the middle. A single thin shadow is what made the old version look flat.
-    textShadowRadius: 12,
-  },
 });

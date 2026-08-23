@@ -6,10 +6,12 @@ import { Art } from './Art';
 
 describe('art registry', () => {
   it('covers the whole delivered set', () => {
-    // 68 SVGs shipped in assets/art-source. If this drops, someone added art
-    // without registering it — `<Art name="…">` would then be a type error at
-    // the call site, which is the failure mode this registry exists to give.
-    expect(ART_NAMES).toHaveLength(68);
+    // 68 SVGs from assets/art-source, plus the PUZZLE JOURNEY wordmark, which
+    // arrives as a PNG in the mockup rather than as a source SVG. If this drops,
+    // someone added art without registering it — `<Art name="…">` would then be
+    // a type error at the call site, which is the failure mode this registry
+    // exists to give.
+    expect(ART_NAMES).toHaveLength(69);
   });
 
   it('resolves every registered name to a bundled module', () => {

@@ -82,6 +82,7 @@ const ART = {
   'sticker-book': require('../../assets/art/sticker-book.png'),
   'watch-ad': require('../../assets/art/watch-ad.png'),
   'winking-duck': require('../../assets/art/winking-duck.png'),
+  wordmark: require('../../assets/art/wordmark.png'),
 } as const;
 
 /** Every art name the app can draw. A typo is a type error, not a blank box. */
