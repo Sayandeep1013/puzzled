@@ -1,11 +1,16 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { colors, typography } from '@/shared/theme';
 
 import { Text } from './Text';
 
 /**
- * The "PUZZLE JOURNEY" logo.
+ * The "PUZZLED" logo.
+ *
+ * It used to read "PUZZLE JOURNEY", which is not the name of the app. The store
+ * listing, the launcher icon and the window title all say Puzzled, so the one
+ * place the name is actually drawn said something else — paired with the bear
+ * above it on Home, this is the app's lockup, and it should agree with itself.
  *
  * Built from text rather than art because the team has not delivered a wordmark
  * (see `assets/art-source/README.md`). Keeping it behind this component means
@@ -23,15 +28,15 @@ import { Text } from './Text';
  * 3. **A colour per letter**, from an explicit list rather than `accentRamp` —
  *    the logo wants a specific playful sequence, not the palette's list order.
  */
-const TOP = 'PUZZLE';
-const BOTTOM = 'JOURNEY';
+const WORD = 'PUZZLED';
 
-/** One bright per letter of PUZZLE, chosen to alternate warm and cool. */
+/** One bright per letter of PUZZLED, chosen to alternate warm and cool. */
 export const LETTER_COLORS = [
   colors.cherry,
   colors.apricot,
   colors.honey,
   colors.grass,
+  colors.sky,
   colors.berry,
   colors.blossom,
 ];
@@ -42,17 +47,12 @@ const MAX_TILT = 13;
 const ARCH_DROP = 17;
 
 export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
-  const letters = [...TOP];
+  const letters = [...WORD];
   const lastIndex = letters.length - 1;
   const fontSize = 62 * scale;
 
   return (
-    <View
-      style={styles.wrap}
-      accessible
-      accessibilityRole="header"
-      accessibilityLabel="Puzzle Journey"
-    >
+    <View style={styles.wrap} accessible accessibilityRole="header" accessibilityLabel="Puzzled">
       <View style={styles.row}>
         {letters.map((letter, index) => {
           // -1 at the left edge, 0 in the middle, +1 at the right edge.
@@ -69,21 +69,23 @@ export function WordmarkTitle({ scale = 1 }: { scale?: number }) {
                 transform: [{ translateY: drop }, { rotateZ: `${tilt}deg` }],
               }}
             >
-              {/* Outline layer: white, blurred wide, sitting exactly behind. */}
-              <Text style={[styles.letter, styles.outline, { fontSize }]}>{letter}</Text>
-              <Text style={[styles.letter, { fontSize, color: LETTER_COLORS[index] }]}>
+              {/* Outline layer: white, blurred wide, sitting exactly behind.
+                  `allowFontScaling={false}` on both copies: this is a logo, not
+                  copy. Seven letters laid out at a reader's font scale would run
+                  off a phone's width, and a logo that changes size with the
+                  system text setting is not a logo. */}
+              <Text allowFontScaling={false} style={[styles.letter, styles.outline, { fontSize }]}>
+                {letter}
+              </Text>
+              <Text
+                allowFontScaling={false}
+                style={[styles.letter, { fontSize, color: LETTER_COLORS[index] }]}
+              >
                 {letter}
               </Text>
             </View>
           );
         })}
-      </View>
-
-      {/* Positive margin, not negative: PUZZLE and JOURNEY were cramped together.
-          The arch already drops the outer letters, so the gap is measured from
-          the lowest of them. */}
-      <View testID="wordmark-badge" style={[styles.badge, { marginTop: 10 * scale }]}>
-        <Text style={[styles.badgeText, { fontSize: 27 * scale }]}>{BOTTOM}</Text>
       </View>
     </View>
   );
@@ -121,25 +123,5 @@ const styles = StyleSheet.create({
     // Wide enough to read as a sticker outline once the coloured glyph covers
     // the middle. A single thin shadow is what made the old version look flat.
     textShadowRadius: 12,
-  },
-  badge: {
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: 8,
-    borderRadius: radii.pill,
-    backgroundColor: colors.sky,
-    // The mockup rings its badge in white, which separates it from the sky.
-    borderWidth: 3,
-    borderColor: colors.onFill,
-    boxShadow: shadow.raised,
-    // A slight counter-tilt against the arch keeps the pair from looking rigid.
-    transform: [{ rotateZ: '-2deg' }],
-  },
-  badgeText: {
-    fontFamily: typography.hero.fontFamily,
-    color: colors.onFill,
-    letterSpacing: 6,
-    textShadowColor: 'rgba(0, 73, 143, 0.45)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 2,
   },
 });

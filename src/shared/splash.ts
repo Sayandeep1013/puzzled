@@ -10,12 +10,6 @@ import { splash } from './tokens';
  */
 
 /**
- * Largest the bear is ever drawn, in points — the size the @3x art can carry
- * without softening.
- */
-export const LOADING_BEAR_MAX = 240;
-
-/**
  * What Android actually draws, as a multiple of the `imageWidth` requested in
  * `app.json`.
  *
@@ -51,35 +45,29 @@ export function nativeSplashRenderedWidth(): number {
   return splash.iconWidth * NATIVE_RENDER_FACTOR;
 }
 
-/** Fraction of the screen width the bear aims for. */
-const LOADING_BEAR_WIDTH_FRACTION = 0.52;
-
 /**
- * Bear size on the loading screen, in points.
+ * Bear size on the loading screen, in points: exactly what the native splash
+ * draws, on every screen.
  *
- * Floored at the native splash's icon width, not merely capped at
- * `LOADING_BEAR_MAX`. Without the floor, a phone narrow enough that
- * `width * 0.52` falls below `splash.iconWidth` would draw a bear *smaller*
- * than the one the native window just showed, and the handoff would be a visible
- * shrink rather than the growth it is everywhere else. The floor costs nothing —
- * on a 320dp phone it makes the bear 55% of the width instead of 52%.
- */
-export function loadingBearSize(screenWidth: number): number {
-  return Math.max(
-    nativeSplashRenderedWidth(),
-    Math.min(screenWidth * LOADING_BEAR_WIDTH_FRACTION, LOADING_BEAR_MAX),
-  );
-}
-
-/**
- * Scale the loading screen's bear starts at, so its first painted frame is the
- * same size as the native splash's last one.
+ * Not a fraction of the screen, and **not animated**. Two attempts tried to have
+ * the loading screen grow the bear from the splash's size to a larger one, and
+ * both failed on device for the same reason — the growth was over before anyone
+ * could see it:
  *
- * `loadingBearSize(w) * loadingBearStartScale(w)` is `nativeSplashRenderedWidth()`
- * at every width, by construction — which is the property `splash.test.ts` pins,
- * and the one the old hardcoded `imageWidth`/`min(360 * 0.52, 240)` comparison
- * only had at 360dp.
+ * 1. Started on mount. But `LoadingScreen` mounts behind the native splash, so
+ *    the spring ran while hidden. Measured: native bear 149.0dp, first visible
+ *    loading frame 179.8dp, 30ms later, already decaying from the overshoot.
+ * 2. Started when `SplashScreen.hideAsync()` resolved. No better — that promise
+ *    resolves when the *call* completes, not when Android has finished its own
+ *    splash exit animation, so the spring still ran against a window that was
+ *    still on screen. A 30ms-resolution phase sweep across nine cold starts
+ *    never once caught the bear below 176dp, and cold-start timing wandered
+ *    +/-100ms run to run, which is why no fixed delay would have fixed it either.
+ *
+ * The lesson is that the teardown of a system-owned window is not an event this
+ * app can synchronise an animation to. So the size stops changing: the bear is
+ * the same size before and after, and the handoff is seamless by construction
+ * rather than by timing. Aliveness comes from the bob and from the wordmark and
+ * dots rising in beneath it, neither of which can produce a jump.
  */
-export function loadingBearStartScale(screenWidth: number): number {
-  return nativeSplashRenderedWidth() / loadingBearSize(screenWidth);
-}
+export const LOADING_BEAR_SIZE = nativeSplashRenderedWidth();

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -12,7 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { loadingBearSize, loadingBearStartScale } from '@/shared/splash';
+import { LOADING_BEAR_SIZE } from '@/shared/splash';
 import { colors, motion, splash, springs, typography } from '@/shared/theme';
 
 import { Art } from './Art';
@@ -84,11 +84,10 @@ interface LoadingScreenProps {
 }
 
 export function LoadingScreen({ onDone, ready = true, revealed = true }: LoadingScreenProps) {
-  const { width } = useWindowDimensions();
-  // Both from `@/shared/splash`, so the sizes the handoff depends on are testable
-  // at widths other than the one an emulator happens to open at.
-  const bearSize = loadingBearSize(width);
-  const startScale = loadingBearStartScale(width);
+  // Exactly the size the native splash draws, on every screen — see
+  // `@/shared/splash`. The bear does not change size at the handoff, because an
+  // animation cannot be reliably synchronised to a system window's teardown.
+  const bearSize = LOADING_BEAR_SIZE;
 
   const intro = useSharedValue(0);
   const breathe = useSharedValue(0);
@@ -133,27 +132,20 @@ export function LoadingScreen({ onDone, ready = true, revealed = true }: Loading
   const overlayStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
 
   /*
-   * The bear does not *appear* — it grows.
+   * The bear neither appears nor grows — it is already on screen, at this exact
+   * size, drawn by the native splash window.
    *
-   * It is already on screen when this mounts, drawn by the native splash window
-   * at `splash.iconWidth`. So there is no entrance to play: starting anywhere
-   * other than that size, or moving it, makes the handoff read as a second
-   * screen arriving. It starts exactly where the splash left it and swells to
-   * full size, which is a continuation rather than a replacement.
-   *
-   * The bob is scaled with it, so the breathing does not visibly change
-   * amplitude as the bear grows.
+   * It only breathes. The bob starts from zero offset and eases in over
+   * `motion.idle`, so even if `revealed` fires slightly before Android has
+   * finished removing its splash, the bear is within a point of the splash's
+   * centre line when it becomes visible.
    */
-  const bearStyle = useAnimatedStyle(() => {
-    const grow = startScale + (1 - startScale) * intro.value;
-    return {
-      transform: [
-        { translateY: -breathe.value * BOB_DISTANCE * grow },
-        { rotateZ: `${(breathe.value * 2 - 1) * SWAY_DEGREES}deg` },
-        { scale: grow },
-      ],
-    };
-  });
+  const bearStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -breathe.value * BOB_DISTANCE },
+      { rotateZ: `${(breathe.value * 2 - 1) * SWAY_DEGREES}deg` },
+    ],
+  }));
 
   const wordmarkStyle = useAnimatedStyle(() => ({
     opacity: intro.value,

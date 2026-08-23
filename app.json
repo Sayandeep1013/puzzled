@@ -9,8 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.puzzled.app",
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.puzzled.app"
     },
     "android": {
       "package": "com.puzzled.app",

@@ -7,12 +7,7 @@ import path from 'node:path';
 
 import appJson from '../../app.json';
 
-import {
-  LOADING_BEAR_MAX,
-  loadingBearSize,
-  loadingBearStartScale,
-  nativeSplashRenderedWidth,
-} from './splash';
+import { LOADING_BEAR_SIZE, nativeSplashRenderedWidth } from './splash';
 import { splash } from './tokens';
 
 /**
@@ -133,33 +128,28 @@ describe('native splash', () => {
     expect(String(config.backgroundColor).toUpperCase()).toBe(splash.background.toUpperCase());
   });
 
-  it('hands over at exactly the same bear size on every device width', () => {
-    // Not "close enough on one phone" — identical, on all of them. The loading
-    // screen opens at the native icon's width and grows from there, so its first
-    // painted frame has to measure the same as the splash window's last one
-    // whatever the screen is.
-    for (const width of DEVICE_WIDTHS_DP) {
-      const startsAt = loadingBearSize(width) * loadingBearStartScale(width);
-      // Against what Android *renders*, not against the `imageWidth` requested —
-      // the two differ by ~3%, which is a visible residual on a 175dp bear.
-      expect(startsAt).toBeCloseTo(nativeSplashRenderedWidth(), 5);
-    }
+  it('draws the bear at exactly the size Android renders the splash icon', () => {
+    // Against what Android *renders*, not against the `imageWidth` requested —
+    // the two differ by ~3%, which is a visible residual on a 175dp bear.
+    expect(LOADING_BEAR_SIZE).toBeCloseTo(nativeSplashRenderedWidth(), 5);
   });
 
-  it('grows into place rather than shrinking, on every device width', () => {
-    // The bear ends larger than it starts everywhere, including the narrow
-    // phones where `width * 0.52` alone would have fallen below the icon width
-    // and turned the handoff into a visible shrink.
-    for (const width of DEVICE_WIDTHS_DP) {
-      expect(loadingBearStartScale(width)).toBeGreaterThan(0);
-      expect(loadingBearStartScale(width)).toBeLessThanOrEqual(1);
-      expect(loadingBearSize(width)).toBeGreaterThanOrEqual(nativeSplashRenderedWidth());
-    }
+  it('is one size, not a function of the screen', () => {
+    // The size must not depend on the device, because the thing it has to match
+    // does not: Android draws its splash icon at a fixed dp size. A
+    // screen-relative bear is what put a 17.8% jump in the handoff on a 411dp
+    // phone while the 360dp test case looked fine.
+    expect(typeof LOADING_BEAR_SIZE).toBe('number');
+    expect(DEVICE_WIDTHS_DP.every(() => LOADING_BEAR_SIZE === nativeSplashRenderedWidth())).toBe(
+      true,
+    );
   });
 
-  it('never draws the bear larger than the @3x art can carry', () => {
-    for (const width of DEVICE_WIDTHS_DP) {
-      expect(loadingBearSize(width)).toBeLessThanOrEqual(LOADING_BEAR_MAX);
-    }
+  it('stays inside the mask the native icon is cropped to', () => {
+    // Both bears are the same art at the same size, so whatever survives the
+    // 192dp circular mask on the splash survives here too.
+    expect(LOADING_BEAR_SIZE * CONTENT_DIAMETER_RATIO).toBeLessThanOrEqual(
+      ANDROID_SPLASH_SAFE_CIRCLE_DP,
+    );
   });
 });
