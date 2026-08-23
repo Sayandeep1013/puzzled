@@ -17,21 +17,7 @@ import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
-const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+import { buildMonthGrid, MONTHS, WEEKDAYS } from './calendar';
 
 interface DailyData {
   /** Today's pick, deterministic from `pickDailyPuzzle` — never `bundled[0]`. */
@@ -125,17 +111,7 @@ export function DailyScreen() {
     }, [todayKey]),
   );
 
-  const calendar = useMemo(() => {
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    const day = today.getDate();
-    const firstWeekday = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const cells: (number | null)[] = [];
-    for (let i = 0; i < firstWeekday; i += 1) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d += 1) cells.push(d);
-    return { label: `${MONTHS[month]} ${year}`, cells, today: day };
-  }, [today]);
+  const calendar = useMemo(() => buildMonthGrid(today), [today]);
 
   /**
    * There is no daily-results history store yet (Phase 3), so this cannot
@@ -192,52 +168,56 @@ export function DailyScreen() {
                 ))}
               </View>
               <View style={styles.daysGrid}>
-                {calendar.cells.map((day, i) => {
-                  if (day == null) {
-                    return <View key={i} style={styles.dayCell} />;
-                  }
+                {calendar.weeks.map((week, w) => (
+                  <View key={w} style={styles.weekCells}>
+                    {week.map((day, i) => {
+                      if (day == null) {
+                        return <View key={i} style={styles.dayCell} />;
+                      }
 
-                  const isToday = day === calendar.today;
-                  const isFuture = day > calendar.today;
-                  const isSelected = day === viewing.day;
+                      const isToday = day === calendar.today;
+                      const isFuture = day > calendar.today;
+                      const isSelected = day === viewing.day;
 
-                  return (
-                    <View key={i} style={styles.dayCell}>
-                      <Pressable
-                        // Future days have no pick to show, so they stay inert
-                        // rather than pretending to be tappable.
-                        disabled={isFuture}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: isSelected, disabled: isFuture }}
-                        accessibilityLabel={
-                          isFuture
-                            ? `${MONTHS[today.getMonth()]} ${day}, not yet unlocked`
-                            : `${MONTHS[today.getMonth()]} ${day}`
-                        }
-                        onPress={() => setSelectedDay(day)}
-                        style={[
-                          styles.dayHit,
-                          isSelected && styles.daySelected,
-                          isToday && data.playedToday && styles.dayPlayed,
-                        ]}
-                      >
-                        {isToday && data.playedToday ? (
-                          <Art name="coin-check" size={22} />
-                        ) : (
-                          <Text
+                      return (
+                        <View key={i} style={styles.dayCell}>
+                          <Pressable
+                            // Future days have no pick to show, so they stay inert
+                            // rather than pretending to be tappable.
+                            disabled={isFuture}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: isSelected, disabled: isFuture }}
+                            accessibilityLabel={
+                              isFuture
+                                ? `${MONTHS[today.getMonth()]} ${day}, not yet unlocked`
+                                : `${MONTHS[today.getMonth()]} ${day}`
+                            }
+                            onPress={() => setSelectedDay(day)}
                             style={[
-                              styles.dayText,
-                              isSelected && styles.dayTextSelected,
-                              isFuture && styles.dayTextFuture,
+                              styles.dayHit,
+                              isSelected && styles.daySelected,
+                              isToday && data.playedToday && styles.dayPlayed,
                             ]}
                           >
-                            {day}
-                          </Text>
-                        )}
-                      </Pressable>
-                    </View>
-                  );
-                })}
+                            {isToday && data.playedToday ? (
+                              <Art name="coin-check" size={22} />
+                            ) : (
+                              <Text
+                                style={[
+                                  styles.dayText,
+                                  isSelected && styles.dayTextSelected,
+                                  isFuture && styles.dayTextFuture,
+                                ]}
+                              >
+                                {day}
+                              </Text>
+                            )}
+                          </Pressable>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
               </View>
               <Text style={styles.calendarHint}>Tap any day up to today to see its puzzle.</Text>
             </View>
@@ -341,9 +321,12 @@ const useStyles = createThemedStyles((theme) =>
       flex: 1,
       textAlign: 'center',
     },
-    daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+    daysGrid: { alignSelf: 'stretch' },
+    weekCells: { flexDirection: 'row' },
     dayCell: {
-      width: `${100 / 7}%`,
+      // `flex: 1`, like the weekday headers above — the one layout in this card
+      // that always divided into seven.
+      flex: 1,
       aspectRatio: 1,
       alignItems: 'center',
       justifyContent: 'center',
