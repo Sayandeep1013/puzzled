@@ -2,7 +2,9 @@ import { useEffect } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { colors, radii, shadow, springs } from '@/shared/theme';
+import { radii, shadow, springs } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 
 import { PopSurface } from './PopSurface';
 
@@ -20,6 +22,8 @@ interface PopToggleProps {
 
 /** A pill switch: the knob overshoots into place on flip. */
 export function PopToggle({ value, onChange, accessibilityLabel }: PopToggleProps) {
+  const theme = useTheme();
+  const styles = useStyles();
   const on = useSharedValue(value ? 1 : 0);
 
   useEffect(() => {
@@ -42,7 +46,7 @@ export function PopToggle({ value, onChange, accessibilityLabel }: PopToggleProp
         elevation="pressed"
         // Off reads as an empty groove rather than a card, so it takes the
         // muted ground colour instead of the cream surface.
-        fill={value ? colors.grass : colors.locked}
+        fill={value ? theme.colors.grass : theme.colors.locked}
         contentStyle={styles.track}
       >
         <Animated.View style={[styles.knob, knobStyle]} />
@@ -51,18 +55,20 @@ export function PopToggle({ value, onChange, accessibilityLabel }: PopToggleProp
   );
 }
 
-const styles = StyleSheet.create({
-  track: {
-    width: TRACK_WIDTH,
-    height: TRACK_HEIGHT,
-    justifyContent: 'center',
-    paddingHorizontal: KNOB_PAD,
-  },
-  knob: {
-    width: KNOB_SIZE,
-    height: KNOB_SIZE,
-    borderRadius: radii.pill,
-    backgroundColor: colors.white,
-    boxShadow: shadow.pressed,
-  },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    track: {
+      width: TRACK_WIDTH,
+      height: TRACK_HEIGHT,
+      justifyContent: 'center',
+      paddingHorizontal: KNOB_PAD,
+    },
+    knob: {
+      width: KNOB_SIZE,
+      height: KNOB_SIZE,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.white,
+      boxShadow: shadow.pressed,
+    },
+  }),
+);

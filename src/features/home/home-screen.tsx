@@ -14,7 +14,9 @@ import {
 } from '@/data';
 import { type GridSize, type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
-import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { radii, shadow, spacing, typography } from '@/shared/theme';
 import {
   Art,
   EnterView,
@@ -25,8 +27,6 @@ import {
   useTabBarSpace,
   WordmarkTitle,
 } from '@/shared/ui';
-
-const HOME_BACKGROUND = require('../../../assets/backgrounds/home.png');
 
 /** Coins for finishing the puzzle picked for today. */
 export const DAILY_CHALLENGE_REWARD = 50;
@@ -138,6 +138,8 @@ async function loadHomeData(todayKey: string): Promise<HomeData> {
  * what makes room for all of it without a second screenful of scrolling.
  */
 export function HomeScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [data, setData] = useState<HomeData>(EMPTY);
   const tabBarSpace = useTabBarSpace();
@@ -211,7 +213,12 @@ export function HomeScreen() {
     // One cover-fitted image rather than stacked colour bands. The bands could
     // never line up with scrolling content, which is what made the old seam cut
     // across cards.
-    <ImageBackground source={HOME_BACKGROUND} resizeMode="cover" style={styles.root}>
+    <ImageBackground
+      // The theme's own artwork, or a flat ground when it ships without any.
+      source={theme.homeBackground ?? undefined}
+      resizeMode="cover"
+      style={styles.root}
+    >
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.topBar}>
           {/* The pill is a button now. A balance you can see and not act on is
@@ -253,7 +260,7 @@ export function HomeScreen() {
           {data.daily ? (
             <EnterView index={1} style={styles.block}>
               <PopSurface
-                fill={colors.surface}
+                fill={theme.colors.surface}
                 radius={radii.lg}
                 contentStyle={styles.challengeBody}
               >
@@ -351,6 +358,7 @@ export function HomeScreen() {
 
 /** One board in the Continue Playing strip, with how far through it is. */
 function ContinueThumb({ item, onPress }: { item: ContinueItem; onPress: () => void }) {
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -377,6 +385,8 @@ function ContinueThumb({ item, onPress }: { item: ContinueItem; onPress: () => v
 }
 
 function QuickLink({ art, label, onPress }: { art: ArtName; label: string; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -384,7 +394,7 @@ function QuickLink({ art, label, onPress }: { art: ArtName; label: string; onPre
       onPress={onPress}
       style={styles.quickLink}
     >
-      <PopSurface fill={colors.surface} radius={radii.md}>
+      <PopSurface fill={theme.colors.surface} radius={radii.md}>
         <View style={styles.quickLinkInner}>
           <Art name={art} size={30} />
           {/* `numberOfLines` with a shrinkable style, or the label loses letters.
@@ -402,119 +412,131 @@ function QuickLink({ art, label, onPress }: { art: ArtName; label: string; onPre
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safeArea: { flex: 1 },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  coinPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingLeft: spacing.xs,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-  },
-  coinText: { ...typography.heading, fontSize: 18, color: colors.ink, paddingHorizontal: 2 },
-  // A green disc rather than an outline, matching the mockup's pill.
-  coinPlus: {
-    width: 26,
-    height: 26,
-    borderRadius: radii.pill,
-    backgroundColor: colors.grassDeep,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  coinPlusGlyph: {
-    ...typography.heading,
-    fontSize: 20,
-    lineHeight: 24,
-    color: colors.onFill,
-  },
-  gearButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.pill,
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-  },
-  // Scrolls now: the dashboard carries more than one viewport on a short phone,
-  // and pinning it meant the quick links sat under the tab bar.
-  body: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    gap: spacing.lg,
-  },
-  block: { alignSelf: 'stretch' },
-  challengeBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  challengeCopy: { flex: 1, gap: spacing.xs },
-  challengeTitle: { ...typography.heading, fontSize: 19, color: colors.ink },
-  challengeMeta: { ...typography.caption, color: colors.inkMuted },
-  challengeButton: { alignSelf: 'flex-start', marginTop: spacing.xs },
-  sectionHead: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginBottom: spacing.sm,
-  },
-  // On the meadow rather than on a card, so these need the outlined treatment
-  // the pack screen uses on its saturated ground.
-  sectionTitle: { ...typography.heading, fontSize: 19, color: colors.onFill },
-  seeAll: { ...typography.caption, color: colors.onFill },
-  strip: { gap: spacing.sm, paddingRight: spacing.md },
-  thumbWrap: { alignItems: 'center', gap: 4 },
-  thumb: {
-    width: THUMB,
-    height: THUMB,
-    borderRadius: radii.md,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: shadow.card,
-  },
-  thumbImage: { width: '100%', height: '100%' },
-  thumbMeta: { ...typography.caption, fontSize: 12, color: colors.onFill, paddingHorizontal: 2 },
-  actions: { gap: spacing.md },
-  fullWidth: { alignSelf: 'stretch' },
-  quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch' },
-  quickLink: { flex: 1 },
-  quickLinkInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-  },
-  // `flexShrink` so the label gives way before the clipping face does — see QuickLink.
-  quickLinkLabel: {
-    ...typography.bodyStrong,
-    fontSize: 14,
-    color: colors.ink,
-    flexShrink: 1,
-    // Two points of horizontal slack, which is measurement headroom, not spacing.
-    // Android measures a `Text`'s intrinsic width and draws its glyphs with
-    // slightly different rounding, and an OS font scale makes `fontSize`
-    // fractional (14 x 0.85 = 11.9) which widens the gap. When the drawn string
-    // needs marginally more than the measured box, `numberOfLines={1}` ellipsises
-    // a label that had hundreds of points of room beside it — measured on device:
-    // "My Album" truncated to "My Alb..." inside a card 356px wide.
-    paddingHorizontal: 2,
-  },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safeArea: { flex: 1 },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+    },
+    coinPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingLeft: spacing.xs,
+      paddingRight: spacing.xs,
+      paddingVertical: spacing.xs,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    coinText: {
+      ...typography.heading,
+      fontSize: 18,
+      color: theme.colors.ink,
+      paddingHorizontal: 2,
+    },
+    // A green disc rather than an outline, matching the mockup's pill.
+    coinPlus: {
+      width: 26,
+      height: 26,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.grassDeep,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    coinPlusGlyph: {
+      ...typography.heading,
+      fontSize: 20,
+      lineHeight: 24,
+      color: theme.colors.onFill,
+    },
+    gearButton: {
+      width: 42,
+      height: 42,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    // Scrolls now: the dashboard carries more than one viewport on a short phone,
+    // and pinning it meant the quick links sat under the tab bar.
+    body: {
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.md,
+      gap: spacing.lg,
+    },
+    block: { alignSelf: 'stretch' },
+    challengeBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    challengeCopy: { flex: 1, gap: spacing.xs },
+    challengeTitle: { ...typography.heading, fontSize: 19, color: theme.colors.ink },
+    challengeMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    challengeButton: { alignSelf: 'flex-start', marginTop: spacing.xs },
+    sectionHead: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginBottom: spacing.sm,
+    },
+    // On the meadow rather than on a card, so these need the outlined treatment
+    // the pack screen uses on its saturated ground.
+    sectionTitle: { ...typography.heading, fontSize: 19, color: theme.colors.onFill },
+    seeAll: { ...typography.caption, color: theme.colors.onFill },
+    strip: { gap: spacing.sm, paddingRight: spacing.md },
+    thumbWrap: { alignItems: 'center', gap: 4 },
+    thumb: {
+      width: THUMB,
+      height: THUMB,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.paper,
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxShadow: shadow.card,
+    },
+    thumbImage: { width: '100%', height: '100%' },
+    thumbMeta: {
+      ...typography.caption,
+      fontSize: 12,
+      color: theme.colors.inkMuted,
+      paddingHorizontal: 2,
+    },
+    actions: { gap: spacing.md },
+    fullWidth: { alignSelf: 'stretch' },
+    quickRow: { flexDirection: 'row', gap: spacing.md, alignSelf: 'stretch' },
+    quickLink: { flex: 1 },
+    quickLinkInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.md,
+    },
+    // `flexShrink` so the label gives way before the clipping face does — see QuickLink.
+    quickLinkLabel: {
+      ...typography.bodyStrong,
+      fontSize: 14,
+      color: theme.colors.ink,
+      flexShrink: 1,
+      // Two points of horizontal slack, which is measurement headroom, not spacing.
+      // Android measures a `Text`'s intrinsic width and draws its glyphs with
+      // slightly different rounding, and an OS font scale makes `fontSize`
+      // fractional (14 x 0.85 = 11.9) which widens the gap. When the drawn string
+      // needs marginally more than the measured box, `numberOfLines={1}` ellipsises
+      // a label that had hundreds of points of room beside it — measured on device:
+      // "My Album" truncated to "My Alb..." inside a card 356px wide.
+      paddingHorizontal: 2,
+    },
+  }),
+);

@@ -1,7 +1,9 @@
 import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { radii, shadow, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 
 import { Art } from './Art';
 import { Text } from './Text';
@@ -18,12 +20,11 @@ interface PopHeaderProps {
 }
 
 /** Shared top bar: an optional back button, a centred title, a right slot. */
-export function PopHeader({
-  title,
-  right,
-  onBack,
-  titleColor = colors.headingGreen,
-}: PopHeaderProps) {
+export function PopHeader({ title, right, onBack, titleColor }: PopHeaderProps) {
+  const theme = useTheme();
+  const styles = useStyles();
+  const tint = titleColor ?? theme.colors.headingGreen;
+
   return (
     <View style={styles.header}>
       <View style={styles.side}>
@@ -39,7 +40,7 @@ export function PopHeader({
           </Pressable>
         ) : null}
       </View>
-      <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
+      <Text style={[styles.title, { color: tint }]} numberOfLines={1}>
         {title}
       </Text>
       <View style={[styles.side, styles.right]}>{right}</View>
@@ -47,26 +48,28 @@ export function PopHeader({
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-  },
-  side: { minWidth: 48, justifyContent: 'center' },
-  right: { alignItems: 'flex-end' },
-  // The back arrow art is a bare yellow chevron with no ground of its own, so
-  // it needs a surface behind it to stay legible on the saturated screens.
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-  },
-  title: { ...typography.title, flex: 1, textAlign: 'center' },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      gap: spacing.sm,
+    },
+    side: { minWidth: 48, justifyContent: 'center' },
+    right: { alignItems: 'flex-end' },
+    // The back arrow art is a bare yellow chevron with no ground of its own, so
+    // it needs a surface behind it to stay legible on the saturated screens.
+    backButton: {
+      width: 42,
+      height: 42,
+      borderRadius: radii.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    title: { ...typography.title, flex: 1, textAlign: 'center' },
+  }),
+);

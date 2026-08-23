@@ -11,7 +11,10 @@ import {
   type AchievementState,
 } from '@/data';
 import { type ArtName } from '@/shared/art';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { type Theme } from '@/shared/themes';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { radii, spacing, typography } from '@/shared/theme';
 import { Art, PopHeader, PopProgress, PopSurface, Text } from '@/shared/ui';
 
 /**
@@ -20,12 +23,18 @@ import { Art, PopHeader, PopProgress, PopSurface, Text } from '@/shared/ui';
  * `src/data/local/achievements-repository.ts`). This screen is the render
  * boundary that maps both onto real Puzzle Journey values.
  */
-const TONE_COLOR: Record<AchievementState['tone'], string> = {
-  grass: colors.grass,
-  berry: colors.berry,
-  blossom: colors.blossom,
-  honey: colors.honey,
-};
+function toneColor(theme: Theme, tone: AchievementState['tone']): string {
+  // A function of the theme, not a module-level map: a map is built once, at
+  // import, against whichever palette happened to be loaded — the same
+  // build-time binding that made the whole app single-themed.
+  const byTone: Record<AchievementState['tone'], string> = {
+    grass: theme.colors.grass,
+    berry: theme.colors.berry,
+    blossom: theme.colors.blossom,
+    honey: theme.colors.honey,
+  };
+  return byTone[tone];
+}
 
 /** Every icon name `deriveAchievements` currently emits, mapped onto the art set. */
 const ICON_ART: Record<string, ArtName> = {
@@ -83,6 +92,7 @@ async function payForUnlocked(states: readonly AchievementState[]): Promise<void
 }
 
 export function AchievementsScreen() {
+  const styles = useStyles();
   const router = useRouter();
   const [achievements, setAchievements] = useState<AchievementState[]>(() =>
     deriveAchievements([]),
@@ -121,13 +131,15 @@ export function AchievementsScreen() {
 }
 
 function AchievementRow({ achievement }: { achievement: AchievementState }) {
-  const tone = TONE_COLOR[achievement.tone];
+  const theme = useTheme();
+  const styles = useStyles();
+  const tone = toneColor(theme, achievement.tone);
 
   return (
     // The trophy art carries the achievement's identity, so the row is a plain
     // cream card. `tone` survives as the progress-bar fill only — which is where
     // it can be saturated without any text sitting on it.
-    <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.rowBody}>
+    <PopSurface fill={theme.colors.surface} radius={radii.md} contentStyle={styles.rowBody}>
       <Art
         name={resolveArt(achievement.icon)}
         size={52}
@@ -155,29 +167,31 @@ function AchievementRow({ achievement }: { achievement: AchievementState }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-  },
-  rowBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  // A locked trophy is dimmed rather than swapped for a padlock, so the row
-  // still previews the reward you are working toward.
-  locked: { opacity: 0.4 },
-  body: { flex: 1, gap: 4 },
-  title: { ...typography.heading, fontSize: 18, color: colors.ink },
-  desc: { ...typography.caption, color: colors.inkMuted },
-  trailing: { minWidth: 42, alignItems: 'flex-end' },
-  count: { ...typography.bodyStrong, fontSize: 13, color: colors.inkMuted },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    content: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
+      width: '100%',
+      maxWidth: 720,
+      alignSelf: 'center',
+    },
+    rowBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+    },
+    // A locked trophy is dimmed rather than swapped for a padlock, so the row
+    // still previews the reward you are working toward.
+    locked: { opacity: 0.4 },
+    body: { flex: 1, gap: 4 },
+    title: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
+    desc: { ...typography.caption, color: theme.colors.inkMuted },
+    trailing: { minWidth: 42, alignItems: 'flex-end' },
+    count: { ...typography.bodyStrong, fontSize: 13, color: theme.colors.inkMuted },
+  }),
+);

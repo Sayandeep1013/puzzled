@@ -1,13 +1,14 @@
 import { type ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, radii, shadow } from '@/shared/theme';
+import { radii, shadow } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
 
 export type SurfaceElevation = 'card' | 'raised' | 'pressed' | 'none';
 
 interface PopSurfaceProps {
   children?: ReactNode;
-  /** Face colour. */
+  /** Face colour. Defaults to the active theme's card surface. */
   fill?: string;
   radius?: number;
   /** Which shadow token to wear. `none` is for surfaces nested inside another. */
@@ -33,18 +34,24 @@ interface PopSurfaceProps {
  */
 export function PopSurface({
   children,
-  fill = colors.surface,
+  fill,
   radius = radii.md,
   elevation = 'card',
   style,
   contentStyle,
   testID,
 }: PopSurfaceProps) {
+  const theme = useTheme();
+  // Resolved here rather than as a default parameter: a default is evaluated at
+  // call time against whatever `colors` the module captured at import, which is
+  // exactly the binding that made the app single-themed.
+  const face = fill ?? theme.colors.surface;
+
   return (
     <View
       testID={testID}
       style={[
-        { backgroundColor: fill, borderRadius: radius },
+        { backgroundColor: face, borderRadius: radius },
         elevation !== 'none' && { boxShadow: shadow[elevation] },
         style,
       ]}

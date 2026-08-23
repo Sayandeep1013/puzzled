@@ -15,7 +15,9 @@ import {
   type Wallet,
 } from '@/data';
 import { type ArtName } from '@/shared/art';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { radii, spacing, typography } from '@/shared/theme';
 import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 /**
@@ -59,6 +61,8 @@ async function loadCoinsData(): Promise<CoinsData> {
 }
 
 export function CoinsScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [data, setData] = useState<CoinsData>(EMPTY);
   const [claiming, setClaiming] = useState(false);
@@ -148,7 +152,11 @@ export function CoinsScreen() {
         <PopHeader title="Coins" onBack={() => router.back()} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          <PopSurface fill={colors.honey} radius={radii.lg} contentStyle={styles.balanceFrame}>
+          <PopSurface
+            fill={theme.colors.honey}
+            radius={radii.lg}
+            contentStyle={styles.balanceFrame}
+          >
             <View style={styles.balanceBody}>
               <Art name="coin" size={54} />
               <View style={styles.balanceCopy}>
@@ -165,7 +173,7 @@ export function CoinsScreen() {
           {/* The daily bonus is the only thing on this screen with a button,
               because it is the only one that pays out here rather than by
               playing something. */}
-          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.cardBody}>
+          <PopSurface fill={theme.colors.surface} radius={radii.lg} contentStyle={styles.cardBody}>
             <View style={styles.cardHead}>
               <Art name="calendar" size={44} />
               <View style={styles.cardCopy}>
@@ -236,8 +244,10 @@ function EarnRow({
   meta: string;
   onPress: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   return (
-    <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.earnBody}>
+    <PopSurface fill={theme.colors.surface} radius={radii.md} contentStyle={styles.earnBody}>
       <Art name={art} size={38} />
       <View style={styles.cardCopy}>
         <Text style={styles.cardTitle}>{title}</Text>
@@ -248,37 +258,39 @@ function EarnRow({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
-    width: '100%',
-    maxWidth: 620,
-    alignSelf: 'center',
-  },
-  // Honey is light enough for direct ink text (10.08:1), so the balance needs no
-  // inner white body the way the saturated fills do.
-  balanceFrame: { padding: spacing.lg },
-  balanceBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  balanceCopy: { flex: 1, gap: 2 },
-  balanceLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted },
-  balanceValue: { ...typography.hero, fontSize: 38, color: colors.ink },
-  sectionTitle: { ...typography.heading, color: colors.ink, marginTop: spacing.sm },
-  cardBody: { padding: spacing.md, gap: spacing.md },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  cardCopy: { flex: 1, gap: 2 },
-  cardTitle: { ...typography.heading, fontSize: 18, color: colors.ink },
-  cardMeta: { ...typography.caption, color: colors.inkMuted },
-  streakLine: { ...typography.caption, color: colors.headingGreen },
-  earnBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
-  footerNote: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    content: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
+      width: '100%',
+      maxWidth: 620,
+      alignSelf: 'center',
+    },
+    // Honey is light enough for direct ink text (10.08:1), so the balance needs no
+    // inner white body the way the saturated fills do.
+    balanceFrame: { padding: spacing.lg },
+    balanceBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    balanceCopy: { flex: 1, gap: 2 },
+    balanceLabel: { ...typography.label, fontSize: 11, color: theme.colors.inkMuted },
+    balanceValue: { ...typography.hero, fontSize: 38, color: theme.colors.ink },
+    sectionTitle: { ...typography.heading, color: theme.colors.ink, marginTop: spacing.sm },
+    cardBody: { padding: spacing.md, gap: spacing.md },
+    cardHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    cardCopy: { flex: 1, gap: 2 },
+    cardTitle: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
+    cardMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    streakLine: { ...typography.caption, color: theme.colors.headingGreen },
+    earnBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+    },
+    footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
+    footerNote: { ...typography.caption, color: theme.colors.inkMuted, textAlign: 'center' },
+  }),
+);

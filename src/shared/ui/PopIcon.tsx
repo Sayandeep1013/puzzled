@@ -36,7 +36,7 @@ import {
 } from 'phosphor-react-native';
 import { type ComponentType } from 'react';
 
-import { colors } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
 
 /**
  * Curated map. Adding an icon is a one-line change here; screens can only use
@@ -90,13 +90,10 @@ interface PopIconProps {
   testID?: string;
 }
 
-export function PopIcon({
-  name,
-  size = 24,
-  color = colors.ink,
-  weight = 'fill',
-  testID,
-}: PopIconProps) {
+export function PopIcon({ name, size = 24, color, weight = 'fill', testID }: PopIconProps) {
+  const theme = useTheme();
   const Glyph = ICONS[name];
-  return <Glyph size={size} color={color} weight={weight} testID={testID} />;
+  // Resolved here, not as a default parameter: a default captures whichever
+  // palette the module saw at import and never follows a theme change.
+  return <Glyph size={size} color={color ?? theme.colors.ink} weight={weight} testID={testID} />;
 }

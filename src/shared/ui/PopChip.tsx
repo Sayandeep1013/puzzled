@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet } from 'react-native';
 
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
 
 import { Art } from './Art';
 import { PopSurface } from './PopSurface';
@@ -14,27 +15,22 @@ interface PopChipProps {
   art?: ArtName;
   icon?: PopIconName;
   selected?: boolean;
-  /** A hex/rgb colour, not a token name — callers reach for `colors.*`. */
+  /** A hex/rgb colour, not a token name. Defaults to the theme's primary. */
   tone?: string;
   onPress?: () => void;
 }
 
 /** A small pill filter/tag. Selected chips fill solid with `tone`. */
-export function PopChip({
-  label,
-  art,
-  icon,
-  selected = false,
-  tone = colors.grass,
-  onPress,
-}: PopChipProps) {
+export function PopChip({ label, art, icon, selected = false, tone, onPress }: PopChipProps) {
+  const theme = useTheme();
+  const fill = tone ?? theme.colors.grass;
   // Chip labels are 13pt, so they need WCAG AA *body* contrast (4.5:1), not the
   // 3.0:1 a button's 18pt label gets. Against this palette's brights, ink
   // clears that comfortably (grass 6.16, apricot 6.45, blossom 6.11) while
   // white does not clear even 3.0 — so ink wins whether or not the chip is
   // selected. Do not pass `berry` or `cherry` as a chip tone: ink lands at
   // ~3.7 on those, fine for a button but short of the body threshold.
-  const contentColor = colors.ink;
+  const contentColor = theme.colors.ink;
 
   return (
     <Pressable
@@ -46,7 +42,7 @@ export function PopChip({
       <PopSurface
         radius={radii.pill}
         elevation={selected ? 'card' : 'pressed'}
-        fill={selected ? tone : colors.surface}
+        fill={selected ? fill : theme.colors.surface}
         contentStyle={styles.content}
       >
         {art ? <Art name={art} size={18} /> : null}

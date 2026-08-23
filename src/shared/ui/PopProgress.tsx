@@ -1,22 +1,20 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radii } from '@/shared/theme';
+import { radii } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
 
 interface PopProgressProps {
   value: number;
   goal: number;
+  /** Fill colour. Defaults to the active theme's primary. */
   tone?: string;
   height?: number;
   testID?: string;
 }
 
-export function PopProgress({
-  value,
-  goal,
-  tone = colors.grass,
-  height = 16,
-  testID,
-}: PopProgressProps) {
+export function PopProgress({ value, goal, tone, height = 16, testID }: PopProgressProps) {
+  const theme = useTheme();
+  const fill = tone ?? theme.colors.grass;
   // A zero goal is a legitimate state for an achievement with no target yet;
   // treat it as empty rather than letting it become NaN%.
   const fraction = goal > 0 ? Math.min(1, Math.max(0, value / goal)) : 0;
@@ -36,7 +34,7 @@ export function PopProgress({
         testID={testID ? `${testID}-fill` : undefined}
         style={[
           styles.fill,
-          { width: `${fraction * 100}%`, backgroundColor: tone, borderRadius: radii.pill },
+          { width: `${fraction * 100}%`, backgroundColor: fill, borderRadius: radii.pill },
         ]}
       />
     </View>

@@ -8,7 +8,8 @@ import { buildPieceLocalPath, cellSizeForGrid } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
 import { PieceDepth, type DepthTreatment } from '@/features/game/piece-depth';
 import { bakeOverlay } from '@/features/game/piece-overlay';
-import { colors, spacing, typography } from '@/shared/theme';
+import { spacing, typography } from '@/shared/theme';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { Text } from '@/shared/ui';
 
 /**
@@ -41,6 +42,7 @@ const TREATMENTS: { key: DepthTreatment | 'baked'; label: string; note: string }
 ];
 
 export default function DepthLabScreen() {
+  const styles = useStyles();
   const image = useImage(getPuzzleImageModule('first-light') ?? 0);
 
   const cellSize = cellSizeForGrid(GRID);
@@ -135,20 +137,22 @@ export default function DepthLabScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
-  safeArea: { flex: 1 },
-  content: { padding: spacing.md, gap: spacing.lg, alignItems: 'center' },
-  title: { ...typography.title, color: colors.headingGreen },
-  caption: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
-  row: { alignItems: 'center', gap: 2 },
-  rowLabel: { ...typography.heading, color: colors.ink },
-  rowNote: { ...typography.caption, color: colors.inkMuted },
-  canvasWrap: {
-    // Cream, like the board mat, so the drop shadow is visible against something.
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
-  },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.colors.paper },
+    safeArea: { flex: 1 },
+    content: { padding: spacing.md, gap: spacing.lg, alignItems: 'center' },
+    title: { ...typography.title, color: theme.colors.headingGreen },
+    caption: { ...typography.caption, color: theme.colors.inkMuted, textAlign: 'center' },
+    row: { alignItems: 'center', gap: 2 },
+    rowLabel: { ...typography.heading, color: theme.colors.ink },
+    rowNote: { ...typography.caption, color: theme.colors.inkMuted },
+    canvasWrap: {
+      // Cream, like the board mat, so the drop shadow is visible against something.
+      backgroundColor: theme.colors.surface,
+      borderRadius: 12,
+      padding: spacing.sm,
+      marginTop: spacing.xs,
+    },
+  }),
+);

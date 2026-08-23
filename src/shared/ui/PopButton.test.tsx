@@ -1,7 +1,9 @@
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
-import { PopButton, TONE_FILL, TONE_LABEL, type PopTone } from './PopButton';
+import { THEMES } from '@/shared/themes';
+
+import { PopButton, toneFill, toneLabel, type PopTone } from './PopButton';
 
 /** Relative luminance per WCAG 2.1. */
 function luminance(hex: string): number {
@@ -17,7 +19,16 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const TONES = Object.keys(TONE_FILL) as PopTone[];
+const TONES = Object.keys(toneFill(THEMES[0])) as PopTone[];
+
+/** Every tone on every theme — a second palette can fail contrast the first passed. */
+const PAIRINGS = THEMES.flatMap((theme) =>
+  TONES.map((tone) => ({
+    name: `${theme.name} / ${tone}`,
+    fill: toneFill(theme)[tone],
+    label: toneLabel(theme)[tone],
+  })),
+);
 
 describe('PopButton', () => {
   it('calls onPress when tapped', () => {
@@ -54,13 +65,17 @@ describe('PopButton', () => {
   // This palette is bright enough that white text fails on nearly all of it —
   // the mockup's own white-on-green is 2.21:1. Tones wanting white therefore use
   // a deepened fill. Buttons render at 18pt+, so the bar is WCAG AA large text.
-  it.each(TONES)('pairs a readable label with the %s fill', (tone) => {
-    expect(contrast(TONE_LABEL[tone], TONE_FILL[tone])).toBeGreaterThanOrEqual(3);
+  //
+  // Swept across every theme, not just the one that shipped first: a second
+  // palette is exactly where a fill and its label quietly stop contrasting.
+  it.each(PAIRINGS)('pairs a readable label with $name', ({ fill, label }) => {
+    expect(contrast(label, fill)).toBeGreaterThanOrEqual(3);
   });
 
   it('actually renders the tone table it advertises', () => {
     const { getByText } = render(<PopButton label="Play" tone="grass" />);
     const label = StyleSheet.flatten(getByText('Play').props.style);
-    expect(label.color).toBe(TONE_LABEL.grass);
+    // Unwrapped, so the default theme is the one the button resolves against.
+    expect(label.color).toBe(toneLabel(THEMES[0]).grass);
   });
 });

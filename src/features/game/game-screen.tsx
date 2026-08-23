@@ -29,7 +29,9 @@ import {
   type PlayablePuzzle,
   type PuzzleDefinition,
 } from '@/game-engine';
-import { backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { radii, shadow, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { type ArtName } from '@/shared/art';
 import { Art, PopButton, PopSheet, PopSurface, PopToggle, Text } from '@/shared/ui';
 
@@ -75,6 +77,8 @@ type CatalogState =
   | { status: 'ready'; puzzle: PuzzleDefinition; imageSource: number | string };
 
 export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [catalog, setCatalog] = useState<CatalogState>({ status: 'loading' });
   const [gridSize, setGridSize] = useState<GridSize | null>(initialGridSize ?? null);
@@ -618,7 +622,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 
             <View style={styles.headerRight}>
               <PopSurface
-                fill={colors.surface}
+                fill={theme.colors.surface}
                 radius={radii.pill}
                 contentStyle={styles.clockInner}
               >
@@ -751,7 +755,11 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
         {overlay === 'preview' ? (
           <PopSheet title="Preview" onDismiss={() => setOverlay('none')}>
             <View style={styles.sheetBody}>
-              <PopSurface fill={colors.honey} radius={radii.md} contentStyle={styles.previewFrame}>
+              <PopSurface
+                fill={theme.colors.honey}
+                radius={radii.md}
+                contentStyle={styles.previewFrame}
+              >
                 <View style={styles.previewImageWrap}>
                   <RNImage
                     source={
@@ -774,6 +782,7 @@ export function GameScreen({ puzzleId, initialGridSize }: GameScreenProps) {
 }
 
 function SettingRow({ label, children }: { label: string; children: ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.settingRow}>
       <Text style={styles.settingLabel}>{label}</Text>
@@ -798,6 +807,8 @@ function ToolButton({
   /** Live count shown as a small corner badge, e.g. the hint balance. */
   badge?: number;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -808,7 +819,7 @@ function ToolButton({
       style={styles.tool}
     >
       <PopSurface
-        fill={active ? colors.honey : colors.surface}
+        fill={active ? theme.colors.honey : theme.colors.surface}
         radius={radii.md}
         elevation={disabled ? 'pressed' : 'card'}
         contentStyle={styles.toolInner}
@@ -836,126 +847,138 @@ export function isPlayableGridSize(value: number): value is GridSize {
   return isSupportedGridSize(value);
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: backgrounds.game },
-  safeArea: { flex: 1 },
-  // The back and pause art are bare glyphs with no ground of their own, so they
-  // need a surface behind them to read against the board's pale green.
-  roundButton: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.pill,
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-  },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    padding: spacing.lg,
-  },
-  bigTitle: { ...typography.title, color: colors.ink },
-  meta: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
-  content: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 900,
-    alignSelf: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    // Wider than spacing.sm: the header, board and toolbar previously sat almost
-    // flush, so the three read as one crowded block.
-    gap: spacing.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingHorizontal: spacing.sm,
-  },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { ...typography.heading, color: colors.headingGreen },
-  headerMeta: { ...typography.caption, color: colors.inkMuted },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  clockInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-  },
-  clock: { ...typography.heading, fontSize: 17, color: colors.ink },
-  // A cream tray under the board, matching the mockup: the board area is a
-  // card, not an outlined box.
-  boardShell: {
-    flex: 1,
-    minHeight: 220,
-    overflow: 'hidden',
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-    /**
-     * Absorbs the leftover column height above the board rather than below the
-     * toolbar.
-     *
-     * `maxHeight` caps how far `flex: 1` can grow (the board is square, so a taller
-     * shell is only dead margin), and the slack that cap leaves used to collect
-     * after the last child — stranding the toolbar in mid-screen with empty space
-     * beneath it. An auto top margin claims that slack instead, which drops the
-     * board/tray/toolbar block down the screen and seats the toolbar on the bottom
-     * edge in one move.
-     */
-    marginTop: 'auto',
-  },
-  toolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'stretch',
-    gap: spacing.sm,
-    // No vertical padding of its own: `content`'s gap sets the space above and the
-    // safe-area inset sets the space below, so the row sits on the bottom edge.
-    paddingVertical: 0,
-  },
-  tool: { flex: 1 },
-  toolInner: { alignItems: 'center', gap: 3, paddingVertical: spacing.sm },
-  toolIconWrap: { position: 'relative' },
-  toolArtDisabled: { opacity: 0.4 },
-  toolBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -10,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    paddingHorizontal: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.apricot,
-  },
-  toolBadgeText: { ...typography.caption, fontSize: 10, lineHeight: 12, color: colors.onFill },
-  // See `PopButton`'s label: two points of measurement slack, not spacing.
-  toolLabel: { ...typography.caption, fontSize: 11, color: colors.ink, paddingHorizontal: 2 },
-  toolLabelDisabled: { color: colors.inkMuted },
-  sheetBody: { gap: spacing.md },
-  pauseRows: { gap: spacing.sm },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.xs,
-  },
-  settingLabel: { ...typography.heading, fontSize: 18, color: colors.ink },
-  hintHero: { alignItems: 'center', paddingVertical: spacing.sm },
-  hintBalance: { ...typography.bodyStrong, color: colors.inkMuted, textAlign: 'center' },
-  previewFrame: { padding: spacing.xs },
-  previewImageWrap: {
-    height: 240,
-    borderRadius: radii.md,
-    overflow: 'hidden',
-  },
-  previewImage: { width: '100%', height: '100%' },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: theme.backgrounds.game },
+    safeArea: { flex: 1 },
+    // The back and pause art are bare glyphs with no ground of their own, so they
+    // need a surface behind them to read against the board's pale green.
+    roundButton: {
+      width: 42,
+      height: 42,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    centered: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      padding: spacing.lg,
+    },
+    bigTitle: { ...typography.title, color: theme.colors.ink },
+    meta: { ...typography.body, color: theme.colors.inkMuted, textAlign: 'center' },
+    content: {
+      flex: 1,
+      width: '100%',
+      maxWidth: 900,
+      alignSelf: 'center',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.md,
+      // Wider than spacing.sm: the header, board and toolbar previously sat almost
+      // flush, so the three read as one crowded block.
+      gap: spacing.lg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingHorizontal: spacing.sm,
+    },
+    headerCenter: { flex: 1, alignItems: 'center' },
+    headerTitle: { ...typography.heading, color: theme.colors.headingGreen },
+    headerMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    clockInner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 6,
+    },
+    clock: { ...typography.heading, fontSize: 17, color: theme.colors.ink },
+    // A cream tray under the board, matching the mockup: the board area is a
+    // card, not an outlined box.
+    boardShell: {
+      flex: 1,
+      minHeight: 220,
+      overflow: 'hidden',
+      borderRadius: radii.lg,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+      /**
+       * Absorbs the leftover column height above the board rather than below the
+       * toolbar.
+       *
+       * `maxHeight` caps how far `flex: 1` can grow (the board is square, so a taller
+       * shell is only dead margin), and the slack that cap leaves used to collect
+       * after the last child — stranding the toolbar in mid-screen with empty space
+       * beneath it. An auto top margin claims that slack instead, which drops the
+       * board/tray/toolbar block down the screen and seats the toolbar on the bottom
+       * edge in one move.
+       */
+      marginTop: 'auto',
+    },
+    toolbar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'stretch',
+      gap: spacing.sm,
+      // No vertical padding of its own: `content`'s gap sets the space above and the
+      // safe-area inset sets the space below, so the row sits on the bottom edge.
+      paddingVertical: 0,
+    },
+    tool: { flex: 1 },
+    toolInner: { alignItems: 'center', gap: 3, paddingVertical: spacing.sm },
+    toolIconWrap: { position: 'relative' },
+    toolArtDisabled: { opacity: 0.4 },
+    toolBadge: {
+      position: 'absolute',
+      top: -6,
+      right: -10,
+      minWidth: 18,
+      height: 18,
+      borderRadius: 9,
+      paddingHorizontal: 3,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.apricot,
+    },
+    toolBadgeText: {
+      ...typography.caption,
+      fontSize: 10,
+      lineHeight: 12,
+      color: theme.colors.onFill,
+    },
+    // See `PopButton`'s label: two points of measurement slack, not spacing.
+    toolLabel: {
+      ...typography.caption,
+      fontSize: 11,
+      color: theme.colors.ink,
+      paddingHorizontal: 2,
+    },
+    toolLabelDisabled: { color: theme.colors.inkMuted },
+    sheetBody: { gap: spacing.md },
+    pauseRows: { gap: spacing.sm },
+    settingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: spacing.xs,
+    },
+    settingLabel: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
+    hintHero: { alignItems: 'center', paddingVertical: spacing.sm },
+    hintBalance: { ...typography.bodyStrong, color: theme.colors.inkMuted, textAlign: 'center' },
+    previewFrame: { padding: spacing.xs },
+    previewImageWrap: {
+      height: 240,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+    },
+    previewImage: { width: '100%', height: '100%' },
+  }),
+);

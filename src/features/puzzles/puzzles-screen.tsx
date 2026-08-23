@@ -10,7 +10,10 @@ import {
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { type ThemePalette } from '@/shared/themes';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopButton, PopChip, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
 /**
@@ -24,10 +27,18 @@ import { Art, PopButton, PopChip, PopIcon, PopSurface, Text, useTabBarSpace } fr
  */
 type SourceFilter = 'all' | 'bundled' | 'user';
 
-const FILTERS: { key: SourceFilter; label: string; tone: string }[] = [
-  { key: 'all', label: 'All', tone: colors.grass },
-  { key: 'bundled', label: 'Starters', tone: colors.apricot },
-  { key: 'user', label: 'My Photos', tone: colors.blossom },
+/**
+ * Tones are palette *keys*, not hex values.
+ *
+ * A table of hex built at module scope is built once, against whichever palette
+ * was loaded when the file was first evaluated — so it would keep the meadow's
+ * greens after a theme change. Naming the slot instead lets each render resolve
+ * it against the active theme, and the key is checked by the compiler.
+ */
+const FILTERS: { key: SourceFilter; label: string; tone: keyof ThemePalette }[] = [
+  { key: 'all', label: 'All', tone: 'grass' },
+  { key: 'bundled', label: 'Starters', tone: 'apricot' },
+  { key: 'user', label: 'My Photos', tone: 'blossom' },
 ];
 
 interface CatalogData {
@@ -44,6 +55,8 @@ function imageFor(puzzle: PuzzleDefinition): number | string | null {
 }
 
 export function PuzzlesScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [data, setData] = useState<CatalogData>(EMPTY);
   const [filter, setFilter] = useState<SourceFilter>('all');
@@ -112,14 +125,14 @@ export function PuzzlesScreen() {
             accessibilityRole="button"
             accessibilityLabel="Browse the Starter Pack"
           >
-            <PopSurface fill={colors.honey} radius={radii.md} contentStyle={styles.packFrame}>
+            <PopSurface fill={theme.colors.honey} radius={radii.md} contentStyle={styles.packFrame}>
               <View style={styles.packBody}>
                 <Art name="collection" size={30} />
                 <View style={styles.packCopy}>
                   <Text style={styles.packTitle}>Starter Pack</Text>
                   <Text style={styles.packMeta}>Every puzzle bundled with Puzzled</Text>
                 </View>
-                <PopIcon name="chevron" size={20} color={colors.inkMuted} />
+                <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
               </View>
             </PopSurface>
           </Pressable>
@@ -144,7 +157,7 @@ export function PuzzlesScreen() {
               <PopChip
                 key={item.key}
                 label={item.label}
-                tone={item.tone}
+                tone={theme.colors[item.tone]}
                 selected={filter === item.key}
                 onPress={() => setFilter(item.key)}
               />
@@ -158,7 +171,7 @@ export function PuzzlesScreen() {
               </View>
               <Pressable onPress={() => open(recommended)} accessibilityRole="button">
                 <PopSurface
-                  fill={colors.apricot}
+                  fill={theme.colors.apricot}
                   radius={radii.lg}
                   contentStyle={styles.featureFrame}
                 >
@@ -231,12 +244,14 @@ function StarterRow({
   rows: PuzzleProgressSummary[];
   onPress: () => void;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const latest = rows[0];
   const done = latest?.status === 'completed';
   const started = latest != null && latest.lockedPieces > 0;
 
   return (
-    <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.rowBody}>
+    <PopSurface fill={theme.colors.surface} radius={radii.lg} contentStyle={styles.rowBody}>
       <View style={styles.rowThumb}>
         <Preview puzzle={puzzle} />
       </View>
@@ -263,6 +278,7 @@ function StarterRow({
 }
 
 function Preview({ puzzle }: { puzzle: PuzzleDefinition }) {
+  const styles = useStyles();
   const source = imageFor(puzzle);
   if (source == null) {
     return (
@@ -280,84 +296,90 @@ function Preview({ puzzle }: { puzzle: PuzzleDefinition }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  content: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-  },
-  pageTitle: { ...typography.title, color: colors.headingGreen, marginTop: spacing.sm },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
-  // as a frame around the white row body nested inside it (the
-  // `pack-screen.tsx` row / `home-screen.tsx` `PuzzleCard` pattern).
-  packFrame: { padding: spacing.xs },
-  packBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
-  },
-  packCopy: { flex: 1, gap: 2 },
-  packTitle: { ...typography.heading, fontSize: 17, color: colors.ink },
-  packMeta: { ...typography.caption, color: colors.inkMuted },
-  sectionHead: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-  },
-  sectionTitle: { ...typography.heading, color: colors.ink },
-  sectionMeta: { ...typography.caption, color: colors.inkMuted },
-  seeAll: { ...typography.caption, color: colors.headingGreen },
-  chipRow: { gap: spacing.sm, paddingVertical: spacing.xs, paddingRight: spacing.md },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
-  // as a frame around the white card body nested inside it (see HomeScreen's
-  // `PuzzleCard` — ink-on-saturated-fill body text fails contrast).
-  featureFrame: { padding: spacing.xs },
-  featureBody: { overflow: 'hidden', borderRadius: radii.md, backgroundColor: colors.surface },
-  featureImageWrap: {
-    height: 150,
-    borderRadius: radii.md,
-    overflow: 'hidden',
-    backgroundColor: colors.honey,
-  },
-  featureCopy: { padding: spacing.md, gap: 2 },
-  featureTitle: { ...typography.heading, color: colors.ink },
-  featureMeta: { ...typography.caption, color: colors.inkMuted },
-  newTag: {
-    position: 'absolute',
-    top: spacing.sm,
-    right: spacing.sm,
-    backgroundColor: colors.cherry,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  newTagText: { ...typography.label, fontSize: 10, color: colors.onFill },
-  list: { gap: spacing.md },
-  rowBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  rowThumb: {
-    width: 68,
-    height: 68,
-    borderRadius: radii.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.paper,
-  },
-  rowCopy: { flex: 1, gap: 2 },
-  rowTitle: { ...typography.heading, fontSize: 17, color: colors.ink },
-  rowMeta: { ...typography.caption, color: colors.inkMuted },
-  previewImage: { width: '100%', height: '100%' },
-  previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { ...typography.body, color: colors.inkMuted },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    content: {
+      paddingHorizontal: spacing.lg,
+      gap: spacing.md,
+      width: '100%',
+      maxWidth: 720,
+      alignSelf: 'center',
+    },
+    pageTitle: { ...typography.title, color: theme.colors.headingGreen, marginTop: spacing.sm },
+    // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+    // as a frame around the white row body nested inside it (the
+    // `pack-screen.tsx` row / `home-screen.tsx` `PuzzleCard` pattern).
+    packFrame: { padding: spacing.xs },
+    packBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+      borderRadius: radii.sm,
+      backgroundColor: theme.colors.surface,
+    },
+    packCopy: { flex: 1, gap: 2 },
+    packTitle: { ...typography.heading, fontSize: 17, color: theme.colors.ink },
+    packMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    sectionHead: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginTop: spacing.sm,
+    },
+    sectionTitle: { ...typography.heading, color: theme.colors.ink },
+    sectionMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    seeAll: { ...typography.caption, color: theme.colors.headingGreen },
+    chipRow: { gap: spacing.sm, paddingVertical: spacing.xs, paddingRight: spacing.md },
+    // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+    // as a frame around the white card body nested inside it (see HomeScreen's
+    // `PuzzleCard` — ink-on-saturated-fill body text fails contrast).
+    featureFrame: { padding: spacing.xs },
+    featureBody: {
+      overflow: 'hidden',
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.surface,
+    },
+    featureImageWrap: {
+      height: 150,
+      borderRadius: radii.md,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.honey,
+    },
+    featureCopy: { padding: spacing.md, gap: 2 },
+    featureTitle: { ...typography.heading, color: theme.colors.ink },
+    featureMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    newTag: {
+      position: 'absolute',
+      top: spacing.sm,
+      right: spacing.sm,
+      backgroundColor: theme.colors.cherry,
+      borderRadius: radii.sm,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 3,
+    },
+    newTagText: { ...typography.label, fontSize: 10, color: theme.colors.onFill },
+    list: { gap: spacing.md },
+    rowBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+    },
+    rowThumb: {
+      width: 68,
+      height: 68,
+      borderRadius: radii.sm,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.paper,
+    },
+    rowCopy: { flex: 1, gap: 2 },
+    rowTitle: { ...typography.heading, fontSize: 17, color: theme.colors.ink },
+    rowMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    previewImage: { width: '100%', height: '100%' },
+    previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    empty: { ...typography.body, color: theme.colors.inkMuted },
+  }),
+);

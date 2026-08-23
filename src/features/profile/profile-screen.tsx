@@ -9,7 +9,9 @@ import {
   latestPerBoard,
   type PuzzleProgressSummary,
 } from '@/data';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { type ArtName } from '@/shared/art';
 import { Art, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
@@ -20,6 +22,8 @@ import { Art, PopIcon, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 const PLACEHOLDER_NAME = 'Player';
 
 export function ProfileScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [completed, setCompleted] = useState(0);
   const [piecesPlaced, setPiecesPlaced] = useState(0);
@@ -80,7 +84,7 @@ export function ProfileScreen() {
           {/* Two figures, not one. The pieces-placed count was on Home before it
               moved to Statistics, and Statistics is two taps away — so the
               headline number surfaces here, on a tab, where it is findable. */}
-          <PopSurface fill={colors.surface} radius={radii.lg}>
+          <PopSurface fill={theme.colors.surface} radius={radii.lg}>
             <View style={styles.statRow}>
               <View style={styles.stat}>
                 <Text style={styles.statValue}>{completed}</Text>
@@ -97,13 +101,13 @@ export function ProfileScreen() {
           <View style={styles.links}>
             {links.map((link) => (
               <Pressable key={link.label} accessibilityRole="button" onPress={link.onPress}>
-                <PopSurface fill={colors.surface} radius={radii.md}>
+                <PopSurface fill={theme.colors.surface} radius={radii.md}>
                   <View style={styles.linkRow}>
                     <Art name={link.art} size={28} />
                     <Text style={styles.linkLabel}>{link.label}</Text>
                     {/* The art set has no chevron; Phosphor stays for neutral
                         affordances like this, where flat is the right register. */}
-                    <PopIcon name="chevron" size={20} color={colors.inkMuted} />
+                    <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />
                   </View>
                 </PopSurface>
               </Pressable>
@@ -115,29 +119,31 @@ export function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  headerRow: {
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-  },
-  pageTitle: { ...typography.title, color: colors.headingGreen },
-  content: {
-    padding: spacing.lg,
-    gap: spacing.lg,
-    width: '100%',
-    maxWidth: 620,
-    alignSelf: 'center',
-  },
-  identity: { alignItems: 'center', gap: spacing.xs },
-  name: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
-  statRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg },
-  stat: { flex: 1, alignItems: 'center', gap: 4 },
-  statDivider: { width: 1, height: 44, backgroundColor: 'rgba(90, 62, 24, 0.14)' },
-  statValue: { ...typography.title, fontSize: 30, color: colors.ink },
-  statLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted },
-  links: { gap: spacing.md },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  linkLabel: { ...typography.heading, fontSize: 18, color: colors.ink, flex: 1 },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    headerRow: {
+      paddingHorizontal: spacing.lg,
+      marginTop: spacing.sm,
+    },
+    pageTitle: { ...typography.title, color: theme.colors.headingGreen },
+    content: {
+      padding: spacing.lg,
+      gap: spacing.lg,
+      width: '100%',
+      maxWidth: 620,
+      alignSelf: 'center',
+    },
+    identity: { alignItems: 'center', gap: spacing.xs },
+    name: { ...typography.title, color: theme.colors.ink, marginTop: spacing.sm },
+    statRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg },
+    stat: { flex: 1, alignItems: 'center', gap: 4 },
+    statDivider: { width: 1, height: 44, backgroundColor: 'rgba(90, 62, 24, 0.14)' },
+    statValue: { ...typography.title, fontSize: 30, color: theme.colors.ink },
+    statLabel: { ...typography.label, fontSize: 11, color: theme.colors.inkMuted },
+    links: { gap: spacing.md },
+    linkRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+    linkLabel: { ...typography.heading, fontSize: 18, color: theme.colors.ink, flex: 1 },
+  }),
+);

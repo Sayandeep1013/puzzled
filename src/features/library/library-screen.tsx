@@ -28,7 +28,9 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
-import { accentAt, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { accentAt, radii, shadow, spacing, typography } from '@/shared/theme';
 import { Art, PopChip, PopIcon, PopProgress, PopSurface, Text, useTabBarSpace } from '@/shared/ui';
 
 type Tab = 'progress' | 'completed' | 'favourites' | 'photos';
@@ -124,6 +126,8 @@ async function loadLibraryData(): Promise<LibraryData> {
 }
 
 export function LibraryScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const [tab, setTab] = useState<Tab>('progress');
   const [data, setData] = useState<LibraryData>(EMPTY_DATA);
   const [importing, setImporting] = useState(false);
@@ -310,7 +314,7 @@ export function LibraryScreen() {
             style={styles.addButton}
           >
             {importing ? (
-              <ActivityIndicator color={colors.grass} />
+              <ActivityIndicator color={theme.colors.grass} />
             ) : (
               <>
                 <Art name="plus-circle" size={24} />
@@ -333,7 +337,7 @@ export function LibraryScreen() {
             <PopChip
               key={key}
               label={label}
-              tone={colors.grass}
+              tone={theme.colors.grass}
               selected={tab === key}
               onPress={() => setTab(key)}
             />
@@ -385,6 +389,8 @@ function LibraryRow({
   /** Offered only for imported photos; bundled puzzles are read-only. */
   onDelete: (puzzleId: string, title: string, wasFavourite: boolean) => void;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const done = progress?.status === 'completed';
   const source = puzzle ? resolvePuzzleImageSource(puzzle) : null;
@@ -436,7 +442,7 @@ function LibraryRow({
                 goal={progress.totalPieces}
                 // Sky for in-progress, grass for done. Berry read as an
                 // off-palette purple against the green-and-cream rows.
-                tone={done ? colors.grass : colors.sky}
+                tone={done ? theme.colors.grass : theme.colors.sky}
                 height={8}
               />
             ) : null}
@@ -446,7 +452,7 @@ function LibraryRow({
               keep as the only way to remove one: importing used to be one-way,
               so a mis-picked photo stayed in Library, in Puzzles and in the
               daily pool forever. */}
-          {removable ? null : <PopIcon name="chevron" size={20} color={colors.inkMuted} />}
+          {removable ? null : <PopIcon name="chevron" size={20} color={theme.colors.inkMuted} />}
         </Pressable>
         {removable ? (
           <Pressable
@@ -457,7 +463,7 @@ function LibraryRow({
             onPress={() => onDelete(puzzleId, title, isFavourite)}
             style={styles.deleteButton}
           >
-            <PopIcon name="trash" size={20} color={colors.inkMuted} />
+            <PopIcon name="trash" size={20} color={theme.colors.inkMuted} />
           </Pressable>
         ) : null}
         <Pressable
@@ -473,7 +479,7 @@ function LibraryRow({
           <PopIcon
             name="heart"
             size={22}
-            color={isFavourite ? colors.cherry : colors.inkMuted}
+            color={isFavourite ? theme.colors.cherry : theme.colors.inkMuted}
             weight={isFavourite ? 'fill' : 'regular'}
           />
         </Pressable>
@@ -483,6 +489,7 @@ function LibraryRow({
 }
 
 function EmptyState({ art, text, sub }: { art: ArtName; text: string; sub: string }) {
+  const styles = useStyles();
   return (
     <View style={styles.emptyWrap}>
       <Art name={art} size={72} />
@@ -492,106 +499,108 @@ function EmptyState({ art, text, sub }: { art: ArtName; text: string; sub: strin
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  pageTitle: {
-    ...typography.title,
-    color: colors.headingGreen,
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    // Gives way to the Add button beside it rather than pushing it off the row.
-    flexShrink: 1,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingRight: spacing.lg,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-  },
-  addLabel: { ...typography.caption, color: colors.ink },
-  /**
-   * The tab strip must hug its chips.
-   *
-   * A horizontal `ScrollView` has no intrinsic height, so as a flex child of this
-   * column it stretched to fill everything left under the title — the chips drew at
-   * the top of that over-tall box and the list below it started halfway down the
-   * screen, which is why a single in-progress puzzle floated in the middle and long
-   * lists ran off the bottom. `content` already carried `flexGrow: 0` and a comment
-   * asking for exactly this; the strip above it was what actually took the space.
-   */
-  tabsRow: { flexGrow: 0 },
-  tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-  /** Takes the rest of the column, so the list scrolls within it rather than being cut off. */
-  list: { flex: 1 },
-  content: {
-    padding: spacing.lg,
-    paddingTop: 0,
-    gap: spacing.md,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-    // Short lists sit under the tabs rather than centring in `list`'s height.
-    justifyContent: 'flex-start',
-    flexGrow: 0,
-  },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `accent` shows
-  // as a frame around the white row body nested inside it (see HomeScreen's
-  // `PuzzleCard` — ink-on-saturated-fill body text fails contrast).
-  rowFrame: { padding: spacing.xs },
-  rowBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
-  },
-  rowMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-  },
-  heartButton: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-  },
-  // Narrower than the heart's padding: two full-width targets side by side left
-  // the title with nowhere to go on a narrow phone.
-  deleteButton: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingRight: spacing.md,
-    paddingLeft: spacing.xs,
-  },
-  thumb: {
-    width: 56,
-    height: 56,
-    borderRadius: radii.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.honey,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbImage: { width: '100%', height: '100%' },
-  rowCopy: { flex: 1, gap: 4 },
-  rowTitle: { ...typography.heading, fontSize: 18, color: colors.ink },
-  rowMeta: { ...typography.caption, color: colors.inkMuted },
-  emptyWrap: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xxl },
-  emptyTitle: { ...typography.heading, color: colors.ink, marginTop: spacing.sm },
-  emptySub: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    pageTitle: {
+      ...typography.title,
+      color: theme.colors.headingGreen,
+      marginTop: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      // Gives way to the Add button beside it rather than pushing it off the row.
+      flexShrink: 1,
+    },
+    titleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingRight: spacing.lg,
+    },
+    addButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+    },
+    addLabel: { ...typography.caption, color: theme.colors.ink },
+    /**
+     * The tab strip must hug its chips.
+     *
+     * A horizontal `ScrollView` has no intrinsic height, so as a flex child of this
+     * column it stretched to fill everything left under the title — the chips drew at
+     * the top of that over-tall box and the list below it started halfway down the
+     * screen, which is why a single in-progress puzzle floated in the middle and long
+     * lists ran off the bottom. `content` already carried `flexGrow: 0` and a comment
+     * asking for exactly this; the strip above it was what actually took the space.
+     */
+    tabsRow: { flexGrow: 0 },
+    tabs: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+    /** Takes the rest of the column, so the list scrolls within it rather than being cut off. */
+    list: { flex: 1 },
+    content: {
+      padding: spacing.lg,
+      paddingTop: 0,
+      gap: spacing.md,
+      width: '100%',
+      maxWidth: 720,
+      alignSelf: 'center',
+      // Short lists sit under the tabs rather than centring in `list`'s height.
+      justifyContent: 'flex-start',
+      flexGrow: 0,
+    },
+    // Inset padding on the coloured `PopSurface` face, so a ring of `accent` shows
+    // as a frame around the white row body nested inside it (see HomeScreen's
+    // `PuzzleCard` — ink-on-saturated-fill body text fails contrast).
+    rowFrame: { padding: spacing.xs },
+    rowBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: radii.sm,
+      backgroundColor: theme.colors.surface,
+      overflow: 'hidden',
+    },
+    rowMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+    },
+    heartButton: {
+      alignSelf: 'stretch',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: spacing.md,
+    },
+    // Narrower than the heart's padding: two full-width targets side by side left
+    // the title with nowhere to go on a narrow phone.
+    deleteButton: {
+      alignSelf: 'stretch',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingRight: spacing.md,
+      paddingLeft: spacing.xs,
+    },
+    thumb: {
+      width: 56,
+      height: 56,
+      borderRadius: radii.sm,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.honey,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumbImage: { width: '100%', height: '100%' },
+    rowCopy: { flex: 1, gap: 4 },
+    rowTitle: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
+    rowMeta: { ...typography.caption, color: theme.colors.inkMuted },
+    emptyWrap: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xxl },
+    emptyTitle: { ...typography.heading, color: theme.colors.ink, marginTop: spacing.sm },
+    emptySub: { ...typography.body, color: theme.colors.inkMuted, textAlign: 'center' },
+  }),
+);

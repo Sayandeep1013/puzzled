@@ -13,7 +13,9 @@ import {
 } from '@/data';
 import { formatClock } from '@/features/game/play-clock';
 import { type GridSize } from '@/game-engine';
-import { accentAt, colors, radii, spacing, typography } from '@/shared/theme';
+import { accentAt, radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { PopHeader, PopSurface, Text } from '@/shared/ui';
 
 interface Stats {
@@ -123,6 +125,8 @@ function formatDuration(ms: number): string {
 }
 
 export function StatisticsScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
 
@@ -156,7 +160,11 @@ export function StatisticsScreen() {
           {/* Relocated from Home, which had grown into a dashboard. This screen
               already derived from the same progress rows, so it is where the
               overall figure belongs. */}
-          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.progressBody}>
+          <PopSurface
+            fill={theme.colors.surface}
+            radius={radii.lg}
+            contentStyle={styles.progressBody}
+          >
             <View style={styles.progressCopy}>
               <Text style={styles.progressLabel}>YOUR PROGRESS</Text>
               <Text style={styles.progressValue}>
@@ -229,6 +237,8 @@ const RING_SIZE = 72;
 const RING_STROKE = 6;
 
 function ProgressRing({ percent }: { percent: number }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const radius = (RING_SIZE - RING_STROKE) / 2;
   const circumference = 2 * Math.PI * radius;
   const fraction = Math.min(1, Math.max(0, percent / 100));
@@ -256,7 +266,7 @@ function ProgressRing({ percent }: { percent: number }) {
             cy={RING_SIZE / 2}
             r={radius}
             fill="none"
-            stroke={colors.grass}
+            stroke={theme.colors.grass}
             strokeWidth={RING_STROKE}
             strokeLinecap="round"
             strokeDasharray={`${circumference * fraction} ${circumference}`}
@@ -283,6 +293,7 @@ function StatTile({
   label: string;
   style?: StyleProp<ViewStyle>;
 }) {
+  const styles = useStyles();
   return (
     <PopSurface fill={fill} radius={radii.lg} contentStyle={styles.tileFrame} style={style}>
       <View style={styles.tileBody}>
@@ -295,60 +306,67 @@ function StatTile({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safeArea: { flex: 1 },
-  content: {
-    padding: spacing.lg,
-    gap: spacing.lg,
-    width: '100%',
-    maxWidth: 620,
-    alignSelf: 'center',
-  },
-  progressBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  progressCopy: { flex: 1, gap: 2 },
-  progressLabel: { ...typography.label, color: colors.inkMuted },
-  progressValue: { ...typography.heading, color: colors.ink },
-  progressHint: { ...typography.caption, color: colors.inkMuted },
-  progressRing: {
-    width: RING_SIZE,
-    height: RING_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Absolute, so it centres over the SVG rather than being laid out beside it.
-  progressPercent: {
-    ...typography.heading,
-    fontSize: 17,
-    color: colors.ink,
-    position: 'absolute',
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  tileHalf: { width: '47%' },
-  tileWide: { width: '100%' },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
-  // as a frame around the white tile body nested inside it.
-  tileFrame: { padding: spacing.xs },
-  tileBody: {
-    alignItems: 'center',
-    gap: spacing.xs,
-    borderRadius: radii.md,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.md,
-    backgroundColor: colors.surface,
-  },
-  tileValue: { ...typography.title, fontSize: 28, color: colors.ink },
-  tileLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted, textAlign: 'center' },
-  emptyHint: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safeArea: { flex: 1 },
+    content: {
+      padding: spacing.lg,
+      gap: spacing.lg,
+      width: '100%',
+      maxWidth: 620,
+      alignSelf: 'center',
+    },
+    progressBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      padding: spacing.lg,
+    },
+    progressCopy: { flex: 1, gap: 2 },
+    progressLabel: { ...typography.label, color: theme.colors.inkMuted },
+    progressValue: { ...typography.heading, color: theme.colors.ink },
+    progressHint: { ...typography.caption, color: theme.colors.inkMuted },
+    progressRing: {
+      width: RING_SIZE,
+      height: RING_SIZE,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // Absolute, so it centres over the SVG rather than being laid out beside it.
+    progressPercent: {
+      ...typography.heading,
+      fontSize: 17,
+      color: theme.colors.ink,
+      position: 'absolute',
+    },
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+      justifyContent: 'space-between',
+    },
+    tileHalf: { width: '47%' },
+    tileWide: { width: '100%' },
+    // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+    // as a frame around the white tile body nested inside it.
+    tileFrame: { padding: spacing.xs },
+    tileBody: {
+      alignItems: 'center',
+      gap: spacing.xs,
+      borderRadius: radii.md,
+      paddingVertical: spacing.lg,
+      paddingHorizontal: spacing.md,
+      backgroundColor: theme.colors.surface,
+    },
+    tileValue: { ...typography.title, fontSize: 28, color: theme.colors.ink },
+    tileLabel: {
+      ...typography.label,
+      fontSize: 11,
+      color: theme.colors.inkMuted,
+      textAlign: 'center',
+    },
+    emptyHint: { ...typography.body, color: theme.colors.inkMuted, textAlign: 'center' },
+  }),
+);

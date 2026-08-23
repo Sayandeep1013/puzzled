@@ -4,7 +4,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type ArtName } from '@/shared/art';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { type ThemePalette } from '@/shared/themes';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { radii, spacing, typography } from '@/shared/theme';
 
 import { Art } from './Art';
 import { PopSurface } from './PopSurface';
@@ -24,11 +27,11 @@ type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>
  * `change-avatar` (the bear head) rather than `profile` (a generic orange
  * silhouette) for the Profile tab, matching the mockup and the rest of the set.
  */
-const TABS: Record<string, { art: ArtName; label: string; tint: string }> = {
-  index: { art: 'home', label: 'Home', tint: colors.headingGreen },
-  puzzles: { art: 'category', label: 'Puzzles', tint: colors.sky },
-  library: { art: 'album', label: 'Library', tint: colors.apricot },
-  profile: { art: 'change-avatar', label: 'Profile', tint: colors.berry },
+const TABS: Record<string, { art: ArtName; label: string; tint: keyof ThemePalette }> = {
+  index: { art: 'home', label: 'Home', tint: 'headingGreen' },
+  puzzles: { art: 'category', label: 'Puzzles', tint: 'sky' },
+  library: { art: 'album', label: 'Library', tint: 'apricot' },
+  profile: { art: 'change-avatar', label: 'Profile', tint: 'berry' },
 };
 
 /**
@@ -62,6 +65,8 @@ export function useTabBarSpace(): number {
 
 /** Puzzle Journey bottom navigation, used as the custom `tabBar` for Tabs. */
 export function PopTabBar({ state, navigation }: TabBarProps) {
+  const theme = useTheme();
+  const styles = useStyles();
   const insets = useSafeAreaInsets();
 
   return (
@@ -109,7 +114,10 @@ export function PopTabBar({ state, navigation }: TabBarProps) {
                   Android's.) */}
               <Text
                 numberOfLines={1}
-                style={[styles.label, { color: focused ? meta.tint : colors.inkMuted }]}
+                style={[
+                  styles.label,
+                  { color: focused ? theme.colors[meta.tint] : theme.colors.inkMuted },
+                ]}
               >
                 {meta.label}
               </Text>
@@ -121,41 +129,43 @@ export function PopTabBar({ state, navigation }: TabBarProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  // Absolute so the scene fills the whole screen behind it and each screen's own
-  // background reaches the bottom edge. `pointerEvents: box-none` on the wrapper
-  // keeps the padding around the pill from swallowing taps meant for content.
-  wrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: spacing.md,
-  },
-  bar: {
-    flexDirection: 'row',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  item: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  pill: {
-    position: 'absolute',
-    top: -2,
-    width: 44,
-    height: 34,
-    borderRadius: radii.pill,
-    backgroundColor: 'rgba(123, 193, 22, 0.18)',
-  },
-  dimmed: { opacity: 0.45 },
-  label: {
-    ...typography.caption,
-    fontSize: 11,
-    letterSpacing: 0.3,
-    // See `PopButton`'s label: two points of measurement slack, not spacing.
-    paddingHorizontal: 2,
-  },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    // Absolute so the scene fills the whole screen behind it and each screen's own
+    // background reaches the bottom edge. `pointerEvents: box-none` on the wrapper
+    // keeps the padding around the pill from swallowing taps meant for content.
+    wrap: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingHorizontal: spacing.md,
+    },
+    bar: {
+      flexDirection: 'row',
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.xs,
+    },
+    item: {
+      flex: 1,
+      alignItems: 'center',
+      gap: 2,
+    },
+    pill: {
+      position: 'absolute',
+      top: -2,
+      width: 44,
+      height: 34,
+      borderRadius: radii.pill,
+      backgroundColor: 'rgba(123, 193, 22, 0.18)',
+    },
+    dimmed: { opacity: 0.45 },
+    label: {
+      ...typography.caption,
+      fontSize: 11,
+      letterSpacing: 0.3,
+      // See `PopButton`'s label: two points of measurement slack, not spacing.
+      paddingHorizontal: 2,
+    },
+  }),
+);

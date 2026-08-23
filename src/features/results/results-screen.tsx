@@ -5,7 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getPuzzleById, resolvePuzzleImageSource } from '@/data';
 import { formatClock } from '@/features/game/play-clock';
-import { backgrounds, colors, radii, spacing, typography } from '@/shared/theme';
+import { radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopButton, PopSurface, Text } from '@/shared/ui';
 
 export function ResultsScreen({
@@ -27,6 +29,8 @@ export function ResultsScreen({
   /** Coins credited for this completion (Task 14), shown when positive. */
   coins?: number;
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const pieces = size * size;
   /** The finished artwork, which the mockup makes the centrepiece of this screen. */
@@ -60,7 +64,7 @@ export function ResultsScreen({
               a fallback for a puzzle whose image cannot be resolved. */}
           {image != null ? (
             <PopSurface
-              fill={colors.surface}
+              fill={theme.colors.surface}
               radius={radii.lg}
               elevation="raised"
               contentStyle={styles.artFrame}
@@ -139,8 +143,10 @@ function Stat({
   value: string;
   art?: 'coin' | 'star' | 'clock';
 }) {
+  const theme = useTheme();
+  const styles = useStyles();
   return (
-    <PopSurface fill={colors.surface} radius={radii.md} contentStyle={styles.statInner}>
+    <PopSurface fill={theme.colors.surface} radius={radii.md} contentStyle={styles.statInner}>
       <Text style={styles.statLabel}>{label}</Text>
       <View style={styles.statValueRow}>
         {art ? <Art name={art} size={20} /> : null}
@@ -150,36 +156,38 @@ function Stat({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: backgrounds.results },
-  safe: { flex: 1 },
-  body: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-  },
-  artFrame: { padding: spacing.sm },
-  art: { width: 236, height: 236, borderRadius: radii.md },
-  title: { ...typography.hero, color: colors.honey },
-  subtitle: { ...typography.heading, color: colors.onFill, textAlign: 'center' },
-  mascot: { marginTop: spacing.xs },
-  stats: {
-    flexDirection: 'row',
-    // Wraps rather than running off both screen edges: the row is centred and
-    // nothing clips it, so three cards at a raised font scale simply left the
-    // screen. Wrapping drops COINS onto a second line instead of hiding it.
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  statInner: { alignItems: 'center', gap: 2, paddingHorizontal: spacing.md, paddingVertical: 10 },
-  statLabel: { ...typography.label, fontSize: 11, color: colors.inkMuted },
-  statValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statValue: { ...typography.title, fontSize: 26, color: colors.ink },
-  statDivider: { width: 6 },
-  footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.backgrounds.results },
+    safe: { flex: 1 },
+    body: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.md,
+      padding: spacing.lg,
+    },
+    artFrame: { padding: spacing.sm },
+    art: { width: 236, height: 236, borderRadius: radii.md },
+    title: { ...typography.hero, color: theme.colors.honey },
+    subtitle: { ...typography.heading, color: theme.colors.onFill, textAlign: 'center' },
+    mascot: { marginTop: spacing.xs },
+    stats: {
+      flexDirection: 'row',
+      // Wraps rather than running off both screen edges: the row is centred and
+      // nothing clips it, so three cards at a raised font scale simply left the
+      // screen. Wrapping drops COINS onto a second line instead of hiding it.
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginTop: spacing.sm,
+    },
+    statInner: { alignItems: 'center', gap: 2, paddingHorizontal: spacing.md, paddingVertical: 10 },
+    statLabel: { ...typography.label, fontSize: 11, color: theme.colors.inkMuted },
+    statValueRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    statValue: { ...typography.title, fontSize: 26, color: theme.colors.ink },
+    statDivider: { width: 6 },
+    footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
+  }),
+);

@@ -11,7 +11,9 @@ import {
   type PuzzleDefinition,
 } from '@/game-engine';
 import { type ArtName } from '@/shared/art';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
+import { radii, spacing, typography } from '@/shared/theme';
 import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 /** Difficulty word for a grid size, mirroring the tiers in the mockup. */
@@ -33,6 +35,8 @@ function pieceArtFor(size: GridSize): ArtName {
 }
 
 export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [puzzle, setPuzzle] = useState<PuzzleDefinition | null>(null);
   const [image, setImage] = useState<number | string | null>(null);
@@ -68,7 +72,11 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
         <ScrollView contentContainerStyle={styles.content}>
           {/* A cream frame around the artwork, matching the mockup's board and
               level cards — the photo is the hero, the chrome sits around it. */}
-          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.previewFrame}>
+          <PopSurface
+            fill={theme.colors.surface}
+            radius={radii.lg}
+            contentStyle={styles.previewFrame}
+          >
             <View style={styles.previewBody}>
               {image != null ? (
                 <Image
@@ -102,7 +110,7 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                       stay cream with ink. The mockup distinguishes the two by
                       fill, not by a ring. */}
                   <PopSurface
-                    fill={active ? colors.grassDeep : colors.surface}
+                    fill={active ? theme.colors.grassDeep : theme.colors.surface}
                     radius={radii.md}
                     elevation={active ? 'raised' : 'card'}
                     contentStyle={styles.tileBody}
@@ -132,50 +140,52 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.lg,
-    width: '100%',
-    maxWidth: 620,
-    alignSelf: 'center',
-  },
-  // A cream margin around the artwork rather than a coloured ring.
-  previewFrame: { padding: spacing.sm },
-  previewBody: {
-    height: 200,
-    overflow: 'hidden',
-    borderRadius: radii.md,
-    backgroundColor: colors.white,
-  },
-  previewImage: { width: '100%', height: '100%' },
-  previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  puzzleTitle: { ...typography.title, color: colors.headingGreen, textAlign: 'center' },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-    justifyContent: 'space-between',
-  },
-  tile: { width: '47%' },
-  tileBody: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    gap: 2,
-  },
-  tileCount: { ...typography.title, fontSize: 30, color: colors.ink },
-  tileCountActive: { color: colors.onFill },
-  tileTier: { ...typography.label, color: colors.inkMuted },
-  // 3.25:1 on grassDeep — the same pairing PopButton uses for its grass tone.
-  tileTierActive: { color: colors.onFill },
-  // Bottom padding as well as top: without it the button sat flush against the
-  // gesture bar.
-  footer: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    content: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.xl,
+      gap: spacing.lg,
+      width: '100%',
+      maxWidth: 620,
+      alignSelf: 'center',
+    },
+    // A cream margin around the artwork rather than a coloured ring.
+    previewFrame: { padding: spacing.sm },
+    previewBody: {
+      height: 200,
+      overflow: 'hidden',
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.white,
+    },
+    previewImage: { width: '100%', height: '100%' },
+    previewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    puzzleTitle: { ...typography.title, color: theme.colors.headingGreen, textAlign: 'center' },
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+      justifyContent: 'space-between',
+    },
+    tile: { width: '47%' },
+    tileBody: {
+      alignItems: 'center',
+      paddingVertical: spacing.md,
+      gap: 2,
+    },
+    tileCount: { ...typography.title, fontSize: 30, color: theme.colors.ink },
+    tileCountActive: { color: theme.colors.onFill },
+    tileTier: { ...typography.label, color: theme.colors.inkMuted },
+    // 3.25:1 on grassDeep — the same pairing PopButton uses for its grass tone.
+    tileTierActive: { color: theme.colors.onFill },
+    // Bottom padding as well as top: without it the button sat flush against the
+    // gesture bar.
+    footer: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.md,
+    },
+  }),
+);

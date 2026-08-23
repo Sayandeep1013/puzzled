@@ -2,7 +2,9 @@ import { type ReactNode } from 'react';
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { colors, radii, shadow, spacing, springs, typography } from '@/shared/theme';
+import { radii, shadow, spacing, springs, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { type Theme } from '@/shared/themes';
 
 import { Text } from './Text';
 
@@ -19,29 +21,33 @@ export type PopTone =
  * use their `*Deep` variant; everything else takes ink on the bright value.
  * Verified ratios are in the trailing comments.
  */
-export const TONE_FILL: Record<PopTone, string> = {
-  grass: colors.grassDeep,
-  leaf: colors.leaf,
-  sky: colors.skyDeep,
-  berry: colors.berry,
-  blossom: colors.blossom,
-  honey: colors.honey,
-  apricot: colors.apricot,
-  cherry: colors.cherry,
-  surface: colors.surface,
-};
+export function toneFill(theme: Theme): Record<PopTone, string> {
+  return {
+    grass: theme.colors.grassDeep,
+    leaf: theme.colors.leaf,
+    sky: theme.colors.skyDeep,
+    berry: theme.colors.berry,
+    blossom: theme.colors.blossom,
+    honey: theme.colors.honey,
+    apricot: theme.colors.apricot,
+    cherry: theme.colors.cherry,
+    surface: theme.colors.surface,
+  };
+}
 
-export const TONE_LABEL: Record<PopTone, string> = {
-  grass: colors.onFill, // 3.25
-  leaf: colors.ink, // 6.63
-  sky: colors.onFill, // 3.21
-  berry: colors.onFill, // 3.60
-  blossom: colors.ink, // 6.11
-  honey: colors.ink, // 10.08
-  apricot: colors.ink, // 6.45
-  cherry: colors.onFill, // 3.64
-  surface: colors.ink, // 12.47
-};
+export function toneLabel(theme: Theme): Record<PopTone, string> {
+  return {
+    grass: theme.colors.onFill, // 3.25 on the meadow
+    leaf: theme.colors.ink, // 6.63
+    sky: theme.colors.onFill, // 3.21
+    berry: theme.colors.onFill, // 3.60
+    blossom: theme.colors.ink, // 6.11
+    honey: theme.colors.ink, // 10.08
+    apricot: theme.colors.ink, // 6.45
+    cherry: theme.colors.onFill, // 3.64
+    surface: theme.colors.ink, // 12.47
+  };
+}
 
 const SIZE = {
   sm: {
@@ -86,8 +92,11 @@ export function PopButton({
   style,
   accessibilityLabel,
 }: PopButtonProps) {
+  const theme = useTheme();
   const press = useSharedValue(0);
   const metrics = SIZE[size];
+  const fill = toneFill(theme)[tone];
+  const labelColor = toneLabel(theme)[tone];
 
   // Chunky Pop translated the face into a hard sibling shadow. With a blurred
   // shadow there is nothing to translate into, so the press reads as the button
@@ -118,7 +127,7 @@ export function PopButton({
         style={[
           styles.face,
           {
-            backgroundColor: TONE_FILL[tone],
+            backgroundColor: fill,
             borderRadius: metrics.radius,
             paddingVertical: metrics.paddingVertical,
             paddingHorizontal: metrics.paddingHorizontal,
@@ -134,7 +143,7 @@ export function PopButton({
             to an ellipsis instead, which is legible and obviously deliberate. */}
         <Text
           numberOfLines={1}
-          style={[styles.label, { color: TONE_LABEL[tone], fontSize: metrics.fontSize }]}
+          style={[styles.label, { color: labelColor, fontSize: metrics.fontSize }]}
         >
           {label}
         </Text>

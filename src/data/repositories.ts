@@ -47,11 +47,20 @@ export interface ProgressRepository {
   deleteSessionsForPuzzle(puzzleId: string): Promise<void>;
 }
 
-/** Player-controlled toggles for sound, music, and haptics feedback. */
+/** Player-controlled preferences. */
 export interface AppSettings {
   sound: boolean;
   music: boolean;
   haptics: boolean;
+  /**
+   * Chosen theme, as a `ThemeId` from `@/shared/themes`.
+   *
+   * Stored as a plain string rather than the union, so the data layer never
+   * imports from `shared/` — and so a row written by a build that shipped a
+   * theme this one does not know about is read back and discarded rather than
+   * crashing (`themeById` falls back).
+   */
+  themeId: string;
 }
 
 export interface SettingsRepository {
@@ -73,6 +82,7 @@ export type LedgerReason =
   | 'hint-spend'
   | 'hint-purchase'
   | 'achievement-unlock'
+  | 'theme-unlock'
   | 'coin-purchase'
   | 'starter-grant';
 

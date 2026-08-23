@@ -2,10 +2,16 @@ import { DEFAULT_SETTINGS, mergeSettings, parseSettingsRows } from './settings-r
 
 describe('mergeSettings', () => {
   it('overlays a patch onto current values', () => {
-    expect(mergeSettings({ sound: true, music: true, haptics: true }, { music: false })).toEqual({
-      sound: true,
+    expect(mergeSettings(DEFAULT_SETTINGS, { music: false })).toEqual({
+      ...DEFAULT_SETTINGS,
       music: false,
-      haptics: true,
+    });
+  });
+
+  it('overlays a non-boolean setting too', () => {
+    expect(mergeSettings(DEFAULT_SETTINGS, { themeId: 'wood' })).toEqual({
+      ...DEFAULT_SETTINGS,
+      themeId: 'wood',
     });
   });
 
@@ -26,7 +32,19 @@ describe('parseSettingsRows', () => {
     expect(parseSettingsRows([{ key: 'gravity', value: '1' }])).toEqual(DEFAULT_SETTINGS);
   });
 
-  it('defaults every toggle to on', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ sound: true, music: true, haptics: true });
+  it('defaults every toggle to on, and the theme to the one that ships', () => {
+    expect(DEFAULT_SETTINGS).toEqual({
+      sound: true,
+      music: true,
+      haptics: true,
+      themeId: 'meadow',
+    });
+  });
+
+  it('reads a string setting as its own text, not as a boolean', () => {
+    // Every setting was a boolean until the theme arrived, and the parser read
+    // `value === '1'` for all of them — which would have turned every theme id
+    // into `false`.
+    expect(parseSettingsRows([{ key: 'themeId', value: 'wood' }]).themeId).toBe('wood');
   });
 });

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { colors } from '@/shared/theme';
+import { ThemeProvider, useTheme } from '@/shared/theme-context';
 import { LoadingScreen } from '@/shared/ui';
 
 void SplashScreen.preventAutoHideAsync();
@@ -95,33 +95,52 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            contentStyle: { backgroundColor: colors.paper },
-            headerShown: false,
-          }}
-        >
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="difficulty/[puzzleId]" />
-          <Stack.Screen name="game/[puzzleId]" />
-          <Stack.Screen name="results/[puzzleId]" />
-          <Stack.Screen name="pack/[packId]" />
-          <Stack.Screen name="daily" />
-          <Stack.Screen name="coins" />
-          <Stack.Screen name="achievements" />
-          <Stack.Screen name="statistics" />
-          <Stack.Screen name="settings" />
-          {/* Dev-only depth comparison; nothing links to it. `puzzled://depth-lab`. */}
-          <Stack.Screen name="depth-lab" />
-        </Stack>
-        {/* Last child, so it overlays the navigator: the app mounts and warms up
-            behind it rather than after it. Gated on the fonts so its wordmark is never
-            drawn in a fallback face — until then the native splash is still up. */}
-        {fontsSettled && loading ? (
-          <LoadingScreen onDone={finishLoading} revealed={splashHidden} />
-        ) : null}
+        {/* Above the navigator, so every screen — and the loading overlay — reads
+            the same palette. The provider itself renders nothing. */}
+        <ThemeProvider>
+          <StatusBar style="dark" />
+          <ThemedStack />
+          {/* Last child, so it overlays the navigator: the app mounts and warms up
+              behind it rather than after it. Gated on the fonts so its wordmark is
+              never drawn in a fallback face — until then the native splash is up. */}
+          {fontsSettled && loading ? (
+            <LoadingScreen onDone={finishLoading} revealed={splashHidden} />
+          ) : null}
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+  );
+}
+
+/**
+ * The navigator, split out purely so it sits *inside* `ThemeProvider`.
+ *
+ * `screenOptions.contentStyle` paints the ground behind every screen during a
+ * push, so it has to follow the theme — and a hook cannot be called in the same
+ * component that renders the provider.
+ */
+function ThemedStack() {
+  const theme = useTheme();
+
+  return (
+    <Stack
+      screenOptions={{
+        contentStyle: { backgroundColor: theme.colors.paper },
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="difficulty/[puzzleId]" />
+      <Stack.Screen name="game/[puzzleId]" />
+      <Stack.Screen name="results/[puzzleId]" />
+      <Stack.Screen name="pack/[packId]" />
+      <Stack.Screen name="daily" />
+      <Stack.Screen name="coins" />
+      <Stack.Screen name="achievements" />
+      <Stack.Screen name="statistics" />
+      <Stack.Screen name="settings" />
+      {/* Dev-only depth comparison; nothing links to it. `puzzled://depth-lab`. */}
+      <Stack.Screen name="depth-lab" />
+    </Stack>
   );
 }

@@ -49,7 +49,8 @@ import {
   type Size,
 } from '@/game-engine';
 import { commandsToSkPath } from '@/game-engine/rendering';
-import { backgrounds, colors } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { type Theme } from '@/shared/themes';
 
 import { initBoardAudio, pauseBoardAudio, playSfx } from './board-audio';
 import { FX, impact, setHapticsEnabled, success } from './board-fx';
@@ -105,7 +106,22 @@ const TRAY_HEIGHT =
  * square, so a shell taller than `width + this` can only add dead margin.
  */
 export const BOARD_TRAY_RESERVE = TRAY_HEIGHT + TRAY_GAP;
-const CONFETTI_COLORS = [colors.berry, colors.honey, colors.apricot, colors.grass, colors.blossom];
+/**
+ * Confetti brights, as a function of the theme.
+ *
+ * A module-level array would be built once against whichever palette loaded
+ * first, so the celebration would keep the meadow's colours on every other
+ * theme — the same build-time binding the whole theme refactor exists to undo.
+ */
+function confettiColors(theme: Theme): string[] {
+  return [
+    theme.colors.berry,
+    theme.colors.honey,
+    theme.colors.apricot,
+    theme.colors.grass,
+    theme.colors.blossom,
+  ];
+}
 /** Pointer velocity (px/s) that maps to the full `FX.maxTiltDeg` tilt while dragging. */
 const TILT_VELOCITY_RANGE = 900;
 
@@ -460,6 +476,7 @@ const TrayPiece = memo(function TrayPiece({
   highlight: boolean;
   hidden: boolean;
 }) {
+  const theme = useTheme();
   if (hidden) {
     return null;
   }
@@ -478,7 +495,7 @@ const TrayPiece = memo(function TrayPiece({
           ring — in sky blue, so no orange remains anywhere on the board. Pieces
           otherwise rely on the drop shadow from `PieceFill`. */}
       {highlight ? (
-        <Path path={prepared.skPath} style="stroke" strokeWidth={3} color={colors.sky} />
+        <Path path={prepared.skPath} style="stroke" strokeWidth={3} color={theme.colors.sky} />
       ) : null}
     </Group>
   );
@@ -656,10 +673,12 @@ function ConfettiPiece({
 }
 
 function Confetti({ width, height }: { width: number; height: number }) {
+  const theme = useTheme();
   const t = useSharedValue(0);
   useEffect(() => {
     t.value = withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) });
   }, [t]);
+  const palette = useMemo(() => confettiColors(theme), [theme]);
   const particles = useMemo<Particle[]>(
     () =>
       Array.from({ length: FX.confettiCount }, (_, i) => ({
@@ -670,9 +689,9 @@ function Confetti({ width, height }: { width: number; height: number }) {
         drift: 20 + Math.random() * 40,
         spin: (Math.random() * 8 - 4) * Math.PI,
         size: 8 + Math.random() * 6,
-        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+        color: palette[i % palette.length],
       })),
-    [width, height],
+    [width, height, palette],
   );
   return (
     <Canvas style={[styles.overlay, { width, height }]} pointerEvents="none">
@@ -691,6 +710,7 @@ export function PuzzleBoard({
   getElapsedMs,
   highlightEdges = false,
 }: PuzzleBoardProps) {
+  const theme = useTheme();
   const image = useImage(imageSource);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -1519,7 +1539,7 @@ export function PuzzleBoard({
               width={Math.max(vw - TRAY_PAD, 1)}
               height={TRAY_HEIGHT}
               r={TRAY_RADIUS}
-              color={backgrounds.game}
+              color={theme.backgrounds.game}
               opacity={0.95}
             />
 
@@ -1557,7 +1577,7 @@ export function PuzzleBoard({
                     width={boardSize.width + BOARD_PADDING * 2}
                     height={boardSize.height + BOARD_PADDING * 2}
                     r={cornerRadius + BOARD_PADDING * 0.6}
-                    color={colors.surface}
+                    color={theme.colors.surface}
                   >
                     <Shadow
                       dx={0}
@@ -1661,7 +1681,7 @@ export function PuzzleBoard({
                   width={trayThumbW}
                   height={FX.tray.sliderHeight}
                   r={FX.tray.sliderHeight / 2}
-                  color={colors.white}
+                  color={theme.colors.white}
                 >
                   <Shadow dx={0} dy={1} blur={3} color="rgba(58,43,26,0.35)" />
                 </RoundedRect>
@@ -1673,7 +1693,7 @@ export function PuzzleBoard({
                   r={FX.tray.sliderHeight / 2}
                   style="stroke"
                   strokeWidth={1.5}
-                  color={colors.grass}
+                  color={theme.colors.grass}
                 />
                 {/* Grip lines ride the thumb via a translated group, so only one
                     animated value is involved rather than six derived points. */}
@@ -1683,7 +1703,7 @@ export function PuzzleBoard({
                       key={offset}
                       p1={vec(trayThumbW / 2 + offset, sliderY + 3)}
                       p2={vec(trayThumbW / 2 + offset, sliderY + FX.tray.sliderHeight - 3)}
-                      color={colors.grass}
+                      color={theme.colors.grass}
                       style="stroke"
                       strokeWidth={1.5}
                     />

@@ -12,7 +12,9 @@ import {
   streakFrom,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { colors, radii, spacing, typography } from '@/shared/theme';
+import { radii, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -75,6 +77,8 @@ async function loadDailyData(key: string): Promise<DailyData> {
 }
 
 export function DailyScreen() {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [data, setData] = useState<DailyData>(EMPTY);
   /** Day-of-month the player has tapped; `null` means today. */
@@ -176,7 +180,7 @@ export function DailyScreen() {
         {/* Was a plain View, which is why the page could not scroll and the Play
             button sat off the bottom of the screen. */}
         <ScrollView contentContainerStyle={styles.content}>
-          <PopSurface fill={colors.surface} radius={radii.lg}>
+          <PopSurface fill={theme.colors.surface} radius={radii.lg}>
             <View style={styles.calendar}>
               <Text style={styles.month}>{calendar.label}</Text>
               <View style={styles.weekRow}>
@@ -240,7 +244,7 @@ export function DailyScreen() {
 
           {/* Honey is light enough for direct ink text (10.08:1) — no white-body
               frame needed here, matching `home-screen.tsx`'s progress card. */}
-          <PopSurface fill={colors.honey} radius={radii.lg} contentStyle={styles.streakFrame}>
+          <PopSurface fill={theme.colors.honey} radius={radii.lg} contentStyle={styles.streakFrame}>
             <View style={styles.streakBody}>
               <View style={styles.streakIconWrap}>
                 {/* The art set has no flame, and a flat Phosphor one would read
@@ -263,7 +267,11 @@ export function DailyScreen() {
             </View>
           </PopSurface>
 
-          <PopSurface fill={colors.surface} radius={radii.lg} contentStyle={styles.featureFrame}>
+          <PopSurface
+            fill={theme.colors.surface}
+            radius={radii.lg}
+            contentStyle={styles.featureFrame}
+          >
             <View style={styles.featureBody}>
               {source != null ? (
                 <Image
@@ -307,83 +315,90 @@ export function DailyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.paper },
-  safe: { flex: 1 },
-  // No `flex: 1` on a ScrollView's contentContainer: it would pin the content to
-  // one viewport height and defeat scrolling, which is the bug being fixed.
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxl,
-    gap: spacing.lg,
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-  },
-  calendar: { padding: spacing.md, gap: spacing.sm },
-  month: { ...typography.heading, color: colors.headingGreen, textAlign: 'center' },
-  weekRow: { flexDirection: 'row' },
-  weekday: {
-    ...typography.label,
-    fontSize: 11,
-    color: colors.inkMuted,
-    flex: 1,
-    textAlign: 'center',
-  },
-  daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  // The tap target is the circle itself, sized past the 44pt minimum once the
-  // cell padding is counted.
-  dayHit: {
-    width: 38,
-    height: 38,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  daySelected: { backgroundColor: colors.grass },
-  /**
-   * Cancels `daySelected`'s fill under the completion coin.
-   *
-   * Applied after it, deliberately: today's cell draws `coin-check` art instead
-   * of its number once the daily is finished, and a grass disc behind that coin
-   * reads as a smudge rather than as a selection. Not dead style — removing it
-   * puts the disc back.
-   */
-  dayPlayed: { backgroundColor: 'transparent' },
-  dayText: { ...typography.body, color: colors.ink },
-  dayTextSelected: { ...typography.bodyStrong, color: colors.onFill },
-  dayTextFuture: { color: colors.locked },
-  calendarHint: {
-    ...typography.caption,
-    color: colors.inkMuted,
-    textAlign: 'center',
-    marginTop: spacing.xs,
-  },
-  streakFrame: { padding: spacing.lg },
-  streakBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  streakIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.pill,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  streakCopy: { flex: 1, gap: 2 },
-  streakValue: { ...typography.heading, fontSize: 18, color: colors.ink },
-  streakHint: { ...typography.caption, color: colors.ink },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `tangerine`
-  // shows as a frame around the white body nested inside it (the
-  // `home-screen.tsx` `PuzzleCard` pattern).
-  featureFrame: { padding: spacing.xs },
-  featureBody: {
-    height: 180,
-    overflow: 'hidden',
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
-  },
-  featureImage: { width: '100%', height: '100%' },
-  featureFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  prompt: { ...typography.heading, fontSize: 18, color: colors.ink, textAlign: 'center' },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.colors.paper },
+    safe: { flex: 1 },
+    // No `flex: 1` on a ScrollView's contentContainer: it would pin the content to
+    // one viewport height and defeat scrolling, which is the bug being fixed.
+    content: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.xxl,
+      gap: spacing.lg,
+      width: '100%',
+      maxWidth: 560,
+      alignSelf: 'center',
+    },
+    calendar: { padding: spacing.md, gap: spacing.sm },
+    month: { ...typography.heading, color: theme.colors.headingGreen, textAlign: 'center' },
+    weekRow: { flexDirection: 'row' },
+    weekday: {
+      ...typography.label,
+      fontSize: 11,
+      color: theme.colors.inkMuted,
+      flex: 1,
+      textAlign: 'center',
+    },
+    daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+    dayCell: {
+      width: `${100 / 7}%`,
+      aspectRatio: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    // The tap target is the circle itself, sized past the 44pt minimum once the
+    // cell padding is counted.
+    dayHit: {
+      width: 38,
+      height: 38,
+      borderRadius: radii.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    daySelected: { backgroundColor: theme.colors.grass },
+    /**
+     * Cancels `daySelected`'s fill under the completion coin.
+     *
+     * Applied after it, deliberately: today's cell draws `coin-check` art instead
+     * of its number once the daily is finished, and a grass disc behind that coin
+     * reads as a smudge rather than as a selection. Not dead style — removing it
+     * puts the disc back.
+     */
+    dayPlayed: { backgroundColor: 'transparent' },
+    dayText: { ...typography.body, color: theme.colors.ink },
+    dayTextSelected: { ...typography.bodyStrong, color: theme.colors.onFill },
+    dayTextFuture: { color: theme.colors.locked },
+    calendarHint: {
+      ...typography.caption,
+      color: theme.colors.inkMuted,
+      textAlign: 'center',
+      marginTop: spacing.xs,
+    },
+    streakFrame: { padding: spacing.lg },
+    streakBody: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    streakIconWrap: {
+      width: 48,
+      height: 48,
+      borderRadius: radii.pill,
+      backgroundColor: theme.colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    streakCopy: { flex: 1, gap: 2 },
+    streakValue: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
+    streakHint: { ...typography.caption, color: theme.colors.ink },
+    // Inset padding on the coloured `PopSurface` face, so a ring of `tangerine`
+    // shows as a frame around the white body nested inside it (the
+    // `home-screen.tsx` `PuzzleCard` pattern).
+    featureFrame: { padding: spacing.xs },
+    featureBody: {
+      height: 180,
+      overflow: 'hidden',
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.surface,
+    },
+    featureImage: { width: '100%', height: '100%' },
+    featureFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    prompt: { ...typography.heading, fontSize: 18, color: theme.colors.ink, textAlign: 'center' },
+  }),
+);

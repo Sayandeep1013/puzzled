@@ -13,7 +13,8 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { LOADING_BEAR_SIZE } from '@/shared/splash';
-import { colors, motion, splash, springs, typography } from '@/shared/theme';
+import { motion, splash, springs, typography } from '@/shared/theme';
+import { createThemedStyles } from '@/shared/themed-styles';
 
 import { Art } from './Art';
 import { WordmarkTitle } from './WordmarkTitle';
@@ -84,6 +85,7 @@ interface LoadingScreenProps {
 }
 
 export function LoadingScreen({ onDone, ready = true, revealed = true }: LoadingScreenProps) {
+  const styles = useStyles();
   // Exactly the size the native splash draws, on every screen — see
   // `@/shared/splash`. The bear does not change size at the handoff, because an
   // animation cannot be reliably synchronised to a system window's teardown.
@@ -194,6 +196,7 @@ export function LoadingScreen({ onDone, ready = true, revealed = true }: Loading
  * left-to-right wave rather than three things blinking together.
  */
 function LoadingDot({ index }: { index: number }) {
+  const styles = useStyles();
   const pulse = useSharedValue(0);
 
   useEffect(() => {
@@ -221,30 +224,32 @@ function LoadingDot({ index }: { index: number }) {
   return <Animated.View style={[styles.dot, style]} />;
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    // `absoluteFill`, not `absoluteFillObject` — RN 0.86 dropped the latter.
-    ...StyleSheet.absoluteFill,
-    // Must equal the native splash's backgroundColor — that identity is what
-    // makes the handoff invisible, and `splash.test.ts` asserts the two match.
-    backgroundColor: splash.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  /** Everything under the bear, pinned below screen centre so the bear stays on it. */
-  below: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  wordmark: { marginTop: 4 },
-  dots: { flexDirection: 'row', gap: 10, marginTop: 28 },
-  dot: {
-    width: 11,
-    height: 11,
-    borderRadius: 999,
-    backgroundColor: colors.onFill,
-  },
-  caption: {
-    ...typography.label,
-    color: colors.headingBlue,
-    marginTop: 14,
-    letterSpacing: 0.8,
-  },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    overlay: {
+      // `absoluteFill`, not `absoluteFillObject` — RN 0.86 dropped the latter.
+      ...StyleSheet.absoluteFill,
+      // Must equal the native splash's backgroundColor — that identity is what
+      // makes the handoff invisible, and `splash.test.ts` asserts the two match.
+      backgroundColor: splash.background,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    /** Everything under the bear, pinned below screen centre so the bear stays on it. */
+    below: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+    wordmark: { marginTop: 4 },
+    dots: { flexDirection: 'row', gap: 10, marginTop: 28 },
+    dot: {
+      width: 11,
+      height: 11,
+      borderRadius: 999,
+      backgroundColor: theme.colors.onFill,
+    },
+    caption: {
+      ...typography.label,
+      color: theme.colors.headingBlue,
+      marginTop: 14,
+      letterSpacing: 0.8,
+    },
+  }),
+);

@@ -10,7 +10,9 @@ import {
   type PuzzleProgressSummary,
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
-import { accentAt, backgrounds, colors, radii, shadow, spacing, typography } from '@/shared/theme';
+import { accentAt, radii, shadow, spacing, typography } from '@/shared/theme';
+import { useTheme } from '@/shared/theme-context';
+import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopButton, PopHeader, PopSurface, Text } from '@/shared/ui';
 
 /**
@@ -57,6 +59,8 @@ async function loadPackData(): Promise<PackData> {
 }
 
 export function PackScreen({ packId }: { packId: string }) {
+  const theme = useTheme();
+  const styles = useStyles();
   const router = useRouter();
   const [data, setData] = useState<PackData>(EMPTY);
   const pack = PACKS[packId] ?? null;
@@ -79,7 +83,7 @@ export function PackScreen({ packId }: { packId: string }) {
         <PopHeader
           title={pack?.title ?? 'Pack'}
           onBack={() => router.back()}
-          titleColor={colors.onFill}
+          titleColor={theme.colors.onFill}
         />
         <ScrollView contentContainerStyle={styles.content}>
           {pack == null ? (
@@ -136,6 +140,7 @@ function PackPuzzleRow({
   /** Deterministic per-position accent from `accentAt` — the colour frame around the row. */
   fill: string;
 }) {
+  const styles = useStyles();
   const router = useRouter();
   const latest = rows[0]; // Most recently played size, or undefined.
   const done = latest?.status === 'completed';
@@ -189,63 +194,65 @@ function PackPuzzleRow({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: backgrounds.pack },
-  safe: { flex: 1 },
-  content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
-    width: '100%',
-    maxWidth: 720,
-    alignSelf: 'center',
-  },
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.sm,
-  },
-  heroIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: radii.md,
-    backgroundColor: colors.surface,
-    boxShadow: shadow.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroCopy: { flex: 1, gap: 2 },
-  // The pack ground is saturated mint, so copy over it goes white.
-  tagline: { ...typography.heading, fontSize: 18, color: colors.onFill },
-  // Both sit directly on the mint ground, not inside a card.
-  sectionMeta: { ...typography.caption, color: colors.onFill },
-  empty: { ...typography.body, color: colors.onFill, paddingVertical: spacing.lg },
-  footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
-  footerNote: { ...typography.caption, color: colors.onFill, textAlign: 'center' },
-  // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
-  // as a frame around the white row body nested inside it (the
-  // `home-screen.tsx` `PuzzleCard` pattern).
-  rowFrame: { padding: spacing.xs },
-  rowBody: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
-  },
-  thumb: {
-    width: 56,
-    height: 56,
-    borderRadius: radii.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbImage: { width: '100%', height: '100%' },
-  rowCopy: { flex: 1, gap: 2 },
-  rowTitle: { ...typography.heading, fontSize: 17, color: colors.ink },
-  rowMeta: { ...typography.caption, color: colors.inkMuted },
-});
+const useStyles = createThemedStyles((theme) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.backgrounds.pack },
+    safe: { flex: 1 },
+    content: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.xl,
+      gap: spacing.md,
+      width: '100%',
+      maxWidth: 720,
+      alignSelf: 'center',
+    },
+    hero: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      marginBottom: spacing.sm,
+    },
+    heroIconWrap: {
+      width: 56,
+      height: 56,
+      borderRadius: radii.md,
+      backgroundColor: theme.colors.surface,
+      boxShadow: shadow.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroCopy: { flex: 1, gap: 2 },
+    // The pack ground is saturated mint, so copy over it goes white.
+    tagline: { ...typography.heading, fontSize: 18, color: theme.colors.onFill },
+    // Both sit directly on the mint ground, not inside a card.
+    sectionMeta: { ...typography.caption, color: theme.colors.onFill },
+    empty: { ...typography.body, color: theme.colors.onFill, paddingVertical: spacing.lg },
+    footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
+    footerNote: { ...typography.caption, color: theme.colors.onFill, textAlign: 'center' },
+    // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
+    // as a frame around the white row body nested inside it (the
+    // `home-screen.tsx` `PuzzleCard` pattern).
+    rowFrame: { padding: spacing.xs },
+    rowBody: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      padding: spacing.md,
+      borderRadius: radii.sm,
+      backgroundColor: theme.colors.surface,
+    },
+    thumb: {
+      width: 56,
+      height: 56,
+      borderRadius: radii.sm,
+      overflow: 'hidden',
+      backgroundColor: theme.colors.paper,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumbImage: { width: '100%', height: '100%' },
+    rowCopy: { flex: 1, gap: 2 },
+    rowTitle: { ...typography.heading, fontSize: 17, color: theme.colors.ink },
+    rowMeta: { ...typography.caption, color: theme.colors.inkMuted },
+  }),
+);
