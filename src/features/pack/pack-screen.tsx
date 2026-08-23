@@ -11,7 +11,6 @@ import {
 } from '@/data';
 import { type PuzzleDefinition } from '@/game-engine';
 import { accentAt, radii, shadow, spacing, typography } from '@/shared/theme';
-import { useTheme } from '@/shared/theme-context';
 import { createThemedStyles } from '@/shared/themed-styles';
 import { Art, PopButton, PopHeader, PopSurface, Text, ThemeGround } from '@/shared/ui';
 
@@ -59,7 +58,6 @@ async function loadPackData(): Promise<PackData> {
 }
 
 export function PackScreen({ packId }: { packId: string }) {
-  const theme = useTheme();
   const styles = useStyles();
   const router = useRouter();
   const [data, setData] = useState<PackData>(EMPTY);
@@ -81,11 +79,7 @@ export function PackScreen({ packId }: { packId: string }) {
     <View style={styles.root}>
       <ThemeGround />
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <PopHeader
-          title={pack?.title ?? 'Pack'}
-          onBack={() => router.back()}
-          titleColor={theme.colors.onFill}
-        />
+        <PopHeader title={pack?.title ?? 'Pack'} onBack={() => router.back()} />
         <ScrollView contentContainerStyle={styles.content}>
           {pack == null ? (
             <Text style={styles.empty}>This pack doesn&apos;t exist yet.</Text>
@@ -225,12 +219,17 @@ const useStyles = createThemedStyles((theme) =>
     },
     heroCopy: { flex: 1, gap: 2 },
     // The pack ground is saturated mint, so copy over it goes white.
-    tagline: { ...typography.heading, fontSize: 18, color: theme.colors.onFill },
+    // Ink, not `onFill`. The pack ground is a *light* mint in the meadow and a
+    // light oak under the wood, so the white this screen was written in measured
+    // 1.73:1 against the mint — text you can see is there and cannot read.
+    tagline: { ...typography.heading, fontSize: 18, color: theme.colors.ink },
     // Both sit directly on the mint ground, not inside a card.
-    sectionMeta: { ...typography.caption, color: theme.colors.onFill },
-    empty: { ...typography.body, color: theme.colors.onFill, paddingVertical: spacing.lg },
+    // Full ink rather than `inkMuted`: muted measures 3.8:1 on the mint, which
+    // clears the bar for the 18pt tagline above and misses it for a caption.
+    sectionMeta: { ...typography.caption, color: theme.colors.ink },
+    empty: { ...typography.body, color: theme.colors.ink, paddingVertical: spacing.lg },
     footerArt: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xl },
-    footerNote: { ...typography.caption, color: theme.colors.onFill, textAlign: 'center' },
+    footerNote: { ...typography.caption, color: theme.colors.ink, textAlign: 'center' },
     // Inset padding on the coloured `PopSurface` face, so a ring of `fill` shows
     // as a frame around the white row body nested inside it (the
     // `home-screen.tsx` `PuzzleCard` pattern).

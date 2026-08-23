@@ -3,7 +3,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { colors as meadowColors } from './tokens';
-import { DEFAULT_THEME_ID, MEADOW, THEMES, themeById, type ThemePalette } from './themes';
+import {
+  DEFAULT_THEME_ID,
+  MEADOW,
+  THEMES,
+  themeById,
+  type ThemeBackgrounds,
+  type ThemePalette,
+} from './themes';
 
 /**
  * Guards the theme refactor.
@@ -87,6 +94,31 @@ const PAIRINGS: { name: string; on: keyof ThemePalette; text: keyof ThemePalette
     { name: 'heading on the page', on: 'paper', text: 'headingGreen', min: 3 },
   ];
 
+/**
+ * The two screens that bring their own ground instead of sitting on `paper`.
+ *
+ * Both were written against one theme's ground and never re-measured. Results
+ * put a honey title on the meadow's cerulean at 2.38:1 — under the 3.0 bar large
+ * text gets, on the one screen whose whole job is to be read at a glance — and
+ * Pack put white on a *light* mint at 1.73:1, which is text you can see is there
+ * and cannot read.
+ *
+ * Keyed off `backgrounds` rather than `colors`, so this is a separate table from
+ * the one above rather than a widened version of it.
+ */
+const GROUND_PAIRINGS: {
+  name: string;
+  on: keyof ThemeBackgrounds;
+  text: keyof ThemePalette;
+  min: number;
+}[] = [
+  { name: 'the celebration title', on: 'results', text: 'honey', min: 3 },
+  { name: 'the celebration subtitle', on: 'results', text: 'onFill', min: 3 },
+  { name: 'a pack heading', on: 'pack', text: 'ink', min: 3 },
+  { name: 'pack body copy', on: 'pack', text: 'ink', min: 4.5 },
+  { name: 'a pack header title', on: 'pack', text: 'headingGreen', min: 3 },
+];
+
 describe('theme contrast', () => {
   it.each(
     THEMES.flatMap((theme) =>
@@ -97,6 +129,18 @@ describe('theme contrast', () => {
       })),
     ),
   )('$label clears its bar', ({ ratio, min }) => {
+    expect(ratio).toBeGreaterThanOrEqual(min);
+  });
+
+  it.each(
+    THEMES.flatMap((theme) =>
+      GROUND_PAIRINGS.map((pairing) => ({
+        label: `${theme.name}: ${pairing.name}`,
+        ratio: contrast(theme.colors[pairing.text], theme.backgrounds[pairing.on]),
+        min: pairing.min,
+      })),
+    ),
+  )('$label clears its bar on its own ground', ({ ratio, min }) => {
     expect(ratio).toBeGreaterThanOrEqual(min);
   });
 });

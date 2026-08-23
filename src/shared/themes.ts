@@ -117,7 +117,14 @@ export const WOOD: Theme = {
     homeGrass: '#CBAE87',
     /** The board sits on a paler sheet than the desk. */
     game: '#EFE1C4',
-    results: '#2E97D8',
+    /**
+     * The wood theme brings its own celebration ground rather than borrowing the
+     * meadow's blue. Results is the one screen the theme material does not cover
+     * — see `results-screen.tsx` — so without this the wood theme ended a puzzle
+     * on a cerulean screen that belonged to a different app. Warm chestnut,
+     * carrying white at 6.35:1 and the honey title at 4.69:1.
+     */
+    results: '#8A5220',
     pack: '#D8BC93',
     default: '#E2CBA8',
   },

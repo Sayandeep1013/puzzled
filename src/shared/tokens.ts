@@ -81,8 +81,15 @@ export const backgrounds = {
   homeGrass: '#A8D95C',
   /** Game board screen — pale yellow-green. */
   game: '#DFEF9F',
-  /** Results — the one saturated, celebratory ground. */
-  results: '#2E97D8',
+  /**
+   * Results — the one saturated, celebratory ground.
+   *
+   * Deepened from `#2E97D8`. That blue carried the honey title at 2.38:1 and
+   * white at 3.21:1 — the title missing even the 3.0 bar large text gets, on the
+   * one screen whose whole job is to be read at a glance. Same cerulean, dark
+   * enough to hold both: honey 3.37:1, white 4.56:1.
+   */
+  results: '#1F7CB4',
   /** Pack and collection listings. */
   pack: '#83D799',
   /** Everything else. */
