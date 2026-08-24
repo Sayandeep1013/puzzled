@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { type ComponentProps } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type ArtName } from '@/shared/art';
@@ -11,7 +11,7 @@ import { radii, spacing, typography } from '@/shared/theme';
 
 import { Art } from './Art';
 import { PopSurface } from './PopSurface';
-import { Text } from './Text';
+import { MAX_FONT_SCALE, Text } from './Text';
 
 // `Tabs.tabBar` receives BottomTabBarProps; derive it without a subpath import
 // (expo-router does not re-export the type from its top-level entry point).
@@ -40,9 +40,30 @@ const TABS: Record<string, { art: ArtName; label: string; tint: keyof ThemePalet
  * content scrolled underneath and the last row was unreadable.
  */
 const ICON_SIZE = 26;
-const LABEL_LINE = 14;
+const LABEL_FONT_SIZE = 11;
 const ITEM_GAP = 2;
-const BAR_HEIGHT = spacing.sm + ICON_SIZE + ITEM_GAP + LABEL_LINE + spacing.xs;
+
+/**
+ * Nunito's own line box, in ems: `(hhea.ascender - hhea.descender + lineGap) /
+ * unitsPerEm` = `(1011 + 353 + 0) / 1000`. Android lays a label out at the
+ * font's line box, not at its nominal `fontSize`, so an 11pt label occupies 15
+ * points and never the 14 this once assumed.
+ */
+const LABEL_LINE_EM = 1.364;
+
+/**
+ * How tall one label actually draws, at the reader's font scale.
+ *
+ * A constant cannot answer this. The icons, the gaps and the padding are fixed
+ * points, but type is the one thing in the bar that grows with the OS *Font
+ * size* setting — up to `MAX_FONT_SCALE` — and `useTabBarSpace` has to reserve
+ * the height the bar really takes. Reserving a fixed 14 left the last row of
+ * every tab screen a little way underneath the bar, by one point at the default
+ * scale and by five at the ceiling.
+ */
+function labelLine(fontScale: number): number {
+  return LABEL_FONT_SIZE * Math.min(fontScale, MAX_FONT_SCALE) * LABEL_LINE_EM;
+}
 
 /**
  * Vertical space a screen under `(tabs)/` must reserve at the bottom of its
@@ -60,7 +81,9 @@ const BAR_HEIGHT = spacing.sm + ICON_SIZE + ITEM_GAP + LABEL_LINE + spacing.xs;
  */
 export function useTabBarSpace(): number {
   const insets = useSafeAreaInsets();
-  return BAR_HEIGHT + Math.max(insets.bottom, spacing.md) + spacing.md;
+  const { fontScale } = useWindowDimensions();
+  const barHeight = spacing.sm + ICON_SIZE + ITEM_GAP + labelLine(fontScale) + spacing.xs;
+  return Math.ceil(barHeight + Math.max(insets.bottom, spacing.md) + spacing.md);
 }
 
 /** Puzzle Journey bottom navigation, used as the custom `tabBar` for Tabs. */
@@ -162,7 +185,9 @@ const useStyles = createThemedStyles((theme) =>
     dimmed: { opacity: 0.45 },
     label: {
       ...typography.caption,
-      fontSize: 11,
+      // Shared with `labelLine`, so the height reserved for a label and the size
+      // it is drawn at cannot drift apart.
+      fontSize: LABEL_FONT_SIZE,
       letterSpacing: 0.3,
       // See `PopButton`'s label. Breathing room; it is not what keeps "Home"
       // from rendering as "Ho...", and never was.
