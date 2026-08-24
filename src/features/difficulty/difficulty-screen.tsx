@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getPuzzleById, resolvePuzzleImageSource } from '@/data';
+import {
+  getProgressRepository,
+  getPuzzleById,
+  resolvePuzzleImageSource,
+  type PuzzleProgressSummary,
+} from '@/data';
 import {
   expectedPieceCount,
   SUPPORTED_GRID_SIZES,
@@ -34,6 +39,14 @@ function pieceArtFor(size: GridSize): ArtName {
   return 'puzzle-brown';
 }
 
+/** The board the player touched last, so the picker can open on it. */
+function mostRecent(rows: PuzzleProgressSummary[]): PuzzleProgressSummary | null {
+  return rows.reduce<PuzzleProgressSummary | null>(
+    (latest, row) => (latest == null || row.updatedAt > latest.updatedAt ? row : latest),
+    null,
+  );
+}
+
 export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
   const theme = useTheme();
   const styles = useStyles();
@@ -41,15 +54,29 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
   const [puzzle, setPuzzle] = useState<PuzzleDefinition | null>(null);
   const [image, setImage] = useState<number | string | null>(null);
   const [selected, setSelected] = useState<GridSize | null>(null);
+  const [saved, setSaved] = useState<Map<GridSize, PuzzleProgressSummary>>(new Map());
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const found = await getPuzzleById(puzzleId);
+      const [found, summaries] = await Promise.all([
+        getPuzzleById(puzzleId),
+        (await getProgressRepository()).listSummaries().catch(() => [] as PuzzleProgressSummary[]),
+      ]);
       if (!active) return;
+
+      // Every size of *this* puzzle the player has a board for. Boards are
+      // stored per (puzzle, size), so two sizes of one image are two saves.
+      const unfinished = summaries.filter(
+        (row) => row.puzzleId === puzzleId && row.status !== 'completed',
+      );
       setPuzzle(found);
       setImage(found ? resolvePuzzleImageSource(found) : null);
-      setSelected(found?.gridSize ?? 6);
+      setSaved(new Map(unfinished.map((row) => [row.gridSize, row])));
+      // Land on the board they were last on rather than the definition's
+      // default: arriving at a fresh 4x4 with a half-built 3x3 saved reads as
+      // the progress having been thrown away, when it is simply another board.
+      setSelected(mostRecent(unfinished)?.gridSize ?? found?.gridSize ?? 6);
     })();
     return () => {
       active = false;
@@ -98,12 +125,18 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
           <View style={styles.grid}>
             {SUPPORTED_GRID_SIZES.map((size) => {
               const active = size === selected;
+              const board = saved.get(size);
               return (
                 <Pressable
                   key={size}
                   accessibilityRole="button"
                   accessibilityState={{ selected: active }}
-                  accessibilityLabel={`${expectedPieceCount(size)} pieces, ${tierFor(size)}`}
+                  accessibilityLabel={
+                    board
+                      ? `${expectedPieceCount(size)} pieces, ${tierFor(size)}, ` +
+                        `${board.lockedPieces} of ${board.totalPieces} already placed`
+                      : `${expectedPieceCount(size)} pieces, ${tierFor(size)}`
+                  }
                   onPress={() => setSelected(size)}
                   style={styles.tile}
                 >
@@ -126,6 +159,17 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
                     >
                       {tierFor(size)} · {size}×{size}
                     </Text>
+                    {/* Absolutely positioned so a tile with a board saved is
+                        exactly as tall as one without — a third line here would
+                        leave the wrapped rows ragged, and worse at large font
+                        scales. */}
+                    {board ? (
+                      <View style={styles.tileSaved}>
+                        <Text style={styles.tileSavedText}>
+                          {board.lockedPieces}/{board.totalPieces}
+                        </Text>
+                      </View>
+                    ) : null}
                   </PopSurface>
                 </Pressable>
               );
@@ -134,7 +178,12 @@ export function DifficultyScreen({ puzzleId }: { puzzleId: string }) {
         </ScrollView>
 
         <View style={styles.footer}>
-          <PopButton label="Start Puzzle" tone="grass" onPress={start} disabled={!puzzle} />
+          <PopButton
+            label={selected != null && saved.has(selected) ? 'Continue' : 'Start Puzzle'}
+            tone="grass"
+            onPress={start}
+            disabled={!puzzle}
+          />
         </View>
       </SafeAreaView>
     </View>
@@ -180,6 +229,18 @@ const useStyles = createThemedStyles((theme) =>
     tileCount: { ...typography.title, fontSize: 30, color: theme.colors.ink },
     tileCountActive: { color: theme.colors.onFill },
     tileTier: { ...typography.label, color: theme.colors.inkMuted },
+    // The "you have a board here" pill. Out of flow (see the render) so it
+    // cannot change a tile's height.
+    tileSaved: {
+      position: 'absolute',
+      top: spacing.xs,
+      right: spacing.xs,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: 1,
+      borderRadius: radii.sm,
+      backgroundColor: theme.colors.honey,
+    },
+    tileSavedText: { ...typography.label, fontSize: 11, color: theme.colors.ink },
     // 3.25:1 on grassDeep — the same pairing PopButton uses for its grass tone.
     tileTierActive: { color: theme.colors.onFill },
     // Bottom padding as well as top: without it the button sat flush against the

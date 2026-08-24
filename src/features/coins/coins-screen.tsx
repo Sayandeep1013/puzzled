@@ -179,8 +179,13 @@ export function CoinsScreen() {
               <Art name="calendar" size={44} />
               <View style={styles.cardCopy}>
                 <Text style={styles.cardTitle}>Daily bonus</Text>
+                {/* What today paid, not that today was paid — the badge at the
+                    bottom of this card already says "Claimed today", and this
+                    line sat directly above it saying the same three words. */}
                 <Text style={styles.cardMeta}>
-                  {claimedToday ? 'Claimed today.' : `${amount} coins, waiting for you.`}
+                  {claimedToday
+                    ? `+${dailyBonusFor(priorStreak)} coins today.`
+                    : `${amount} coins, waiting for you.`}
                 </Text>
               </View>
             </View>
