@@ -651,13 +651,10 @@ const useStyles = createThemedStyles((theme) =>
       fontSize: 14,
       color: theme.colors.ink,
       flexShrink: 1,
-      // Two points of horizontal slack, which is measurement headroom, not spacing.
-      // Android measures a `Text`'s intrinsic width and draws its glyphs with
-      // slightly different rounding, and an OS font scale makes `fontSize`
-      // fractional (14 x 0.85 = 11.9) which widens the gap. When the drawn string
-      // needs marginally more than the measured box, `numberOfLines={1}` ellipsises
-      // a label that had hundreds of points of room beside it — measured on device:
-      // "My Album" truncated to "My Alb..." inside a card 356px wide.
+      // See `PopButton`'s label. Breathing room, not headroom: this is the card
+      // where "My Album" rendered as "My Alb..." with the padding already in
+      // place. The cause was the font, and the fix is in `app.json` — see
+      // `fonts` in `src/shared/theme.ts`.
       paddingHorizontal: 2,
     },
   }),

@@ -164,7 +164,8 @@ const useStyles = createThemedStyles((theme) =>
       ...typography.caption,
       fontSize: 11,
       letterSpacing: 0.3,
-      // See `PopButton`'s label: two points of measurement slack, not spacing.
+      // See `PopButton`'s label. Breathing room; it is not what keeps "Home"
+      // from rendering as "Ho...", and never was.
       paddingHorizontal: 2,
     },
   }),

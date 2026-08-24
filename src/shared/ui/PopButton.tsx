@@ -166,13 +166,13 @@ const styles = StyleSheet.create({
     fontFamily: typography.heading.fontFamily,
     flexShrink: 1,
     textAlign: 'center',
-    // Two points of horizontal slack, which is measurement headroom, not spacing.
-    // Android measures a `Text`'s intrinsic width and draws its glyphs with
-    // slightly different rounding, and an OS font scale makes `fontSize`
-    // fractional (14 x 0.85 = 11.9) which widens the gap. When the drawn string
-    // needs marginally more than the measured box, `numberOfLines={1}` ellipsises
-    // a label that had hundreds of points of room beside it — measured on device:
-    // "My Album" truncated to "My Alb..." inside a card 356px wide.
+    // Breathing room inside a centred label, and nothing more. It was once
+    // believed to be measurement headroom against Android's draw-time rounding,
+    // which is why a button reading "Pl..." with 300 points of empty space
+    // beside it survived the change: padding cannot buy headroom, because Yoga
+    // subtracts it before the text is measured and the view subtracts it again
+    // before the text is drawn. The real cause was the font — see `fonts` in
+    // `src/shared/theme.ts` — and it is fixed by embedding, not here.
     paddingHorizontal: 2,
   },
   disabled: { opacity: 0.45 },

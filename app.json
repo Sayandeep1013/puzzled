@@ -46,6 +46,18 @@
       ],
       "expo-sqlite",
       [
+        "expo-font",
+        {
+          "fonts": [
+            "./node_modules/@expo-google-fonts/fredoka/600SemiBold/Fredoka_600SemiBold.ttf",
+            "./node_modules/@expo-google-fonts/fredoka/700Bold/Fredoka_700Bold.ttf",
+            "./node_modules/@expo-google-fonts/nunito/400Regular/Nunito_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/nunito/700Bold/Nunito_700Bold.ttf",
+            "./node_modules/@expo-google-fonts/nunito/800ExtraBold/Nunito_800ExtraBold.ttf"
+          ]
+        }
+      ],
+      [
         "expo-audio",
         {
           "recordAudioAndroid": false,
